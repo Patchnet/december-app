@@ -438,9 +438,10 @@ function renderInbox(targets = new Map()) {
       chip.className = 'inbox-state failed'
       chip.innerHTML = `<i class="warn-dot"></i><button class="retry">retry</button>`
     } else {
+      // the words carrying the light ARE the status; nothing else needed
       text.classList.add('reading')
       chip.className = 'inbox-state'
-      chip.innerHTML = `<i class="working-dot" aria-label="settling"></i>`
+      chip.innerHTML = ''
     }
   }
 }

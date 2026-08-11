@@ -310,19 +310,6 @@ body {
   to   { background-position: -130% 0; }
 }
 
-/* The quiet working mark: one breathing accent dot, right beside its words. */
-.working-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  animation: breathe 1.6s var(--ease) infinite;
-}
-@keyframes breathe {
-  0%, 100% { opacity: 0.35; transform: scale(0.8); }
-  50% { opacity: 1; transform: none; }
-}
 .warn-dot {
   width: 7px;
   height: 7px;
@@ -694,17 +681,12 @@ body {
   border-radius: var(--radius-pill);
   background: var(--surface-2);
   margin-bottom: var(--space-2);
-  animation: settling-breathe 1.8s var(--ease) infinite;
 }
 .gb-1 { width: 62%; }
-.gb-2 { width: 38%; animation-delay: 300ms; }
+.gb-2 { width: 38%; }
 .gk-ledger .gb-1 { height: 20px; width: 34%; }
 .gk-tracker .gb-2 { height: 4px; width: 100%; }
 .gk-reminder .gb-2 { display: none; }
-@keyframes settling-breathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
 .ghost-out { opacity: 0 !important; transition: opacity var(--m-depth) var(--ease); }
 
 /* ------------------------------------------------------- the today strip */
