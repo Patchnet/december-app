@@ -87,11 +87,12 @@ const rowMarkup = (b, i) => `
 
 const RENDER = {
   // Open items in full; the done pile compresses to its two most recent.
-  list: (b) => {
+  // The focused view shows the whole year.
+  list: (b, full) => {
     const open = b.items.filter((i) => !i.done)
     const done = b.items.filter((i) => i.done).sort((a, z) => (z.doneAt || '').localeCompare(a.doneAt || ''))
-    const shown = [...open, ...done.slice(0, 2)]
-    const more = done.length > 2 ? `<div class="done-more">${done.length - 2} more done</div>` : ''
+    const shown = [...open, ...(full ? done : done.slice(0, 2))]
+    const more = !full && done.length > 2 ? `<div class="done-more">${done.length - 2} more done</div>` : ''
     return `
     ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     ${shown.map((i) => rowMarkup(b, i)).join('')}${more}`
@@ -111,7 +112,7 @@ const RENDER = {
     <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span>${notch}</div>`
   },
 
-  ledger: (b) => {
+  ledger: (b, full) => {
     const month = new Date().toISOString().slice(0, 7)
     const monthSum = b.entries.filter((e) => (e.at || '').startsWith(month)).reduce((n, e) => n + (Number(e.amount) || 0), 0)
     const monthLine =
@@ -123,7 +124,7 @@ const RENDER = {
     <div class="ledger-total">${fmtAmount(b.total, b.unit)}</div>
     ${monthLine}
     ${b.entries
-      .slice(-3)
+      .slice(full ? -24 : -3)
       .reverse()
       .map((e) => `<div class="ledger-entry"><span>${esc(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
       .join('')}`
@@ -145,9 +146,9 @@ const RENDER = {
     <div class="streak-line"><span class="streak-dots">${days.join('')}</span></div>`
   },
 
-  note: (b) => `
+  note: (b, full) => `
     ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
-    <div class="note-text ${b.text.length > 280 ? 'clamp' : ''}">${esc(b.text)}</div>`,
+    <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${esc(b.text)}</div>`,
 
   reminder: (b) => `
     <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}">
@@ -156,7 +157,7 @@ const RENDER = {
     </button>`,
 }
 
-function spaceInner(space) {
+function spaceInner(space, full = false) {
   // reminders that are open float to the top of the card
   const blocks = [...space.blocks].sort((a, b) => {
     const w = (x) => (x.type === 'reminder' && !x.done ? 0 : 1)
@@ -164,7 +165,33 @@ function spaceInner(space) {
   })
   return `
     <h2 class="space-name">${esc(space.name)}</h2>
-    ${blocks.map((b) => `<div class="block" data-bid="${b.id}">${RENDER[b.type] ? RENDER[b.type](b) : ''}</div>`).join('')}`
+    ${blocks.map((b) => `<div class="block" data-bid="${b.id}">${RENDER[b.type] ? RENDER[b.type](b, full) : ''}</div>`).join('')}`
+}
+
+// ------------------------------------------------------------ focus view
+
+let focusId = null
+
+function buildFocus() {
+  const wrap = $('#focus')
+  const space = focusId && state.spaces.find((s) => s.id === focusId)
+  if (!space) {
+    focusId = null
+    wrap.innerHTML = ''
+    return
+  }
+  wrap.innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card" data-sid="${space.id}">${spaceInner(space, true)}</article>
+    </div>`
+  wrap.dataset.u = space.updatedAt
+}
+
+function closeFocus() {
+  focusId = null
+  $('#focus').innerHTML = ''
+  $('#focus').dataset.u = ''
 }
 
 // ---------------------------------------------------------------- render
@@ -201,8 +228,23 @@ function travelDot(fromRect, toEl, then) {
     )
     .addEventListener('finish', () => {
       dot.remove()
+      bloom(fromRect.left + dx, fromRect.top + fromRect.height / 2 + dy)
       then?.()
     })
+}
+
+/** A soft ring where the dot lands. */
+function bloom(x, y) {
+  if (reduced) return
+  const layer = document.createElement('div')
+  layer.className = 'spark'
+  layer.style.left = `${x}px`
+  layer.style.top = `${y}px`
+  const ring = document.createElement('span')
+  ring.className = 'ring'
+  layer.appendChild(ring)
+  document.body.appendChild(layer)
+  setTimeout(() => layer.remove(), 600)
 }
 
 function washCard(el) {
@@ -364,6 +406,11 @@ function renderSpaces(delayWash = new Set()) {
         }
         if (b.type === 'ledger' && (pb.total ?? 0) !== (b.total ?? 0)) {
           bump(bel.querySelector('.ledger-total'))
+          bel.querySelector('.ledger-entry')?.classList.add('entry-in')
+        }
+        if (b.type === 'streak' && b.dates.length > (pb.dates?.length ?? 0)) {
+          const dots = bel.querySelectorAll('.streak-dots i.on')
+          dots[dots.length - 1]?.classList.add('just-marked')
         }
       }
       // cards receiving a travel dot wash when the dot lands, not before
@@ -490,6 +537,12 @@ function render() {
   renderHint()
   renderRail()
   celebrateDiffs()
+  // keep an open focus view current with what the agent changes
+  if (focusId) {
+    const space = state.spaces.find((s) => s.id === focusId)
+    if (!space) closeFocus()
+    else if ($('#focus').dataset.u !== space.updatedAt) buildFocus()
+  }
   prev = state
 }
 
@@ -647,12 +700,24 @@ document.addEventListener('click', async (e) => {
     return
   }
 
+  // closing the focus view: backdrop or wrapper, never the card itself
+  if (e.target.dataset?.close !== undefined) {
+    closeFocus()
+    return
+  }
+
   // manual check on a list item or reminder — instant, no model
   const row = e.target.closest('.row[data-block]')
   if (row) {
     const done = !row.classList.contains('done')
-    row.classList.remove('no-anim')
-    row.classList.toggle('done', done)
+    // the same row may exist in the grid card and the focus card: keep both true
+    const twins = document.querySelectorAll(
+      `.row[data-block="${row.dataset.block}"]${row.dataset.item ? `[data-item="${row.dataset.item}"]` : ''}`
+    )
+    for (const twin of twins) {
+      twin.classList.remove('no-anim')
+      twin.classList.toggle('done', done)
+    }
     if (done) {
       pop(row.querySelector('.tick'))
       celebrate(row.querySelector('.tick'))
@@ -697,7 +762,19 @@ document.addEventListener('click', async (e) => {
     } catch (err) {
       toast(err.message)
     }
+    return
   }
+
+  // anywhere quiet on a grid card: open the focused view
+  const card = e.target.closest('#spaces .space')
+  if (card && !e.target.closest('button, a')) {
+    focusId = card.dataset.sid
+    buildFocus()
+  }
+})
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && focusId) closeFocus()
 })
 
 $('#theme-toggle').addEventListener('click', () => {

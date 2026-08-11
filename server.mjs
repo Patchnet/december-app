@@ -69,11 +69,16 @@ const server = createServer(async (req, res) => {
     }
 
     // Capture lands instantly; the settle pass runs behind you.
+    // A brain dump — many lines pasted at once — splits into one capture
+    // per line, so each thought settles and travels on its own.
     if (path === '/api/capture' && req.method === 'POST') {
       const body = await readBody(req)
       const text = String(body.text || '').trim()
       if (!text) return json(res, 400, { error: 'empty' })
-      await addCapture(text)
+      const lines = text.includes('\n')
+        ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter((l) => l.length > 2).slice(0, 25)
+        : [text]
+      for (const line of lines) await addCapture(line)
       settle.schedule()
       return json(res, 200, project(settle.status()))
     }

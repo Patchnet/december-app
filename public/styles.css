@@ -229,7 +229,7 @@ body {
   border-radius: var(--radius-lg);
   padding: var(--space-4) var(--space-5);
   margin: var(--space-2) 0 var(--space-3);
-  animation: rise var(--m-enter) var(--ease-out) both;
+  animation: materialize var(--m-struct) var(--ease-out) both;
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease);
 }
 .ask.out { opacity: 0; transform: translateY(-4px); pointer-events: none; }
@@ -400,6 +400,8 @@ body {
 .spaces { flex: 1; min-width: 0; columns: 2 300px; column-gap: var(--space-4); }
 
 .space {
+  position: relative;
+  overflow: hidden;
   break-inside: avoid;
   margin-bottom: var(--space-4);
   border: 1px solid var(--line-1);
@@ -407,9 +409,27 @@ body {
   background: var(--elevated);
   box-shadow: var(--card-shadow);
   padding: var(--space-5);
-  animation: rise var(--m-enter) var(--ease-out) both;
+  animation: materialize var(--m-enter) var(--ease-out) both;
 }
-.space.washed { animation: wash var(--m-draw) var(--ease-out); }
+
+/* The agent's touch is light: a sheen sweeps the card, the border warms. */
+.space.washed { animation: border-glow 900ms var(--ease); }
+.space.washed::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 60%;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, var(--accent-soft) 45%, rgba(61, 168, 220, 0.18) 50%, var(--accent-soft) 55%, transparent);
+  animation: sheen 900ms var(--ease-out) forwards;
+}
+@keyframes sheen { to { transform: translateX(270%); } }
+@keyframes border-glow {
+  0%, 25% { border-color: var(--accent-edge); }
+  100% { border-color: var(--line-1); }
+}
 
 .space-name {
   font-size: var(--fs-body);
@@ -421,8 +441,25 @@ body {
 .block { margin-bottom: var(--space-5); }
 .block:last-child { margin-bottom: 0; }
 .block.arrive {
-  animation: rise var(--m-enter) var(--ease-out) both;
+  animation: materialize var(--m-struct) var(--ease-out) both;
   animation-delay: var(--d, 0ms);
+}
+
+/* things the agent makes condense into existence */
+@keyframes materialize {
+  from { opacity: 0; transform: translateY(5px); filter: blur(6px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+/* a ledger's newest line arrives with its total */
+.ledger-entry.entry-in { animation: materialize var(--m-enter) var(--ease-out) both; }
+
+/* the day you just marked ripples once */
+.streak-dots i.just-marked { animation: dot-mark 560ms var(--ease-pop); }
+@keyframes dot-mark {
+  0%   { transform: scale(0.3); box-shadow: 0 0 0 0 var(--accent-edge); }
+  55%  { transform: scale(1.35); box-shadow: 0 0 0 5px rgba(61, 168, 220, 0); }
+  100% { transform: none; box-shadow: 0 0 0 6px rgba(61, 168, 220, 0); }
 }
 
 .block-title {
@@ -627,6 +664,56 @@ body {
 .rest-row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 .rest-when { font-size: 12px; white-space: nowrap; }
 
+/* ------------------------------------------------------- the focus view */
+
+.focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(26, 24, 21, 0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in var(--m-depth) var(--ease) both;
+}
+:root[data-theme="dark"] .focus-backdrop { background: rgba(0, 0, 0, 0.5); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.focus-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 71;
+  display: grid;
+  place-items: center;
+  padding: 5vh 20px;
+  overflow: auto;
+  cursor: pointer;
+}
+
+.focus-card {
+  cursor: auto;
+  width: 100%;
+  max-width: 680px;
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: 0 18px 50px -12px rgba(15, 12, 8, 0.25), 0 4px 12px -4px rgba(15, 12, 8, 0.1);
+  padding: var(--space-8);
+  animation: focus-in var(--m-struct) var(--ease-expo) both;
+}
+:root[data-theme="dark"] .focus-card {
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.6), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+}
+.focus-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
+@keyframes focus-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+.space { cursor: pointer; }
+.focus-card .block { margin-bottom: var(--space-6); }
+
 /* ------------------------------------------------------- the celebration */
 
 .spark { position: fixed; pointer-events: none; z-index: 50; }
@@ -702,7 +789,11 @@ body {
   from { opacity: 0; transform: translateY(3px); }
   to   { opacity: 1; transform: none; }
 }
-.bump { animation: status-swap 280ms var(--ease-out); }
+.bump { animation: status-swap 280ms var(--ease-out), value-glow 700ms var(--ease); }
+@keyframes value-glow {
+  0%, 35% { color: var(--accent-ink); }
+  100% { color: inherit; }
+}
 
 @media (max-width: 720px) {
   .spaces { columns: 1; }
