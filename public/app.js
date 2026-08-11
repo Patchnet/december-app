@@ -478,10 +478,15 @@ function renderInbox(targets = new Map()) {
   }
 }
 
-/** Receipts are stubs: one short line; the full story one click away. */
+/** Receipts are stubs: one short line; the full story one click away.
+    Rebuilt only when the receipt actually changes, so it never re-animates
+    on an idle poll. */
 function renderActivity() {
   const el = $('#activity')
   const acts = state.activity || []
+  const key = acts.length ? `${acts[0].at}|${acts.length}|${state.canUndo}` : ''
+  if (el.dataset.key === key) return
+  el.dataset.key = key
   if (!acts.length) {
     el.innerHTML = ''
     el.classList.remove('open')
