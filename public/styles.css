@@ -375,9 +375,7 @@ body {
 }
 .rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
 .rail a {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: block;
   color: var(--text-3);
   text-decoration: none;
   font-size: 12.5px;
@@ -386,7 +384,6 @@ body {
   text-overflow: ellipsis;
   transition: color var(--m-ui) var(--ease);
 }
-.rail .hue { width: 6px; height: 6px; opacity: 0.8; }
 .rail a:hover { color: var(--text-1); }
 .rail a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
 
@@ -434,18 +431,7 @@ body {
   font-weight: 400;
   letter-spacing: 0;
   margin: 0 0 var(--space-4);
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
 }
-.hue {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  align-self: center;
-}
-.ghost-hue { background: var(--line-2); }
 
 .block { margin-bottom: var(--space-5); }
 .block:last-child { margin-bottom: 0; }

@@ -79,10 +79,6 @@ function pop(el) {
 
 // ---------------------------------------------------------------- blocks
 
-// spaces carry a stable hue from a closed set — the app-launcher family
-const HUES = ['#2A8AB8', '#2DA890', '#D9A441', '#7A5FC4', '#6F7E94', '#E8625A', '#CF6A98']
-const hueOf = (id) => HUES[[...String(id)].reduce((n, c) => n + c.charCodeAt(0), 0) % 7]
-
 // provenance: a change can show the words it came from
 const srcTitle = (src) => {
   const t = src && state.sources?.[src]
@@ -211,7 +207,7 @@ function spaceInner(space, full = false) {
   })
   const hero = full ? null : heroId(space)
   return `
-    <h2 class="space-name"><i class="hue" style="background:${hueOf(space.id)}"></i>${esc(space.name)}</h2>
+    <h2 class="space-name">${esc(space.name)}</h2>
     ${blocks
       .map((b) => {
         const isHero = b.id === hero
@@ -405,7 +401,7 @@ function addGhost(c) {
     const el = document.createElement('article')
     el.className = 'space ghost'
     el.innerHTML = `
-      <h2 class="space-name"><i class="hue ghost-hue"></i>${esc(c.text.split(/[.,]/)[0].slice(0, 26))}</h2>
+      <h2 class="space-name">${esc(c.text.split(/[.,]/)[0].slice(0, 26))}</h2>
       <div class="block gk-${kind}"><span class="gb gb-1"></span><span class="gb gb-2"></span></div>`
     $('#spaces').prepend(el)
     ghosts.set(c.id, el)
@@ -449,7 +445,7 @@ function renderInbox(targets = new Map()) {
         travelDot(rect, targetEl, () => {
           washCard(targetEl)
           fold()
-        }, hueOf(targetEl.dataset.sid))
+        })
       } else {
         fold()
       }
@@ -628,7 +624,7 @@ function renderRail() {
   if (rail.dataset.key === key) return
   rail.dataset.key = key
   rail.innerHTML = state.spaces
-    .map((s) => `<a href="#" data-jump="${s.id}"><i class="hue" style="background:${hueOf(s.id)}"></i>${esc(s.name)}</a>`)
+    .map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`)
     .join('')
 }
 
@@ -667,23 +663,33 @@ function renderAsk() {
     </div>`
 }
 
-/** The page faces the day: due reminders, and after five, open streaks. */
+/** The page faces the day: what has become relevant rises to the top —
+    due and tomorrow's reminders, evening-open streaks, and whatever the
+    surfacing sense pinned, each with its reason. */
 function renderToday() {
   const box = $('#today')
   const today = new Date().toISOString().slice(0, 10)
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   const evening = new Date().getHours() >= 17
   const items = []
+  const seen = new Set()
   for (const s of state.spaces) {
     for (const b of s.blocks) {
-      if (b.type === 'reminder' && !b.done && b.when && b.when <= today) {
-        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub: b.when < today ? 'overdue' : 'today' })
+      if (b.type === 'reminder' && !b.done && b.when && b.when <= tomorrow) {
+        const sub = b.when < today ? 'overdue' : b.when === today ? 'today' : 'tomorrow'
+        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub })
+        seen.add(`${s.id}|${b.text.toLowerCase()}`)
       }
       if (evening && b.type === 'streak' && !b.dates.includes(today)) {
         items.push({ kind: 'streak', sid: s.id, label: `${b.title} is still open`, sub: 'today' })
       }
     }
   }
-  const key = items.map((i) => i.kind + (i.bid || i.sid) + i.sub).join()
+  for (const su of state.surfaced || []) {
+    if (seen.has(`${su.spaceId}|${su.label.toLowerCase()}`)) continue
+    items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
+  }
+  const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   box.dataset.key = key
   box.innerHTML = items
@@ -693,8 +699,8 @@ function renderToday() {
         ? `<button class="row today-row" data-block="${i.bid}">
             <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
             <span class="row-text">${esc(i.label)}</span><span class="today-sub ${i.sub}">${i.sub}</span></button>`
-        : `<button class="today-row plain" data-jump="${i.sid}">
-            <span class="row-text">${esc(i.label)}</span><span class="today-sub">${i.sub}</span></button>`
+        : `<button class="today-row plain" ${i.sid ? `data-jump="${i.sid}"` : ''}>
+            <span class="row-text">${esc(i.label)}</span><span class="today-sub">${esc(i.sub)}</span></button>`
     )
     .join('')
 }
@@ -1052,7 +1058,7 @@ async function firstRunDemo() {
   const card = document.createElement('article')
   card.className = 'space demo-card'
   card.innerHTML = `
-    <h2 class="space-name"><i class="hue" style="background:${HUES[0]}"></i>Housing</h2>
+    <h2 class="space-name">Housing</h2>
     <div class="block hero">
       <div class="block-title">Rent</div>
       <div class="ledger-total">$2,300</div>

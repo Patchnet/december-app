@@ -24,6 +24,7 @@ const MIME = {
 }
 
 await settle.writeMcpConfig()
+settle.scheduleSurfacing()
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
@@ -117,6 +118,12 @@ const server = createServer(async (req, res) => {
     // Retry a failed settle by hand.
     if (path === '/api/settle' && req.method === 'POST') {
       settle.schedule(0)
+      return json(res, 202, { scheduled: true })
+    }
+
+    // Run the surfacing sense on demand.
+    if (path === '/api/surface' && req.method === 'POST') {
+      settle.runSurface()
       return json(res, 202, { scheduled: true })
     }
 
