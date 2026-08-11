@@ -108,21 +108,23 @@ const RENDER = {
     ${shown.map((i) => rowMarkup(b, i)).join('')}${more}`
   },
 
-  tracker: (b) => {
+  tracker: (b, full_, hero) => {
     const pct = Math.min(100, Math.round((b.current / b.target) * 100))
     const full = b.current >= b.target
     // year trackers carry a today marker at the point the year has reached
     const yearPct = Math.round(((Date.now() - new Date(new Date().getFullYear(), 0, 1)) / 31536000000) * 100)
     const notch = b.period === 'year' && !full ? `<span class="notch" style="left:${yearPct}%"></span>` : ''
+    // the hero drops its title: the space name and the number already say it
+    const title = hero ? '' : `<span class="block-title" style="margin:0">${esc(b.title)}</span>`
     return `
     <div class="tracker-line">
-      <span class="block-title" style="margin:0">${esc(b.title)}</span>
+      ${title}
       <span class="tracker-count ${full ? 'full' : ''}"><b>${b.current}</b> of ${b.target}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
     </div>
     <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span>${notch}</div>`
   },
 
-  ledger: (b, full) => {
+  ledger: (b, full, hero) => {
     const month = new Date().toISOString().slice(0, 7)
     const monthSum = b.entries.filter((e) => (e.at || '').startsWith(month)).reduce((n, e) => n + (Number(e.amount) || 0), 0)
     const monthLine =
@@ -130,7 +132,7 @@ const RENDER = {
         ? `<div class="ledger-month">${new Date().toLocaleString('en', { month: 'short' }).toLowerCase()} ${fmtAmount(monthSum, b.unit)}</div>`
         : ''
     return `
-    ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
+    ${b.title && !hero ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     <div class="ledger-total">${fmtAmount(b.total, b.unit)}</div>
     ${monthLine}
     ${b.entries
@@ -140,7 +142,7 @@ const RENDER = {
       .join('')}`
   },
 
-  streak: (b) => {
+  streak: (b, full, hero) => {
     const days = []
     for (let i = 13; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
@@ -150,14 +152,14 @@ const RENDER = {
     }
     return `
     <div class="tracker-line">
-      <span class="block-title" style="margin:0">${esc(b.title)}</span>
+      ${hero ? '' : `<span class="block-title" style="margin:0">${esc(b.title)}</span>`}
       <span class="streak-count">${b.dates.length}</span>
     </div>
     <div class="streak-line"><span class="streak-dots">${days.join('')}</span></div>`
   },
 
   note: (b, full) => `
-    ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
+    ${b.title && !/^notes?$/i.test(b.title.trim()) ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${esc(b.text)}</div>`,
 
   reminder: (b) => `
@@ -214,7 +216,7 @@ function spaceInner(space, full = false) {
       .map((b) => {
         const isHero = b.id === hero
         const compact = !full && !isHero && COMPACT[b.type]
-        const body = compact ? COMPACT[b.type](b) : RENDER[b.type] ? RENDER[b.type](b, full) : ''
+        const body = compact ? COMPACT[b.type](b) : RENDER[b.type] ? RENDER[b.type](b, full, isHero) : ''
         return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
       })
       .join('')}`
