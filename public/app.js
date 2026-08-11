@@ -314,6 +314,36 @@ function washCard(el) {
   el.classList.add('washed')
 }
 
+/** FLIP: when the grid changes shape, cards glide to their new places
+    instead of teleporting. */
+function withFlip(fn) {
+  if (reduced) return fn()
+  const before = new Map()
+  for (const el of document.querySelectorAll('#spaces .space')) before.set(el, el.getBoundingClientRect())
+  fn()
+  const moves = []
+  for (const [el, a] of before) {
+    if (!el.isConnected) continue
+    const b = el.getBoundingClientRect()
+    const dx = a.left - b.left
+    const dy = a.top - b.top
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([el, dx, dy])
+  }
+  if (!moves.length) return
+  for (const [el, dx, dy] of moves) {
+    el.style.transition = 'none'
+    el.style.transform = `translate(${dx}px, ${dy}px)`
+  }
+  void document.body.offsetHeight
+  for (const [el] of moves) {
+    el.style.transition = 'transform var(--m-struct) var(--ease-expo)'
+    el.style.transform = ''
+  }
+  setTimeout(() => {
+    for (const [el] of moves) el.style.transition = ''
+  }, 420)
+}
+
 /** Data reveal: bars draw to their mark instead of appearing at it. */
 function drawMeters(root) {
   if (reduced) return
@@ -386,8 +416,11 @@ function removeGhost(cid) {
   const el = ghosts.get(cid)
   if (!el) return
   ghosts.delete(cid)
+  // collapse, don't vanish: neighbors flow instead of jumping
+  el.style.height = `${el.offsetHeight}px`
+  void el.offsetHeight
   el.classList.add('ghost-out')
-  setTimeout(() => el.remove(), 300)
+  setTimeout(() => el.remove(), 340)
 }
 
 function renderInbox(targets = new Map()) {
@@ -480,6 +513,8 @@ function renderSpaces(delayWash = new Set()) {
       el.style.animationDelay = `${Math.min(i * 45, 270)}ms`
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
+      // once the entrance ends, stop its fill so FLIP transforms can act
+      el.addEventListener('animationend', () => el.classList.add('settled'), { once: true })
       box.appendChild(el)
       spaceEls.set(space.id, { el, updatedAt: space.updatedAt })
       drawMeters(el)
@@ -543,7 +578,7 @@ function renderSpaces(delayWash = new Set()) {
     for (const id of order) {
       const known = spaceEls.get(id)
       if (known) {
-        known.el.style.animation = 'none'
+        known.el.classList.add('settled')
         box.appendChild(known.el)
       }
     }
@@ -708,8 +743,10 @@ function renderHint() {
 function render() {
   renderYearline()
   const targets = travelTargets()
-  renderSpaces(new Set(targets.values()))
-  renderInbox(targets)
+  withFlip(() => {
+    renderSpaces(new Set(targets.values()))
+    renderInbox(targets)
+  })
   renderActivity()
   renderSuggestions()
   renderAsk()

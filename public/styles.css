@@ -405,6 +405,9 @@ body {
   animation: materialize var(--m-enter) var(--ease-out) both;
 }
 
+/* entrance finished: stop the animation fill so FLIP glides can move it */
+.space.settled { animation: none; }
+
 /* The agent's touch is light: a sheen sweeps the card, the border warms. */
 .space.washed { animation: border-glow 900ms var(--ease); }
 .space.washed::after {
@@ -687,7 +690,17 @@ body {
 .gk-ledger .gb-1 { height: 20px; width: 34%; }
 .gk-tracker .gb-2 { height: 4px; width: 100%; }
 .gk-reminder .gb-2 { display: none; }
-.ghost-out { opacity: 0 !important; transition: opacity var(--m-depth) var(--ease); }
+.ghost-out {
+  opacity: 0 !important;
+  height: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden;
+  transition: opacity var(--m-depth) var(--ease), height var(--m-struct) var(--ease-expo),
+    margin-bottom var(--m-struct) var(--ease-expo), padding var(--m-struct) var(--ease-expo);
+}
 
 /* ------------------------------------------------------- the today strip */
 
