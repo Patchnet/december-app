@@ -682,7 +682,6 @@ function buildYear() {
         <div class="ym-body">
           ${data.events ? `<div class="ym-dots">${dots}</div>` : future ? '' : '<div class="ym-quiet">quiet</div>'}
           ${hl}
-          ${m === 11 && future ? '<div class="ym-quiet">where this all lands</div>' : ''}
         </div>
       </div>`
     })
