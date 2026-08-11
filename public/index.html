@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>December</title>
+<script>document.documentElement.dataset.theme = localStorage.getItem('dec-theme') || 'light'</script>
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell" id="shell">
+    <div class="corner">
+      <div class="yearline" id="yearline"></div>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+        <svg class="moon" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.6 8.7 A5.1 5.1 0 1 1 5.3 2.4 A4.1 4.1 0 0 0 11.6 8.7 Z" /></svg>
+        <svg class="sun" viewBox="0 0 14 14" aria-hidden="true">
+          <circle cx="7" cy="7" r="2.7" />
+          <path d="M7 1v1.4 M7 11.6V13 M1 7h1.4 M11.6 7H13 M2.8 2.8l1 1 M10.2 10.2l1 1 M11.2 2.8l-1 1 M3.8 10.2l-1 1" />
+        </svg>
+      </button>
+    </div>
+
+    <textarea class="capture" id="capture" rows="1"
+      placeholder="What's up?" autofocus spellcheck="false"></textarea>
+
+    <div class="chips" id="suggest"></div>
+    <div class="inbox" id="inbox"></div>
+    <div class="activity" id="activity"></div>
+    <div id="ask"></div>
+
+    <div class="body-grid">
+      <nav class="rail" id="rail" aria-label="Spaces"></nav>
+      <main class="spaces" id="spaces"></main>
+    </div>
+
+    <section class="resting" id="resting" aria-label="Quiet spaces"></section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

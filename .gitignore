@@ -1,0 +1,7 @@
+data/state.json
+mcp.json
+node_modules
+.DS_Store
+.agents/
+.claude/
+skills-lock.json
