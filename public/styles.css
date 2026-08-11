@@ -85,6 +85,8 @@
 
 * { box-sizing: border-box; }
 
+::selection { background: var(--accent-edge); }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -123,6 +125,7 @@ body {
 }
 
 .theme-toggle {
+  position: relative;
   width: 26px;
   height: 26px;
   display: grid;
@@ -133,12 +136,20 @@ body {
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  transition: color var(--m-ui) var(--ease), border-color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
+  transition: color var(--m-ui) var(--ease), border-color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
 }
+.theme-toggle::after { content: ""; position: absolute; inset: -8px; }
 .theme-toggle:hover { color: var(--text-1); background: var(--surface-1); }
-.theme-toggle:active { transform: scale(0.92); transition: transform var(--m-press) var(--ease); }
+.theme-toggle:active { transform: scale(0.96); }
 .theme-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
-.theme-toggle svg { width: 13px; height: 13px; display: block; }
+/* both icons stay in the DOM and cross-fade, so the flip is interruptible */
+.theme-toggle svg {
+  grid-area: 1 / 1;
+  width: 13px;
+  height: 13px;
+  display: block;
+  transition: opacity var(--m-depth) cubic-bezier(0.2, 0, 0, 1), transform var(--m-depth) cubic-bezier(0.2, 0, 0, 1);
+}
 .theme-toggle path, .theme-toggle circle {
   fill: none;
   stroke: currentColor;
@@ -146,14 +157,9 @@ body {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.theme-toggle .sun { display: none; }
-:root[data-theme="dark"] .theme-toggle .moon { display: none; }
-:root[data-theme="dark"] .theme-toggle .sun { display: block; }
-.theme-toggle.spin svg { animation: icon-in var(--m-depth) var(--ease-out); }
-@keyframes icon-in {
-  from { opacity: 0; transform: rotate(-40deg) scale(0.7); }
-  to   { opacity: 1; transform: none; }
-}
+.theme-toggle .sun { opacity: 0; transform: scale(0.25) rotate(-40deg); }
+:root[data-theme="dark"] .theme-toggle .moon { opacity: 0; transform: scale(0.25) rotate(40deg); }
+:root[data-theme="dark"] .theme-toggle .sun { opacity: 1; transform: none; }
 
 /* -------------------------------------------------------- the capture
    The page is the input: no box, no chrome, just the caret, top left. */
@@ -190,6 +196,7 @@ body {
 .chips:empty { margin: 0; }
 
 .chip-btn {
+  position: relative;
   height: 26px;
   padding: 0 11px;
   font: inherit;
@@ -204,6 +211,7 @@ body {
   animation: rise var(--m-enter) var(--ease-out) both;
   animation-delay: var(--d, 0ms);
 }
+.chip-btn::after { content: ""; position: absolute; left: 0; right: 0; top: -7px; bottom: -7px; }
 .chip-btn:hover { color: var(--text-1); background: var(--surface-2); }
 .chip-btn:active { transform: scale(0.96); transition: transform var(--m-press) var(--ease); }
 .chip-btn:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
@@ -225,7 +233,7 @@ body {
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease);
 }
 .ask.out { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-.ask-q { font-size: 14px; margin-bottom: var(--space-3); }
+.ask-q { font-size: 14px; margin-bottom: var(--space-3); text-wrap: balance; }
 .ask .chips { margin: 0; }
 .ask .skip {
   font: inherit;
@@ -234,7 +242,9 @@ body {
   background: none;
   border: 0;
   cursor: pointer;
-  padding: 0 var(--space-2);
+  padding: 6px var(--space-2);
+  margin: -6px 0;
+  border-radius: var(--radius-sm);
 }
 .ask .skip:hover { color: var(--text-1); }
 
@@ -280,7 +290,9 @@ body {
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
-  padding: 0;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: var(--radius-sm);
 }
 
 /* The agent reading your line: a light sweeps across the words. */
@@ -332,6 +344,7 @@ body {
   font-size: 12.5px;
   color: var(--text-3);
   padding: var(--space-1) 0 0;
+  text-wrap: pretty;
   animation: rise var(--m-enter) var(--ease-out) both;
 }
 .activity b { color: var(--text-2); font-weight: 500; }
@@ -341,9 +354,21 @@ body {
   border: 0;
   font: inherit;
   cursor: pointer;
-  padding: 0;
+  padding: 4px 6px;
+  margin: -4px -2px;
+  border-radius: var(--radius-sm);
 }
 .activity .undo:hover { text-decoration: underline; }
+
+/* the first-open whisper */
+.hint {
+  max-width: 640px;
+  font-size: 13px;
+  color: var(--text-3);
+  animation: rise var(--m-enter) var(--ease-out) both;
+  animation-delay: 180ms;
+}
+.hint:empty { display: none; }
 
 /* ---------------------------------------------------------- the spaces */
 
@@ -478,6 +503,7 @@ body {
 }
 .tracker-count { font-variant-numeric: tabular-nums; }
 .tracker-count b { font-weight: 500; }
+.tracker-count.full b { color: var(--good-ink); }
 .tracker-unit { color: var(--text-3); font-size: 12.5px; }
 .meter {
   position: relative;
@@ -538,9 +564,21 @@ body {
   background: var(--surface-2);
 }
 .streak-dots i.on { background: var(--accent); }
+/* today, still open: a quiet ring waiting to be filled */
+.streak-dots i.today { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+/* dots pop in one by one when their card or block first arrives */
+.space.fresh .streak-dots i,
+.block.arrive .streak-dots i {
+  animation: dot-in 220ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+@keyframes dot-in {
+  from { opacity: 0; transform: scale(0.3); }
+  to   { opacity: 1; transform: none; }
+}
 
 /* note */
-.note-text { color: var(--text-2); white-space: pre-wrap; }
+.note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; }
 .note-text.clamp {
   max-height: 132px;
   overflow: hidden;

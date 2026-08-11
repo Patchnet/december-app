@@ -99,15 +99,16 @@ const RENDER = {
 
   tracker: (b) => {
     const pct = Math.min(100, Math.round((b.current / b.target) * 100))
+    const full = b.current >= b.target
     // year trackers carry a today marker at the point the year has reached
     const yearPct = Math.round(((Date.now() - new Date(new Date().getFullYear(), 0, 1)) / 31536000000) * 100)
-    const notch = b.period === 'year' && pct < 100 ? `<span class="notch" style="left:${yearPct}%"></span>` : ''
+    const notch = b.period === 'year' && !full ? `<span class="notch" style="left:${yearPct}%"></span>` : ''
     return `
     <div class="tracker-line">
       <span class="block-title" style="margin:0">${esc(b.title)}</span>
-      <span class="tracker-count"><b>${b.current}</b> of ${b.target}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
+      <span class="tracker-count ${full ? 'full' : ''}"><b>${b.current}</b> of ${b.target}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
     </div>
-    <div class="meter ${b.current >= b.target ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span>${notch}</div>`
+    <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span>${notch}</div>`
   },
 
   ledger: (b) => {
@@ -132,7 +133,9 @@ const RENDER = {
     const days = []
     for (let i = 13; i >= 0; i--) {
       const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
-      days.push(`<i class="${b.dates.includes(d) ? 'on' : ''}"></i>`)
+      const on = b.dates.includes(d)
+      const today = i === 0 && !on
+      days.push(`<i class="${on ? 'on' : ''}${today ? 'today' : ''}" style="--i:${13 - i}"></i>`)
     }
     return `
     <div class="tracker-line">
@@ -207,6 +210,19 @@ function washCard(el) {
   el.classList.remove('washed')
   void el.offsetWidth
   el.classList.add('washed')
+}
+
+/** Data reveal: bars draw to their mark instead of appearing at it. */
+function drawMeters(root) {
+  if (reduced) return
+  for (const span of root.querySelectorAll('.meter span')) {
+    const target = span.style.width
+    span.style.transition = 'none'
+    span.style.width = '0%'
+    void span.offsetWidth
+    span.style.transition = ''
+    requestAnimationFrame(() => (span.style.width = target))
+  }
 }
 
 /** Which space element each just-filed capture should fly to. */
@@ -307,22 +323,47 @@ function renderSpaces(delayWash = new Set()) {
     const known = spaceEls.get(space.id)
     if (!known) {
       const el = document.createElement('article')
-      el.className = 'space'
+      el.className = 'space fresh'
       el.style.animationDelay = `${Math.min(i * 45, 270)}ms`
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
       box.appendChild(el)
       spaceEls.set(space.id, { el, updatedAt: space.updatedAt })
+      drawMeters(el)
     } else if (known.updatedAt !== space.updatedAt) {
+      const prevSpace = prev?.spaces.find((s) => s.id === space.id)
       known.el.innerHTML = spaceInner(space)
       known.el.style.animationDelay = '0ms'
+      known.el.classList.remove('fresh')
       // blocks the agent just added rise in individually
-      const before = new Set((prev?.spaces.find((s) => s.id === space.id)?.blocks || []).map((b) => b.id))
+      const before = new Set((prevSpace?.blocks || []).map((b) => b.id))
       let n = 0
       for (const bel of known.el.querySelectorAll('[data-bid]')) {
         if (!before.has(bel.dataset.bid)) {
           bel.classList.add('arrive')
           bel.style.setProperty('--d', `${Math.min(n++, 4) * 45}ms`)
+        }
+      }
+      // changed numbers beat; changed meters glide from where they were
+      for (const b of space.blocks) {
+        const pb = prevSpace?.blocks.find((x) => x.id === b.id)
+        if (!pb) continue
+        const bel = known.el.querySelector(`[data-bid="${b.id}"]`)
+        if (!bel) continue
+        if (b.type === 'tracker' && pb.current !== b.current) {
+          bump(bel.querySelector('.tracker-count'))
+          const span = bel.querySelector('.meter span')
+          if (span && !reduced) {
+            const target = span.style.width
+            span.style.transition = 'none'
+            span.style.width = `${Math.min(100, Math.round((pb.current / pb.target) * 100))}%`
+            void span.offsetWidth
+            span.style.transition = ''
+            requestAnimationFrame(() => (span.style.width = target))
+          }
+        }
+        if (b.type === 'ledger' && (pb.total ?? 0) !== (b.total ?? 0)) {
+          bump(bel.querySelector('.ledger-total'))
         }
       }
       // cards receiving a travel dot wash when the dot lands, not before
@@ -433,6 +474,11 @@ function renderAsk() {
     </div>`
 }
 
+function renderHint() {
+  const empty = !state.spaces.length && !state.captures.length && !(state.suggestions || []).length
+  $('#hint').textContent = empty ? 'Rent, a habit, a goal, a stray thought. Write it and it organizes itself.' : ''
+}
+
 function render() {
   renderYearline()
   const targets = travelTargets()
@@ -441,6 +487,7 @@ function render() {
   renderActivity()
   renderSuggestions()
   renderAsk()
+  renderHint()
   renderRail()
   celebrateDiffs()
   prev = state
@@ -609,6 +656,11 @@ document.addEventListener('click', async (e) => {
     if (done) {
       pop(row.querySelector('.tick'))
       celebrate(row.querySelector('.tick'))
+      // finishing the whole list earns the card a wash
+      const blockEl = row.closest('[data-bid]')
+      if (blockEl && ![...blockEl.querySelectorAll('.row')].some((r) => !r.classList.contains('done'))) {
+        setTimeout(() => washCard(row.closest('.space')), 300)
+      }
     }
     try {
       state = await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done })
@@ -654,10 +706,6 @@ $('#theme-toggle').addEventListener('click', () => {
   root.classList.add('theming')
   root.dataset.theme = next
   localStorage.setItem('dec-theme', next)
-  const btn = $('#theme-toggle')
-  btn.classList.remove('spin')
-  void btn.offsetWidth
-  btn.classList.add('spin')
   setTimeout(() => root.classList.remove('theming'), 320)
 })
 
