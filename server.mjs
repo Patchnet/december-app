@@ -78,7 +78,7 @@ const server = createServer(async (req, res) => {
       const lines = text.includes('\n')
         ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter((l) => l.length > 2).slice(0, 25)
         : [text]
-      for (const line of lines) await addCapture(line)
+      for (const line of lines) await addCapture(line, body.hint)
       settle.schedule()
       return json(res, 200, project(settle.status()))
     }

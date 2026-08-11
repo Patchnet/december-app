@@ -41,6 +41,7 @@
   --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-pill: 999px;
 
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
   --fs-h3: 36px; --fs-lede: 28px; --fs-body: 18px; --fs-small: 14px;
   --lh-h3: 1.1; --lh-body: 1.5; --ls-h3: -0.015em;
 
@@ -386,6 +387,9 @@ body {
 }
 .rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
 .rail a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--text-3);
   text-decoration: none;
   font-size: 12.5px;
@@ -394,6 +398,7 @@ body {
   text-overflow: ellipsis;
   transition: color var(--m-ui) var(--ease);
 }
+.rail .hue { width: 6px; height: 6px; opacity: 0.8; }
 .rail a:hover { color: var(--text-1); }
 .rail a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
 
@@ -431,12 +436,25 @@ body {
   100% { border-color: var(--line-1); }
 }
 
+/* the identity layer is serif: a journal that keeps itself */
 .space-name {
-  font-size: var(--fs-body);
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: 0;
   margin: 0 0 var(--space-4);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
 }
+.hue {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  align-self: center;
+}
+.ghost-hue { background: var(--line-2); }
 
 .block { margin-bottom: var(--space-5); }
 .block:last-child { margin-bottom: 0; }
@@ -632,6 +650,126 @@ body {
 .row.reminder .row-text { color: var(--text-1); }
 .row.reminder.done .row-text { color: var(--text-3); }
 
+/* ----------------------------------------------------- hero + compact
+   Every space leads with its heartbeat; secondaries fold to one line. */
+
+.block.hero .ledger-total { font-size: 28px; }
+.block.hero .tracker-count b { font-size: 19px; }
+.block.hero .meter { height: 6px; }
+
+.c-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: 13px;
+}
+.c-title { color: var(--text-3); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mini-meter {
+  flex: 0 0 44px;
+  height: 3px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.mini-meter i { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-pill); }
+.streak-dots.mini { gap: 3px; }
+.streak-dots.mini i { width: 5px; height: 5px; }
+
+/* ---------------------------------------------------------- the ghosts
+   The instant sketch: dashed, faint, waiting to be inked. */
+
+.space.ghost {
+  border-style: dashed;
+  opacity: 0.6;
+  box-shadow: none;
+  animation: materialize var(--m-enter) var(--ease-out) both;
+}
+.block.ghost { opacity: 0.55; }
+.gb {
+  display: block;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  margin-bottom: var(--space-2);
+  animation: settling-breathe 1.8s var(--ease) infinite;
+}
+.gb-1 { width: 62%; }
+.gb-2 { width: 38%; animation-delay: 300ms; }
+.gk-ledger .gb-1 { height: 20px; width: 34%; }
+.gk-tracker .gb-2 { height: 4px; width: 100%; }
+.gk-reminder .gb-2 { display: none; }
+@keyframes settling-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.ghost-out { opacity: 0 !important; transition: opacity var(--m-depth) var(--ease); }
+
+/* ------------------------------------------------------- the today strip */
+
+.today { max-width: 640px; margin: 0 0 var(--space-3); }
+.today:empty { margin: 0; }
+.today-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-1) 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+.today-row .row-text { flex: 1; min-width: 0; }
+.today-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.today-sub.overdue { color: var(--bad-ink); }
+
+/* --------------------------------------------------------- the year view */
+
+.yearline { cursor: pointer; transition: color var(--m-ui) var(--ease), opacity var(--m-ui) var(--ease); }
+.yearline:hover { color: var(--text-1); opacity: 1; }
+
+.year-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
+.ym {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-1);
+}
+.ym-name {
+  font-family: var(--font-serif);
+  flex: 0 0 88px;
+  font-size: 14px;
+}
+.ym.future .ym-name { color: var(--text-3); }
+.ym.now .ym-name::after { content: "·"; color: var(--accent); margin-left: 6px; }
+.ym-body { flex: 1; min-width: 0; }
+.ym-dots { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 var(--space-1); }
+.ym-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0.65;
+}
+.ym-hl { font-size: 12.5px; color: var(--text-3); text-wrap: pretty; padding: 1px 0; }
+.ym-quiet { font-size: 12.5px; color: var(--text-3); opacity: 0.6; font-style: italic; }
+
+/* ---------------------------------------------------- talking to a space */
+
+.focus-capture {
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+  font-size: 15px;
+  max-width: none;
+  border-radius: 0;
+}
+
 /* ------------------------------------------------------ resting spaces
    The year accumulates; the page doesn't. Quiet spaces rest down here. */
 
@@ -795,11 +933,35 @@ body {
   100% { color: inherit; }
 }
 
+/* -------------------------------------------------------- phone-first
+   On a phone, December is a message to yourself: capture lives at the
+   bottom, under the thumb; the page scrolls above it. */
 @media (max-width: 720px) {
   .spaces { columns: 1; }
   .rail.on { display: none; }
-  .shell { padding: var(--space-6) var(--space-5) var(--space-10); }
-  .corner { position: static; justify-content: flex-end; margin-bottom: var(--space-4); }
+  .shell { padding: var(--space-5) var(--space-5) 120px; }
+  .corner { position: static; justify-content: flex-end; margin-bottom: var(--space-3); }
+  .capture {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    max-width: none;
+    margin: 0;
+    background: var(--elevated);
+    border-top: 1px solid var(--line-1);
+    padding: var(--space-4) var(--space-5) calc(var(--space-4) + env(safe-area-inset-bottom));
+    font-size: 16px;
+  }
+  .focus-capture {
+    position: static;
+    border-top: 1px solid var(--line-1);
+    padding: var(--space-4) 0 0;
+    background: transparent;
+  }
+  .focus-wrap { padding: 2vh 10px; }
+  .focus-card { max-height: 92vh; padding: var(--space-6); }
 }
 
 @media (prefers-reduced-motion: reduce) {

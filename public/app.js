@@ -79,8 +79,18 @@ function pop(el) {
 
 // ---------------------------------------------------------------- blocks
 
+// spaces carry a stable hue from a closed set — the app-launcher family
+const HUES = ['#2A8AB8', '#2DA890', '#D9A441', '#7A5FC4', '#6F7E94', '#E8625A', '#CF6A98']
+const hueOf = (id) => HUES[[...String(id)].reduce((n, c) => n + c.charCodeAt(0), 0) % 7]
+
+// provenance: a change can show the words it came from
+const srcTitle = (src) => {
+  const t = src && state.sources?.[src]
+  return t ? ` title="from: ${esc(t)}"` : ''
+}
+
 const rowMarkup = (b, i) => `
-      <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}">
+      <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}"${srcTitle(i.src)}>
         <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
         <span class="row-text">${esc(i.text)}</span>
       </button>`
@@ -126,7 +136,7 @@ const RENDER = {
     ${b.entries
       .slice(full ? -24 : -3)
       .reverse()
-      .map((e) => `<div class="ledger-entry"><span>${esc(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
+      .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${esc(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
       .join('')}`
   },
 
@@ -157,15 +167,57 @@ const RENDER = {
     </button>`,
 }
 
+// compact one-line variants for a card's secondary instruments
+const COMPACT = {
+  tracker: (b) => `
+    <div class="c-line"${srcTitle(b.src)}><span class="c-title">${esc(b.title)}</span>
+      <span class="mini-meter"><i style="width:${Math.min(100, Math.round((b.current / b.target) * 100))}%"></i></span>
+      <span class="c-val">${b.current}/${b.target}</span></div>`,
+  ledger: (b) => `
+    <div class="c-line"><span class="c-title">${esc(b.title)}</span>
+      <span class="c-val">${fmtAmount(b.total, b.unit)}</span></div>`,
+  streak: (b) => {
+    const last7 = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+      last7.push(`<i class="${b.dates.includes(d) ? 'on' : ''}"></i>`)
+    }
+    return `
+    <div class="c-line"><span class="c-title">${esc(b.title)}</span>
+      <span class="streak-dots mini">${last7.join('')}</span>
+      <span class="c-val">${b.dates.length}</span></div>`
+  },
+}
+
+/** Every space leads with its heartbeat: one hero instrument, the rest quiet. */
+function heroId(space) {
+  const order = ['tracker-year', 'tracker', 'ledger', 'streak']
+  for (const want of order) {
+    const hit = space.blocks.find((b) =>
+      want === 'tracker-year' ? b.type === 'tracker' && b.period === 'year' : b.type === want
+    )
+    if (hit) return hit.id
+  }
+  return null
+}
+
 function spaceInner(space, full = false) {
   // reminders that are open float to the top of the card
   const blocks = [...space.blocks].sort((a, b) => {
     const w = (x) => (x.type === 'reminder' && !x.done ? 0 : 1)
     return w(a) - w(b)
   })
+  const hero = full ? null : heroId(space)
   return `
-    <h2 class="space-name">${esc(space.name)}</h2>
-    ${blocks.map((b) => `<div class="block" data-bid="${b.id}">${RENDER[b.type] ? RENDER[b.type](b, full) : ''}</div>`).join('')}`
+    <h2 class="space-name"><i class="hue" style="background:${hueOf(space.id)}"></i>${esc(space.name)}</h2>
+    ${blocks
+      .map((b) => {
+        const isHero = b.id === hero
+        const compact = !full && !isHero && COMPACT[b.type]
+        const body = compact ? COMPACT[b.type](b) : RENDER[b.type] ? RENDER[b.type](b, full) : ''
+        return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
+      })
+      .join('')}`
 }
 
 // ------------------------------------------------------------ focus view
@@ -183,13 +235,18 @@ function buildFocus() {
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
-      <article class="focus-card" data-sid="${space.id}">${spaceInner(space, true)}</article>
+      <article class="focus-card" data-sid="${space.id}">
+        ${spaceInner(space, true)}
+        <textarea class="capture focus-capture" rows="1" placeholder="Add to ${esc(space.name)}…" spellcheck="false"></textarea>
+      </article>
     </div>`
   wrap.dataset.u = space.updatedAt
+  wrap.querySelector('.focus-capture')?.focus()
 }
 
 function closeFocus() {
   focusId = null
+  yearOpen = false
   $('#focus').innerHTML = ''
   $('#focus').dataset.u = ''
 }
@@ -206,11 +263,12 @@ function renderYearline() {
 
 /** An accent dot arcs from where your sentence was to the space it landed
     in. Slow enough to follow; the page holds still while it flies. */
-function travelDot(fromRect, toEl, then) {
+function travelDot(fromRect, toEl, then, hue) {
   if (reduced || !toEl) return then?.()
   const to = toEl.getBoundingClientRect()
   const dot = document.createElement('div')
   dot.className = 'travel-dot'
+  if (hue) dot.style.background = hue
   dot.style.left = `${fromRect.left}px`
   dot.style.top = `${fromRect.top + fromRect.height / 2}px`
   document.body.appendChild(dot)
@@ -282,6 +340,54 @@ function travelTargets() {
   return targets
 }
 
+// ---------------------------------------------------------------- ghosts
+// The instant sketch: a faint guess appears the moment you type, and the
+// real settle inks over it.
+
+const ghosts = new Map() // captureId -> el
+
+function guessKind(text) {
+  const t = text.toLowerCase()
+  if (/remind|remember to|don't forget/.test(t)) return 'reminder'
+  if (/[$€£]|paid|spent|bought|cost/.test(t) && /\d/.test(t)) return 'ledger'
+  if (/\bof \d+|goal|target|by december|progress/.test(t)) return 'tracker'
+  return 'note'
+}
+
+function addGhost(c) {
+  if (reduced || ghosts.has(c.id)) return
+  const t = c.text.toLowerCase()
+  const space = state.spaces.find((s) => t.includes(s.name.toLowerCase())) ||
+    (c.hint && state.spaces.find((s) => s.name === c.hint))
+  const kind = guessKind(c.text)
+  if (space) {
+    // sketch lands inside the space it will likely join
+    const known = spaceEls.get(space.id)
+    if (!known) return
+    const el = document.createElement('div')
+    el.className = `block ghost gk-${kind}`
+    el.innerHTML = `<span class="gb gb-1"></span><span class="gb gb-2"></span>`
+    known.el.appendChild(el)
+    ghosts.set(c.id, el)
+  } else {
+    const el = document.createElement('article')
+    el.className = 'space ghost'
+    el.innerHTML = `
+      <h2 class="space-name"><i class="hue ghost-hue"></i>${esc(c.text.split(/[.,]/)[0].slice(0, 26))}</h2>
+      <div class="block gk-${kind}"><span class="gb gb-1"></span><span class="gb gb-2"></span></div>`
+    $('#spaces').prepend(el)
+    ghosts.set(c.id, el)
+  }
+}
+
+function removeGhost(cid) {
+  const el = ghosts.get(cid)
+  if (!el) return
+  ghosts.delete(cid)
+  el.classList.add('ghost-out')
+  setTimeout(() => el.remove(), 300)
+}
+
 function renderInbox(targets = new Map()) {
   const box = $('#inbox')
   const failed = !state.settle.running && state.settle.lastError
@@ -292,6 +398,7 @@ function renderInbox(targets = new Map()) {
   // still for the whole flight.
   for (const row of box.querySelectorAll('.inbox-row')) {
     if (!ids.has(row.dataset.cid) && !row.classList.contains('done-wait')) {
+      removeGhost(row.dataset.cid)
       row.classList.add('done-wait')
       const text = row.querySelector('.inbox-text')
       text.classList.remove('reading')
@@ -307,7 +414,7 @@ function renderInbox(targets = new Map()) {
         travelDot(rect, targetEl, () => {
           washCard(targetEl)
           fold()
-        })
+        }, hueOf(targetEl.dataset.sid))
       } else {
         fold()
       }
@@ -322,6 +429,7 @@ function renderInbox(targets = new Map()) {
       row.dataset.cid = c.id
       row.innerHTML = `<div><span class="inbox-text">${esc(c.text)}</span><span class="inbox-state"></span></div>`
       box.appendChild(row)
+      addGhost(c)
     }
     const text = row.querySelector('.inbox-text')
     const chip = row.querySelector('.inbox-state')
@@ -482,7 +590,7 @@ function renderRail() {
   if (rail.dataset.key === key) return
   rail.dataset.key = key
   rail.innerHTML = state.spaces
-    .map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`)
+    .map((s) => `<a href="#" data-jump="${s.id}"><i class="hue" style="background:${hueOf(s.id)}"></i>${esc(s.name)}</a>`)
     .join('')
 }
 
@@ -521,6 +629,75 @@ function renderAsk() {
     </div>`
 }
 
+/** The page faces the day: due reminders, and after five, open streaks. */
+function renderToday() {
+  const box = $('#today')
+  const today = new Date().toISOString().slice(0, 10)
+  const evening = new Date().getHours() >= 17
+  const items = []
+  for (const s of state.spaces) {
+    for (const b of s.blocks) {
+      if (b.type === 'reminder' && !b.done && b.when && b.when <= today) {
+        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub: b.when < today ? 'overdue' : 'today' })
+      }
+      if (evening && b.type === 'streak' && !b.dates.includes(today)) {
+        items.push({ kind: 'streak', sid: s.id, label: `${b.title} is still open`, sub: 'today' })
+      }
+    }
+  }
+  const key = items.map((i) => i.kind + (i.bid || i.sid) + i.sub).join()
+  if (box.dataset.key === key) return
+  box.dataset.key = key
+  box.innerHTML = items
+    .slice(0, 4)
+    .map((i) =>
+      i.kind === 'reminder'
+        ? `<button class="row today-row" data-block="${i.bid}">
+            <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
+            <span class="row-text">${esc(i.label)}</span><span class="today-sub ${i.sub}">${i.sub}</span></button>`
+        : `<button class="today-row plain" data-jump="${i.sid}">
+            <span class="row-text">${esc(i.label)}</span><span class="today-sub">${i.sub}</span></button>`
+    )
+    .join('')
+}
+
+// ------------------------------------------------------------- year view
+
+let yearOpen = false
+
+function buildYear() {
+  const y = state.year
+  if (!y) return
+  const wrap = $('#focus')
+  const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const rows = names
+    .map((name, m) => {
+      const data = y.months[m]
+      const future = m > y.month
+      const dots = Array.from({ length: Math.min(data.events, 28) }, () => '<i></i>').join('')
+      const hl = data.highlights.map((h) => `<div class="ym-hl">${esc(h)}</div>`).join('')
+      return `
+      <div class="ym ${future ? 'future' : ''} ${m === y.month ? 'now' : ''}">
+        <div class="ym-name">${name}</div>
+        <div class="ym-body">
+          ${data.events ? `<div class="ym-dots">${dots}</div>` : future ? '' : '<div class="ym-quiet">quiet</div>'}
+          ${hl}
+          ${m === 11 && future ? '<div class="ym-quiet">where this all lands</div>' : ''}
+        </div>
+      </div>`
+    })
+    .join('')
+  wrap.innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card year-card">
+        <h2 class="space-name">${y.year}</h2>
+        ${rows}
+      </article>
+    </div>`
+  yearOpen = true
+}
+
 function renderHint() {
   const empty = !state.spaces.length && !state.captures.length && !(state.suggestions || []).length
   $('#hint').textContent = empty ? 'Rent, a habit, a goal, a stray thought. Write it and it organizes itself.' : ''
@@ -535,6 +712,7 @@ function render() {
   renderSuggestions()
   renderAsk()
   renderHint()
+  renderToday()
   renderRail()
   celebrateDiffs()
   // keep an open focus view current with what the agent changes
@@ -585,23 +763,20 @@ async function submitCapture() {
 
 const field = $('#capture')
 
-// The page greets you like a person, not a form. A new question each visit
-// and after every capture.
-const PROMPTS = [
-  "What's up?",
-  "What's new?",
-  "What's on your mind?",
-  'What do you need to do today?',
-  'What happened today?',
-  'What are you tracking?',
-  'Anything to remember?',
-  'What did you get done?',
-]
+// The page greets you like a person, not a form — and it knows what time
+// it is. Mornings ask about the day ahead; nights ask what got done.
+const PROMPTS = {
+  morning: ['What do you need to do today?', "What's on your mind?", "What's up?", 'Anything to remember?'],
+  day: ["What's up?", "What's new?", "What's on your mind?", 'What are you tracking?', 'Anything to remember?'],
+  evening: ['What did you get done?', 'What happened today?', "What's on your mind?", 'Anything to remember?'],
+}
 function nextPrompt() {
+  const h = new Date().getHours()
+  const pool = PROMPTS[h < 12 ? 'morning' : h < 17 ? 'day' : 'evening']
   let p
   do {
-    p = PROMPTS[Math.floor(Math.random() * PROMPTS.length)]
-  } while (p === field.placeholder)
+    p = pool[Math.floor(Math.random() * pool.length)]
+  } while (p === field.placeholder && pool.length > 1)
   field.placeholder = p
 }
 nextPrompt()
@@ -610,6 +785,25 @@ field.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submitCapture()
+  }
+})
+
+// talking to a space from inside its focus view
+document.addEventListener('keydown', async (e) => {
+  const fc = e.target.closest?.('.focus-capture')
+  if (!fc || e.key !== 'Enter' || e.shiftKey) return
+  e.preventDefault()
+  const text = fc.value.trim()
+  if (!text) return
+  const hint = state.spaces.find((s) => s.id === focusId)?.name
+  fc.value = ''
+  try {
+    state = await api('/api/capture', { text, hint })
+    render()
+    schedulePoll()
+    toast(`settling into ${hint}`)
+  } catch (err) {
+    toast(err.message)
   }
 })
 field.addEventListener('input', () => {
@@ -788,11 +982,59 @@ $('#theme-toggle').addEventListener('click', () => {
 
 // ------------------------------------------------------------------ boot
 
+$('#yearline').addEventListener('click', () => (yearOpen ? closeFocus() : buildYear()))
+
+// ----------------------------------------------------- the first-run demo
+// Once, on a truly empty page: the page performs its own pitch, then
+// hands you the pen. Any key or click skips it.
+
+async function firstRunDemo() {
+  if (reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length) return
+  let alive = true
+  const stop = () => {
+    alive = false
+    localStorage.setItem('dec-demo', '1')
+    field.value = ''
+    document.querySelector('.demo-card')?.remove()
+  }
+  window.addEventListener('keydown', stop, { once: true })
+  window.addEventListener('mousedown', stop, { once: true })
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  const line = 'paid rent this month, $2300'
+  await wait(1200)
+  for (const ch of line) {
+    if (!alive) return
+    field.value += ch
+    await wait(55)
+  }
+  await wait(700)
+  if (!alive) return
+  field.value = ''
+  const card = document.createElement('article')
+  card.className = 'space demo-card'
+  card.innerHTML = `
+    <h2 class="space-name"><i class="hue" style="background:${HUES[0]}"></i>Housing</h2>
+    <div class="block hero">
+      <div class="block-title">Rent</div>
+      <div class="ledger-total">$2,300</div>
+      <div class="ledger-entry"><span>This month's rent</span><span>$2,300</span></div>
+    </div>`
+  $('#spaces').prepend(card)
+  await wait(2600)
+  if (!alive) return
+  card.classList.add('ghost-out')
+  await wait(320)
+  card.remove()
+  localStorage.setItem('dec-demo', '1')
+  toast('now you')
+}
+
 async function boot() {
   try {
     state = await api('/api/state')
     render()
     schedulePoll()
+    firstRunDemo()
   } catch (e) {
     document.body.innerHTML = `<pre style="padding:40px;font-family:monospace">could not load: ${e.message}</pre>`
   }
