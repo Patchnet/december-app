@@ -253,10 +253,6 @@ function closeFocus() {
 
 function renderYearline() {
   const now = new Date()
-  const dec31 = new Date(now.getFullYear(), 11, 31)
-  const days = Math.max(0, Math.ceil((dec31 - now) / 86400000))
-  const month = now.toLocaleString('en', { month: 'long' }).toLowerCase()
-  $('#yearline').textContent = `${month} · ${days} days to december`
   $('#dateline').textContent = `${now.toLocaleString('en', { month: 'long' })} ${now.getDate()}`
 }
 
@@ -498,10 +494,14 @@ function renderActivity() {
     n === 1
       ? `<b>${esc(latest.space)}</b> · ${esc(latest.summary.slice(0, 72))}`
       : `<b>${esc(latest.space)}</b> · ${n} recent changes`
+  el.classList.remove('faded')
   el.innerHTML =
     `<span class="act-stub ${n > 1 ? 'more' : ''}">${stub}</span>` +
     (state.canUndo ? ` · <button class="undo" id="undo-btn">undo</button>` : '') +
     (n > 1 ? `<div class="act-list">${acts.map((a) => `<div class="act-item"><b>${esc(a.space)}</b> ${esc(a.summary)}</div>`).join('')}</div>` : '')
+  // transients leave: the receipt has its moment, then steps back
+  clearTimeout(renderActivity._t)
+  renderActivity._t = setTimeout(() => el.classList.add('faded'), 45000)
 }
 
 const DORMANT_MS = 30 * 86400000
@@ -631,7 +631,7 @@ function celebrateDiffs() {
 
 function renderRail() {
   const rail = $('#rail')
-  const on = state.spaces.length >= 3
+  const on = state.spaces.length >= 6
   rail.classList.toggle('on', on)
   if (!on) return
   const key = state.spaces.map((s) => s.id + s.name).join()
@@ -652,9 +652,12 @@ function renderSuggestions() {
   const key = `${cap}|${list.join('|')}`
   if (box.dataset.key === key) return
   box.dataset.key = key
+  box.classList.remove('retired')
   box.innerHTML = list
     .map((s, i) => `<button class="chip-btn" data-suggest="${esc(s)}" style="--d:${i * 45}ms">${esc(s)}</button>`)
     .join('')
+  clearTimeout(renderSuggestions._t)
+  if (list.length) renderSuggestions._t = setTimeout(() => box.classList.add('retired'), 120000)
 }
 
 function renderAsk() {
@@ -746,6 +749,7 @@ function buildYear() {
         <div class="ym-body">
           ${data.events ? `<div class="ym-dots">${dots}</div>` : future ? '' : '<div class="ym-quiet">quiet</div>'}
           ${hl}
+          ${m === 11 && future ? `<div class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</div>` : ''}
         </div>
       </div>`
     })
@@ -906,19 +910,18 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // suggestion chip: the sentence files as if typed
+  // suggestion chip: the sentence files as if typed; the set retires with it
   const sug = e.target.closest('[data-suggest]')
   if (sug) {
     sug.classList.add('picked')
     const text = sug.dataset.suggest
-    const remaining = (state.suggestions || []).filter((s) => s !== text)
     setTimeout(async () => {
       try {
         state = await api('/api/capture', { text })
-        state.suggestions = remaining
+        state.suggestions = []
         render()
         schedulePoll()
-        api('/api/tool', { name: 'december_suggest', arguments: { suggestions: remaining } }).catch(() => {})
+        api('/api/tool', { name: 'december_suggest', arguments: { suggestions: [] } }).catch(() => {})
       } catch (err) {
         toast(err.message)
       }
@@ -1060,7 +1063,7 @@ $('#theme-toggle').addEventListener('click', () => {
 
 // ------------------------------------------------------------------ boot
 
-$('#yearline').addEventListener('click', () => (yearOpen ? closeFocus() : buildYear()))
+$('#dateline').addEventListener('click', () => (yearOpen ? closeFocus() : buildYear()))
 
 // ----------------------------------------------------- the first-run demo
 // Once, on a truly empty page: the page performs its own pitch, then

@@ -117,13 +117,6 @@ body {
   z-index: 40;
 }
 
-.yearline {
-  font-size: 11.5px;
-  color: var(--text-3);
-  opacity: 0.75;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
 
 .theme-toggle {
   position: relative;
@@ -162,13 +155,19 @@ body {
 :root[data-theme="dark"] .theme-toggle .moon { opacity: 0; transform: scale(0.25) rotate(40deg); }
 :root[data-theme="dark"] .theme-toggle .sun { opacity: 1; transform: none; }
 
-/* The page's only header: today, like a journal entry. */
+/* The page's only header: today, like a journal entry. It is also the
+   one door to the year. */
 .dateline {
   font-family: var(--font-serif);
   font-size: 21px;
   font-weight: 400;
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-3);
+  cursor: pointer;
+  display: inline-block;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--m-ui) var(--ease);
 }
+.dateline:hover { border-color: var(--line-2); }
 
 /* -------------------------------------------------------- the capture
    The page is the input: no box, no chrome, just the caret, top left. */
@@ -203,6 +202,8 @@ body {
   margin: 0 0 var(--space-4);
   caret-color: var(--accent);
 }
+.cwrap { margin-bottom: var(--space-3); }
+.capture { margin-bottom: 0; }
 .capture:focus { outline: none; }
 .capture::placeholder { color: var(--text-3); opacity: 0.7; }
 
@@ -224,7 +225,7 @@ body {
   height: 26px;
   padding: 0 11px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-2);
   background: var(--surface-1);
   border: 1px solid var(--line-1);
@@ -256,11 +257,11 @@ body {
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease);
 }
 .ask.out { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-.ask-q { font-size: 13.5px; color: var(--text-2); margin-bottom: var(--space-2); text-wrap: balance; }
+.ask-q { font-size: 14px; color: var(--text-2); margin-bottom: var(--space-2); text-wrap: balance; }
 .ask .chips { margin: 0; }
 .ask .skip {
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-3);
   background: none;
   border: 0;
@@ -291,7 +292,7 @@ body {
 .inbox-row .inbox-text {
   padding: 3px 0;
   color: var(--text-3);
-  font-size: 13.5px;
+  font-size: 13px;
   flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
@@ -353,7 +354,7 @@ body {
 }
 
 .activity {
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-3);
   padding: var(--space-1) 0 0;
   text-wrap: pretty;
@@ -365,6 +366,11 @@ body {
 .act-list { display: none; }
 .activity.open .act-list { display: block; padding-top: var(--space-2); }
 .act-item { padding: 2px 0; text-wrap: pretty; }
+/* transients leave: the receipt fades after its moment */
+.activity { margin-bottom: var(--space-3); transition: opacity 600ms var(--ease); }
+.activity.faded { opacity: 0; pointer-events: none; }
+.chips { transition: opacity 600ms var(--ease); }
+.chips.retired { opacity: 0; pointer-events: none; }
 .activity .undo {
   color: var(--accent-ink);
   background: none;
@@ -406,7 +412,7 @@ body {
   display: block;
   color: var(--text-3);
   text-decoration: none;
-  font-size: 12.5px;
+  font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -428,7 +434,10 @@ body {
   box-shadow: var(--card-shadow);
   padding: var(--space-5);
   animation: materialize var(--m-enter) var(--ease-out) both;
+  transition: border-color var(--m-ui) var(--ease);
 }
+/* a door hints it opens: tone only, never a lift */
+.space:hover:not(.ghost) { border-color: var(--line-2); }
 
 /* entrance finished: stop the animation fill so FLIP glides can move it */
 .space.settled { animation: none; }
@@ -455,7 +464,7 @@ body {
 /* the identity layer is serif: a journal that keeps itself */
 .space-name {
   font-family: var(--font-serif);
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 400;
   letter-spacing: 0;
   margin: 0 0 var(--space-4);
@@ -486,7 +495,7 @@ body {
 }
 
 .block-title {
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-3);
   margin-bottom: var(--space-2);
 }
@@ -564,7 +573,7 @@ body {
 .tracker-count { font-variant-numeric: tabular-nums; }
 .tracker-count b { font-weight: 500; }
 .tracker-count.full b { color: var(--good-ink); }
-.tracker-unit { color: var(--text-3); font-size: 12.5px; }
+.tracker-unit { color: var(--text-3); font-size: 11.5px; }
 .meter {
   position: relative;
   height: 4px;
@@ -591,7 +600,7 @@ body {
 
 /* the quiet tail of a long list */
 .done-more {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-3);
   padding: var(--space-1) 0 0 calc(18px + var(--space-3));
 }
@@ -607,7 +616,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
   padding: 1px 0;
@@ -649,7 +658,7 @@ body {
 .note-text.clamp.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
 
 /* ledger month line */
-.ledger-month { font-size: 12.5px; color: var(--text-2); margin-bottom: var(--space-2); font-variant-numeric: tabular-nums; }
+.ledger-month { font-size: 11.5px; color: var(--text-2); margin-bottom: var(--space-2); font-variant-numeric: tabular-nums; }
 
 /* reminder emphasis */
 .row.reminder .row-text { color: var(--text-1); }
@@ -729,7 +738,7 @@ body {
   background: none;
   border: 0;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -769,7 +778,7 @@ body {
   background: var(--accent);
   opacity: 0.65;
 }
-.ym-hl { font-size: 12.5px; color: var(--text-3); text-wrap: pretty; padding: 1px 0; }
+.ym-hl { font-size: 13px; color: var(--text-3); text-wrap: pretty; padding: 1px 0; }
 .ym-quiet { font-size: 12.5px; color: var(--text-3); opacity: 0.6; font-style: italic; }
 
 /* ---------------------------------------------------- talking to a space */
@@ -778,7 +787,7 @@ body {
   margin: var(--space-6) 0 0;
   padding-top: var(--space-4);
   border-top: 1px solid var(--line-1);
-  font-size: 15px;
+  font-size: 14px;
   max-width: none;
   border-radius: 0;
 }
@@ -789,7 +798,7 @@ body {
 .resting { max-width: 640px; margin-top: var(--space-9); }
 .resting:empty { margin: 0; }
 .rest-head {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-3);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line-1);
@@ -813,7 +822,7 @@ body {
 }
 .rest-row:hover { color: var(--text-1); }
 .rest-row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
-.rest-when { font-size: 12px; white-space: nowrap; }
+.rest-when { font-size: 11.5px; white-space: nowrap; }
 
 /* ------------------------------------------------------- the focus view */
 
