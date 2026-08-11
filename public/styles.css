@@ -162,8 +162,31 @@ body {
 :root[data-theme="dark"] .theme-toggle .moon { opacity: 0; transform: scale(0.25) rotate(40deg); }
 :root[data-theme="dark"] .theme-toggle .sun { opacity: 1; transform: none; }
 
+/* The page's only header: today, like a journal entry. */
+.dateline {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 400;
+  margin: 0 0 var(--space-4);
+}
+
 /* -------------------------------------------------------- the capture
    The page is the input: no box, no chrome, just the caret, top left. */
+
+.cwrap { position: relative; max-width: 640px; }
+
+/* the quiet Enter affordance: only while there is text, only early on */
+.enter-hint {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  font-size: 14px;
+  color: var(--text-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--m-ui) var(--ease);
+}
+.enter-hint.on { opacity: 0.55; }
 
 .capture {
   display: block;
@@ -337,6 +360,11 @@ body {
   animation: rise var(--m-enter) var(--ease-out) both;
 }
 .activity b { color: var(--text-2); font-weight: 500; }
+.act-stub.more { cursor: pointer; }
+.act-stub.more:hover { color: var(--text-2); }
+.act-list { display: none; }
+.activity.open .act-list { display: block; padding-top: var(--space-2); }
+.act-item { padding: 2px 0; text-wrap: pretty; }
 .activity .undo {
   color: var(--accent-ink);
   background: none;
@@ -697,7 +725,7 @@ body {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 3px 0;
+  padding: 5px 0;
   background: none;
   border: 0;
   font: inherit;
@@ -707,7 +735,9 @@ body {
   cursor: pointer;
   animation: rise var(--m-enter) var(--ease-out) both;
 }
-.today-row .row-text { flex: 0 1 auto; min-width: 0; }
+.today-row .row-text { flex: 0 1 auto; min-width: 0; transition: color var(--m-ui) var(--ease); }
+.today-row.plain .row-text { color: var(--text-2); }
+.today-row.plain:hover .row-text { color: var(--text-1); }
 .today-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .today-sub.overdue { color: var(--bad-ink); }
 
@@ -924,6 +954,7 @@ body {
   .rail.on { display: none; }
   .shell { padding: var(--space-5) var(--space-5) 120px; }
   .corner { position: static; justify-content: flex-end; margin-bottom: var(--space-3); }
+  .enter-hint { display: none; }
   .capture {
     position: fixed;
     left: 0;

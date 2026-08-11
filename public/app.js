@@ -257,6 +257,7 @@ function renderYearline() {
   const days = Math.max(0, Math.ceil((dec31 - now) / 86400000))
   const month = now.toLocaleString('en', { month: 'long' }).toLowerCase()
   $('#yearline').textContent = `${month} · ${days} days to december`
+  $('#dateline').textContent = `${now.toLocaleString('en', { month: 'long' })} ${now.getDate()}`
 }
 
 /** An accent dot arcs from where your sentence was to the space it landed
@@ -477,17 +478,25 @@ function renderInbox(targets = new Map()) {
   }
 }
 
+/** Receipts are stubs: one short line; the full story one click away. */
 function renderActivity() {
   const el = $('#activity')
-  const a = state.activity[0]
-  if (!a) {
+  const acts = state.activity || []
+  if (!acts.length) {
     el.innerHTML = ''
+    el.classList.remove('open')
     return
   }
-  const extra = state.activity.length > 1 ? ` <span>+${state.activity.length - 1} more</span>` : ''
+  const latest = acts[0]
+  const n = acts.length
+  const stub =
+    n === 1
+      ? `<b>${esc(latest.space)}</b> · ${esc(latest.summary.slice(0, 72))}`
+      : `<b>${esc(latest.space)}</b> · ${n} recent changes`
   el.innerHTML =
-    `<b>${esc(a.space)}</b> · ${esc(a.summary)}${extra}` +
-    (state.canUndo ? ` · <button class="undo" id="undo-btn">undo</button>` : '')
+    `<span class="act-stub ${n > 1 ? 'more' : ''}">${stub}</span>` +
+    (state.canUndo ? ` · <button class="undo" id="undo-btn">undo</button>` : '') +
+    (n > 1 ? `<div class="act-list">${acts.map((a) => `<div class="act-item"><b>${esc(a.space)}</b> ${esc(a.summary)}</div>`).join('')}</div>` : '')
 }
 
 const DORMANT_MS = 30 * 86400000
@@ -628,12 +637,17 @@ function renderRail() {
     .join('')
 }
 
+let attentionCount = 0
+
+/** The busyness budget: attention beats suggestions; settling beats both. */
 function renderSuggestions() {
   const box = $('#suggest')
-  const key = (state.suggestions || []).join('|')
+  const cap = state.captures.length ? 0 : attentionCount >= 3 ? 2 : 3
+  const list = (state.suggestions || []).slice(0, cap)
+  const key = `${cap}|${list.join('|')}`
   if (box.dataset.key === key) return
   box.dataset.key = key
-  box.innerHTML = (state.suggestions || [])
+  box.innerHTML = list
     .map((s, i) => `<button class="chip-btn" data-suggest="${esc(s)}" style="--d:${i * 45}ms">${esc(s)}</button>`)
     .join('')
 }
@@ -689,6 +703,7 @@ function renderToday() {
     if (seen.has(`${su.spaceId}|${su.label.toLowerCase()}`)) continue
     items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
   }
+  attentionCount = items.length
   const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   box.dataset.key = key
@@ -754,10 +769,10 @@ function render() {
     renderInbox(targets)
   })
   renderActivity()
+  renderToday()
   renderSuggestions()
   renderAsk()
   renderHint()
-  renderToday()
   renderRail()
   celebrateDiffs()
   // keep an open focus view current with what the agent changes
@@ -795,6 +810,8 @@ async function submitCapture() {
   if (!text) return
   field.value = ''
   field.style.height = 'auto'
+  enterHint.classList.remove('on')
+  localStorage.setItem('dec-files', String(Number(localStorage.getItem('dec-files') || 0) + 1))
   nextPrompt()
   try {
     state = await api('/api/capture', { text })
@@ -851,9 +868,13 @@ document.addEventListener('keydown', async (e) => {
     toast(err.message)
   }
 })
+const enterHint = $('#enter-hint')
+const hintEligible = () => Number(localStorage.getItem('dec-files') || 0) < 5
+
 field.addEventListener('input', () => {
   field.style.height = 'auto'
   field.style.height = `${Math.min(field.scrollHeight, 200)}px`
+  enterHint.classList.toggle('on', !!field.value.trim() && hintEligible())
 })
 
 // The page is the input: start typing anywhere and it lands in the capture.
@@ -942,6 +963,13 @@ document.addEventListener('click', async (e) => {
   // closing the focus view: backdrop or wrapper, never the card itself
   if (e.target.dataset?.close !== undefined) {
     closeFocus()
+    return
+  }
+
+  // the receipt stub unfolds its full story
+  const stub = e.target.closest('.act-stub.more')
+  if (stub) {
+    $('#activity').classList.toggle('open')
     return
   }
 
