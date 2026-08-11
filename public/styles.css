@@ -223,18 +223,17 @@ body {
   100% { transform: none; }
 }
 
+/* the ask is a margin note, not a dialog box */
 .ask {
   max-width: 640px;
-  border: 1px solid var(--line-1);
-  background: var(--surface-1);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4) var(--space-5);
-  margin: var(--space-2) 0 var(--space-3);
+  border-left: 2px solid var(--accent-edge);
+  padding: var(--space-1) 0 var(--space-1) var(--space-5);
+  margin: var(--space-3) 0 var(--space-4);
   animation: materialize var(--m-struct) var(--ease-out) both;
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease);
 }
 .ask.out { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-.ask-q { font-size: 14px; margin-bottom: var(--space-3); text-wrap: balance; }
+.ask-q { font-size: 13.5px; color: var(--text-2); margin-bottom: var(--space-2); text-wrap: balance; }
 .ask .chips { margin: 0; }
 .ask .skip {
   font: inherit;
@@ -263,13 +262,14 @@ body {
   min-height: 0;
   overflow: hidden;
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2);
 }
 .inbox-row .inbox-text {
-  padding: var(--space-2) 0;
-  color: var(--text-2);
-  flex: 1;
+  padding: 3px 0;
+  color: var(--text-3);
+  font-size: 13.5px;
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -310,10 +310,11 @@ body {
   to   { background-position: -130% 0; }
 }
 
-/* The quiet working mark: one breathing accent dot. */
+/* The quiet working mark: one breathing accent dot, right beside its words. */
 .working-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
   border-radius: var(--radius-pill);
   background: var(--accent);
   animation: breathe 1.6s var(--ease) infinite;
@@ -715,16 +716,17 @@ body {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-1) 0;
+  padding: 3px 0;
   background: none;
   border: 0;
   font: inherit;
+  font-size: 13.5px;
   color: inherit;
   text-align: left;
   cursor: pointer;
   animation: rise var(--m-enter) var(--ease-out) both;
 }
-.today-row .row-text { flex: 1; min-width: 0; }
+.today-row .row-text { flex: 0 1 auto; min-width: 0; }
 .today-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .today-sub.overdue { color: var(--bad-ink); }
 
