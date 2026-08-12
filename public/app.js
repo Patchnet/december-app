@@ -80,6 +80,30 @@ function pop(el) {
 
 // ---------------------------------------------------------------- blocks
 
+// links in card content become quiet hyperlinks: host + path as the label,
+// raw urls never shown
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/g
+function linkify(raw) {
+  let out = ''
+  let last = 0
+  for (const m of String(raw).matchAll(URL_RE)) {
+    out += esc(raw.slice(last, m.index))
+    const url = m[0].replace(/[.,;:!?]+$/, '')
+    const trail = m[0].slice(url.length)
+    let label
+    try {
+      const u = new URL(url)
+      label = u.hostname.replace(/^www\./, '') + (u.pathname !== '/' ? u.pathname : '')
+    } catch {
+      label = url
+    }
+    if (label.length > 32) label = `${label.slice(0, 29)}…`
+    out += `<a class="card-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>${esc(trail)}`
+    last = m.index + m[0].length
+  }
+  return out + esc(raw.slice(last))
+}
+
 // provenance: a change can show the words it came from
 const srcTitle = (src) => {
   const t = src && state.sources?.[src]
@@ -89,7 +113,7 @@ const srcTitle = (src) => {
 const rowMarkup = (b, i) => `
       <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}"${srcTitle(i.src)}>
         <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-        <span class="row-text">${esc(i.text)}</span>
+        <span class="row-text">${linkify(i.text)}</span>
       </button>`
 
 const RENDER = {
@@ -135,7 +159,7 @@ const RENDER = {
     ${b.entries
       .slice(full ? -24 : -3)
       .reverse()
-      .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${esc(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
+      .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${linkify(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
       .join('')}`
   },
 
@@ -157,12 +181,12 @@ const RENDER = {
 
   note: (b, full) => `
     ${b.title && !/^notes?$/i.test(b.title.trim()) ? `<div class="block-title">${esc(b.title)}</div>` : ''}
-    <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${esc(b.text)}</div>`,
+    <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(b.text)}</div>`,
 
   reminder: (b) => `
     <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}">
       <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-      <span class="row-text">${esc(b.text)}</span>
+      <span class="row-text">${linkify(b.text)}</span>
     </button>`,
 }
 
@@ -886,6 +910,9 @@ document.addEventListener('keydown', (e) => {
 })
 
 document.addEventListener('click', async (e) => {
+  // a link in a card is a link: let the browser have it
+  if (e.target.closest('a.card-link')) return
+
   // a long note unfolds
   const note = e.target.closest('.note-text.clamp')
   if (note) {

@@ -664,6 +664,16 @@ body {
   to   { opacity: 1; transform: none; }
 }
 
+/* links inside cards: quiet, labeled by their host, never a raw url */
+.card-link {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-edge);
+  transition: border-color var(--m-ui) var(--ease);
+  word-break: break-all;
+}
+.card-link:hover { border-color: var(--accent-ink); }
+
 /* note */
 .note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; }
 .note-text.clamp {
