@@ -733,9 +733,9 @@ function renderToday() {
   const box = $('#today')
   const today = new Date().toISOString().slice(0, 10)
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  const evening = new Date().getHours() >= 17
   const items = []
   const seen = new Set()
+  // the strip carries ONLY things with a clock on them: act or it lapses
   for (const s of state.spaces) {
     for (const b of s.blocks) {
       if (b.type === 'reminder' && !b.done && b.when && b.when <= tomorrow) {
@@ -743,9 +743,6 @@ function renderToday() {
         const sub = b.when < today ? 'overdue' : b.when === today ? '' : 'tomorrow'
         items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub })
         seen.add(`${s.id}|${b.text.toLowerCase()}`)
-      }
-      if (evening && b.type === 'streak' && !b.dates.includes(today)) {
-        items.push({ kind: 'streak', sid: s.id, label: b.title, sub: 'still open' })
       }
     }
   }
