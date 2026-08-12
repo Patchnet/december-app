@@ -5,6 +5,8 @@
 // page never feels like it refreshed.
 
 const $ = (sel) => document.querySelector(sel)
+const localDay = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 let state = null
@@ -151,7 +153,7 @@ const RENDER = {
   },
 
   ledger: (b, full, hero) => {
-    const month = new Date().toISOString().slice(0, 7)
+    const month = localDay().slice(0, 7)
     const monthSum = b.entries.filter((e) => (e.at || '').startsWith(month)).reduce((n, e) => n + (Number(e.amount) || 0), 0)
     const monthLine =
       monthSum && monthSum !== b.total
@@ -171,7 +173,7 @@ const RENDER = {
   streak: (b, full, hero) => {
     const days = []
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+      const d = localDay(new Date(Date.now() - i * 86400000))
       const on = b.dates.includes(d)
       const today = i === 0 && !on
       days.push(`<i class="${on ? 'on' : ''}${today ? 'today' : ''}" style="--i:${13 - i}"></i>`)
@@ -214,7 +216,7 @@ const COMPACT = {
   streak: (b) => {
     const last7 = []
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+      const d = localDay(new Date(Date.now() - i * 86400000))
       last7.push(`<i class="${b.dates.includes(d) ? 'on' : ''}"></i>`)
     }
     return `
@@ -731,8 +733,8 @@ function renderAsk() {
     surfacing sense pinned, each with its reason. */
 function renderToday() {
   const box = $('#today')
-  const today = new Date().toISOString().slice(0, 10)
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const today = localDay()
+  const tomorrow = localDay(new Date(Date.now() + 86400000))
   const items = []
   const seen = new Set()
   // the strip carries ONLY things with a clock on them: act or it lapses
@@ -758,18 +760,31 @@ function renderToday() {
   // must not replay entrances
   if (box.dataset.key !== undefined) box.classList.add('norise')
   box.dataset.key = key
-  // every row shares one left column: tick, or an empty slot the same width
+  // every row shares one left column, and every row opens into a moment:
+  // answer it right here — done, not yet, or say what happened
   box.innerHTML = items
     .slice(0, 4)
     .map((i) => {
       const sub = i.sub ? `<span class="today-sub ${i.sub === 'overdue' ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
-      return i.kind === 'reminder'
-        ? `<button class="row today-row" data-block="${i.bid}">
-            <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-            <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-        : `<button class="today-row plain" ${i.sid ? `data-jump="${i.sid}"` : ''}>
-            <span class="tick-slot"></span>
-            <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+      const spaceName = state.spaces.find((s) => s.id === i.sid)?.name || ''
+      const input = `<input class="act-input" data-sid="${i.sid || ''}" placeholder="or say what happened…" />`
+      const openChip = i.sid ? `<button class="chip-btn" data-jump="${i.sid}">open</button>` : ''
+      const moment =
+        i.kind === 'reminder'
+          ? `<button class="chip-btn" data-act-done="${i.bid}">done</button>
+             <button class="chip-btn" data-act-later="${i.bid}">not yet</button>
+             ${openChip}${input}`
+          : `<button class="chip-btn" data-act-handled="${esc(i.label)}">handled</button>
+             ${openChip}${input}`
+      const row =
+        i.kind === 'reminder'
+          ? `<button class="row today-row" data-block="${i.bid}">
+              <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
+              <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+          : `<button class="today-row plain">
+              <span class="tick-slot"></span>
+              <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+      return `<div class="today-item">${row}<div class="act-moment" hidden>${moment}</div></div>`
     })
     .join('')
 }
@@ -913,6 +928,26 @@ field.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submitCapture()
+  }
+})
+
+// the action moment's input: what happened, in your words, scoped
+document.addEventListener('keydown', async (e) => {
+  const ai = e.target.closest?.('.act-input')
+  if (!ai || e.key !== 'Enter') return
+  e.preventDefault()
+  const text = ai.value.trim()
+  if (!text) return
+  const hint = state.spaces.find((s) => s.id === ai.dataset.sid)?.name
+  ai.value = ''
+  ai.closest('.act-moment').hidden = true
+  try {
+    state = await api('/api/capture', { text, hint })
+    render()
+    schedulePoll()
+    toast(hint ? `settling into ${hint}` : 'settling')
+  } catch (err) {
+    toast(err.message)
   }
 })
 
@@ -1091,6 +1126,59 @@ document.addEventListener('click', async (e) => {
   const stub = e.target.closest('.act-stub.more')
   if (stub) {
     $('#activity').classList.toggle('open')
+    return
+  }
+
+  // an attention row's body opens its action moment (the tick still checks)
+  const tRow = e.target.closest('#today .today-row')
+  if (tRow && !e.target.closest('.tick')) {
+    const moment = tRow.parentElement.querySelector('.act-moment')
+    const wasHidden = moment.hidden
+    for (const m of document.querySelectorAll('.act-moment')) m.hidden = true
+    moment.hidden = !wasHidden
+    return
+  }
+
+  // moment: done — same joy as the tick
+  const actDone = e.target.closest('[data-act-done]')
+  if (actDone) {
+    const row = document.querySelector(`#today .row[data-block="${actDone.dataset.actDone}"]`)
+    row?.querySelector('.tick')?.click()
+    actDone.closest('.act-moment').hidden = true
+    return
+  }
+
+  // moment: not yet — the clock rolls to tomorrow
+  const actLater = e.target.closest('[data-act-later]')
+  if (actLater) {
+    const tomorrow = localDay(new Date(Date.now() + 86400000))
+    try {
+      await api('/api/tool', { name: 'december_update_block', arguments: { blockId: actLater.dataset.actLater, reminder_when: tomorrow } })
+      state = await api('/api/state')
+      render()
+      toast('tomorrow, then')
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
+
+  // moment: handled — the surfaced item stands down
+  const actHandled = e.target.closest('[data-act-handled]')
+  if (actHandled) {
+    const label = actHandled.dataset.actHandled
+    const remaining = (state.surfaced || []).filter((s) => s.label !== label)
+    try {
+      await api('/api/tool', {
+        name: 'december_surface',
+        arguments: { items: remaining.map((s) => ({ label: s.label, reason: s.reason, space: state.spaces.find((x) => x.id === s.spaceId)?.name || s.label, until: s.until || undefined })) },
+      })
+      state.surfaced = remaining
+      render()
+      toast('handled')
+    } catch (err) {
+      toast(err.message)
+    }
     return
   }
 
@@ -1374,7 +1462,7 @@ document.addEventListener('click', (e) => {
 
 function maybeNotify(items) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDay()
   let seen
   try {
     seen = JSON.parse(localStorage.getItem('dec-notified') || '{}')
