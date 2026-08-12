@@ -14,11 +14,15 @@ runner and `node:assert`. No package.json, no runner install.
 ## What's covered
 
 - `test/blocks.test.mjs` — the six-block-type table: make/update contracts,
-  clamping, unknown-type rejection.
+  verb translation, entity validation, clamping, unknown-type rejection.
+- `test/core.test.mjs` — event append/read, pin and finish behavior, injected-
+  clock rollover, legacy-state compatibility, and inline-edit undo.
 - `test/docx.test.mjs` — dropped-document text extraction against a real
   in-memory zip; corrupt and empty documents rejected.
 - `test/settings.test.mjs` — gear settings validation: known engines only,
   defensive copies, engine metadata.
+- `test/settle.test.mjs` — robust surfacing-array extraction and item
+  validation.
 
 - `test/desktop-runtime.test.mjs` — data-directory resolution, CLI path
   resolution for GUI launches, and the desktop fixed-port decision.

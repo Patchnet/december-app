@@ -1,4 +1,5 @@
 data/state.json
+data/events-*.jsonl
 mcp.json
 mcp.*.json
 node_modules

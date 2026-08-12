@@ -1558,6 +1558,15 @@ body {
 .when-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; margin-left: var(--space-2); }
 .when-sub.urgent { color: var(--bad-ink); }
 .row.done .when-sub { opacity: 0.6; }
+.place-chip {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  color: var(--text-3);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
 
 /* fixing your own words in place */
 .editing {

@@ -59,9 +59,9 @@ clear error instead of attaching to or replacing another process.
 ## Architecture — one writer behind the seam
 
 ```
-page (HTTP routes)  ─┐
-                     ├─►  server.mjs + lib/core.mjs  ─►  data/state.json
-assistants (MCP) ────┘        the one writer
+page (HTTP routes)  ─┐                                      ┌─► data/state.json
+                     ├─►  server.mjs + lib/core.mjs  ───────┤
+assistants (MCP) ────┘        the one writer                └─► data/events-<year>.jsonl
 ```
 
 - `server.mjs` — the web server and the ONLY process that touches state.
@@ -80,7 +80,9 @@ assistants (MCP) ────┘        the one writer
   write burst (>60s gap) opens the one-level undo snapshot, uniformly for
   the settle pass and connected assistants. Manual page writes never do.
 
-`data/` is runtime state (gitignored). Delete `data/state.json` to reset.
+`data/` is runtime state (gitignored). The page state remains in
+`data/state.json`; its year-scoped event history is appended to
+`data/events-<year>.jsonl`. Delete both to reset completely.
 Model via `DECEMBER_MODEL` (default `claude-sonnet-5`).
 
 ## Design
@@ -93,6 +95,6 @@ appears at three or more.
 
 ## Not built yet
 
-Multi-user + auth, sync/hosting (single local JSON file), notifications for
-reminders, editing block content by hand (talk to the page instead), and
-richer undo (per-batch history).
+Multi-user + auth, sync/hosting, notifications for reminders, hand-editing
+numeric fields (amounts and tracker values stay agent-mediated), and richer
+undo (per-batch history).

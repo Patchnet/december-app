@@ -187,6 +187,9 @@ const rowMarkup = (b, i) => `
         <span class="row-text">${linkify(i.text)}</span>
       </button>`
 
+const ledgerEntryMarkup = (b, e) =>
+  `<div class="ledger-entry" data-item="${e.id}"${srcTitle(e.src)}><span class="ledger-label">${linkify(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`
+
 // ---------------------------------------------------------- the opened card
 // A focused space is not the same card with more room: each type gains the
 // resolution its small form cannot carry. Dots become a year, a total
@@ -298,7 +301,7 @@ const FULL = {
           ${es
             .slice()
             .reverse()
-            .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${linkify(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
+            .map((e) => ledgerEntryMarkup(b, e))
             .join('')}
         </div>`
       })
@@ -397,7 +400,7 @@ const RENDER = {
     ${b.entries
       .slice(full ? -24 : -3)
       .reverse()
-      .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${linkify(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
+      .map((e) => ledgerEntryMarkup(b, e))
       .join('')}`
   },
 
@@ -426,6 +429,8 @@ const RENDER = {
 
   reminder: (b) => {
     const w = whenPhrase(b)
+    const place = b.entities?.find((entity) => entity.type === 'place')
+    const placeChip = place ? `<span class="place-chip">${esc(place.name)}</span>` : ''
     const when = w
       ? `<span class="when-sub ${w.urgent ? 'urgent' : ''}">${esc(w.text)}${b.repeat ? ` · ${b.repeat}` : ''}</span>`
       : b.repeat
@@ -435,7 +440,7 @@ const RENDER = {
     <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}"
       role="checkbox" aria-checked="${b.done}" aria-label="${esc(b.text)}">
       <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-      <span class="row-text">${linkify(b.text)}</span>${when}
+      <span class="row-text">${linkify(b.text)}</span>${placeChip}${when}
     </button>`
   },
 }
@@ -2386,13 +2391,17 @@ document.addEventListener('keydown', async (e) => {
 // click away saves; Esc walks away.
 
 document.addEventListener('dblclick', (e) => {
-  const el = e.target.closest('.row-text, .note-text, .space-name')
+  const el = e.target.closest('.row-text, .note-text, .space-name, .block-title, .ledger-label')
   if (!el || el.closest('.year-card, .demo-card, .ghost, #today')) return
   if (el.isContentEditable) return
   const row = el.closest('.row[data-block]')
   const card = el.closest('.space, .focus-card')
   const payload = el.classList.contains('space-name')
     ? { spaceId: card?.dataset.sid }
+    : el.classList.contains('block-title')
+      ? { blockId: el.closest('[data-bid]')?.dataset.bid, field: 'title' }
+      : el.classList.contains('ledger-label')
+        ? { blockId: el.closest('[data-bid]')?.dataset.bid, itemId: el.closest('.ledger-entry')?.dataset.item, field: 'ledger_label' }
     : el.classList.contains('note-text')
       ? { blockId: el.closest('[data-bid]')?.dataset.bid }
       : { blockId: row?.dataset.block, itemId: row?.dataset.item || undefined }
