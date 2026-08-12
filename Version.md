@@ -1,11 +1,20 @@
 ---
 enabled: true
-current: 0.1.0
+current: 0.2.0
 dev_flow: formal
 test_gate: local
 ---
 
 # December — Version History
+
+## 0.2.0 — 2026-08-12
+
+Engine settings gear (Claude persistent agent or one-shot Codex, free-text
+model override, persisted server-side), file drop intake (uploads +
+zero-dependency .docx text extraction, settle agent reads attached files),
+Windows engine support (direct .exe spawn, stderr-tail errors), and
+multi-instance safety (port-suffixed MCP config pinned via DECEMBER_URL).
+First version integrated through Formal Flow (PR #3, squash-merged).
 
 ## 0.1.0 — 2026-08-12
 
