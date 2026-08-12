@@ -759,7 +759,7 @@ body {
 .today:empty { margin: 0; }
 .today-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-3);
   width: 100%;
   padding: 5px 0;
@@ -772,6 +772,8 @@ body {
   cursor: pointer;
   animation: rise var(--m-enter) var(--ease-out) both;
 }
+.today-row .tick { align-self: center; }
+.tick-slot { flex: 0 0 18px; }
 .today-row .row-text { flex: 0 1 auto; min-width: 0; transition: color var(--m-ui) var(--ease); }
 .today-row.plain .row-text { color: var(--text-2); }
 .today-row.plain:hover .row-text { color: var(--text-1); }

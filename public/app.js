@@ -706,12 +706,13 @@ function renderToday() {
   for (const s of state.spaces) {
     for (const b of s.blocks) {
       if (b.type === 'reminder' && !b.done && b.when && b.when <= tomorrow) {
-        const sub = b.when < today ? 'overdue' : b.when === today ? 'today' : 'tomorrow'
+        // under a header that already says today, only NOT-today earns a label
+        const sub = b.when < today ? 'overdue' : b.when === today ? '' : 'tomorrow'
         items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub })
         seen.add(`${s.id}|${b.text.toLowerCase()}`)
       }
       if (evening && b.type === 'streak' && !b.dates.includes(today)) {
-        items.push({ kind: 'streak', sid: s.id, label: `${b.title} is still open`, sub: 'today' })
+        items.push({ kind: 'streak', sid: s.id, label: b.title, sub: 'still open' })
       }
     }
   }
@@ -723,16 +724,19 @@ function renderToday() {
   const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   box.dataset.key = key
+  // every row shares one left column: tick, or an empty slot the same width
   box.innerHTML = items
     .slice(0, 4)
-    .map((i) =>
-      i.kind === 'reminder'
+    .map((i) => {
+      const sub = i.sub ? `<span class="today-sub ${i.sub === 'overdue' ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
+      return i.kind === 'reminder'
         ? `<button class="row today-row" data-block="${i.bid}">
             <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-            <span class="row-text">${esc(i.label)}</span><span class="today-sub ${i.sub}">${i.sub}</span></button>`
+            <span class="row-text">${esc(i.label)}</span>${sub}</button>`
         : `<button class="today-row plain" ${i.sid ? `data-jump="${i.sid}"` : ''}>
-            <span class="row-text">${esc(i.label)}</span><span class="today-sub">${esc(i.sub)}</span></button>`
-    )
+            <span class="tick-slot"></span>
+            <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+    })
     .join('')
 }
 
