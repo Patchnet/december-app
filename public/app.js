@@ -2608,6 +2608,7 @@ function closeSettings(restoreFocus = true) {
 
 function renderSettings(s) {
   currentSettings = s
+  $('#about-version').textContent = s.version ? `v${s.version}` : ''
   const seg = $('#engine-seg')
   seg.innerHTML = ''
   for (const [key, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {

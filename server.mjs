@@ -6,7 +6,7 @@
 
 import { createServer } from 'node:http'
 import { readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
 import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, listYears } from './lib/core.mjs'
@@ -17,6 +17,14 @@ import { docxText } from './lib/docx.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const PORT = Number(process.env.PORT || 3008)
+// The shipped version, from the package manifest beside this file.
+const APP_VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version || ''
+  } catch {
+    return ''
+  }
+})()
 const UPLOADS = join(DATA_DIR, 'uploads')
 // What the reading agent can genuinely open: documents, images, plain data.
 const UPLOAD_TYPES = new Set([
@@ -356,6 +364,7 @@ const server = createServer(async (req, res) => {
         ...getSettings(),
         engines: engineAvailability,
         resolvedEngines: Object.fromEntries(Object.entries(ENGINES).map(([key, value]) => [key, value.bin])),
+        version: APP_VERSION,
       })
     }
     if (path === '/api/settings' && req.method === 'POST') {
