@@ -48,6 +48,7 @@ async function api(path, body) {
 function celebrate(anchorEl) {
   if (reduced || !anchorEl) return
   const r = anchorEl.getBoundingClientRect()
+  if (!(r.bottom > 0 && r.top < innerHeight)) return // offscreen joy is wasted work
   const layer = document.createElement('div')
   layer.className = 'spark'
   layer.style.left = `${r.left + Math.min(r.width / 2, 20)}px`
@@ -230,6 +231,14 @@ function buildFocus() {
     wrap.innerHTML = ''
     return
   }
+  // a re-render (the agent touched this space) must never eat a draft
+  // mid-sentence, drop the caret, or jump the scroll
+  const oldField = wrap.querySelector('.focus-capture')
+  const draft = oldField?.value || ''
+  const hadFocus = document.activeElement === oldField
+  const caret = oldField?.selectionStart ?? draft.length
+  const scrollTop = wrap.querySelector('.focus-card')?.scrollTop || 0
+
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
@@ -239,7 +248,14 @@ function buildFocus() {
       </article>
     </div>`
   wrap.dataset.u = space.updatedAt
-  wrap.querySelector('.focus-capture')?.focus()
+  const fieldEl = wrap.querySelector('.focus-capture')
+  if (fieldEl) {
+    fieldEl.value = draft
+    if (hadFocus || !draft) fieldEl.focus()
+    if (draft) fieldEl.setSelectionRange(caret, caret)
+  }
+  const card = wrap.querySelector('.focus-card')
+  if (card && scrollTop) card.scrollTop = scrollTop
 }
 
 function closeFocus() {
@@ -258,9 +274,13 @@ function renderYearline() {
 
 /** An accent dot arcs from where your sentence was to the space it landed
     in. Slow enough to follow; the page holds still while it flies. */
+const inViewport = (r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
+
 function travelDot(fromRect, toEl, then, hue) {
   if (reduced || !toEl) return then?.()
   const to = toEl.getBoundingClientRect()
+  // a flight nobody can see is just latency: skip when either end is offscreen
+  if (!inViewport(fromRect) || !inViewport(to)) return then?.()
   const dot = document.createElement('div')
   dot.className = 'travel-dot'
   if (hue) dot.style.background = hue
@@ -317,6 +337,8 @@ function withFlip(fn) {
   const moves = []
   for (const [el, a] of before) {
     if (!el.isConnected) continue
+    // a card still mid-entrance owns its transform; leave it be
+    if (el.classList.contains('fresh') && !el.classList.contains('settled')) continue
     const b = el.getBoundingClientRect()
     const dx = a.left - b.left
     const dy = a.top - b.top
@@ -423,7 +445,8 @@ function renderInbox(targets = new Map()) {
 
   // captures that settled: the dot leaves the line, lands on its space,
   // the card washes — and only then does the line fold, so the page holds
-  // still for the whole flight.
+  // still for the whole flight. A batch launches as a stream, not a swarm.
+  let launch = 0
   for (const row of box.querySelectorAll('.inbox-row')) {
     if (!ids.has(row.dataset.cid) && !row.classList.contains('done-wait')) {
       removeGhost(row.dataset.cid)
@@ -439,10 +462,12 @@ function renderInbox(targets = new Map()) {
         setTimeout(() => row.remove(), 420)
       }
       if (targetEl) {
-        travelDot(rect, targetEl, () => {
-          washCard(targetEl)
-          fold()
-        })
+        setTimeout(() => {
+          travelDot(rect, targetEl, () => {
+            washCard(targetEl)
+            fold()
+          })
+        }, launch++ * 160)
       } else {
         fold()
       }
@@ -887,11 +912,15 @@ field.addEventListener('input', () => {
 })
 
 // The page is the input: start typing anywhere and it lands in the capture.
+// Space alone still scrolls; with the focus view open, typing lands there.
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return
   const tag = document.activeElement?.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT') return
-  if (e.key.length === 1) field.focus()
+  if (e.key.length !== 1) return
+  if (e.key === ' ') return
+  const target = focusId ? document.querySelector('.focus-capture') : field
+  target?.focus()
 })
 
 document.addEventListener('click', async (e) => {
@@ -954,16 +983,18 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // rail: jump to a space
+  // rail: jump to a space — navigation gets the light touch (border only),
+  // never the full agent-touched sheen
   const jump = e.target.closest('[data-jump]')
   if (jump) {
     e.preventDefault()
     const el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
     if (el) {
       el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
-      el.classList.remove('washed')
+      el.classList.remove('noted')
       void el.offsetWidth
-      el.classList.add('washed')
+      el.classList.add('noted')
+      setTimeout(() => el.classList.remove('noted'), 1000)
     }
     return
   }
@@ -981,9 +1012,13 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // manual check on a list item or reminder — instant, no model
+  // manual check on a list item or reminder — instant, no model.
+  // One click, one request: taps during the round trip are ignored.
   const row = e.target.closest('.row[data-block]')
   if (row) {
+    if (row.dataset.busy) return
+    row.dataset.busy = '1'
+    setTimeout(() => delete row.dataset.busy, 600)
     const done = !row.classList.contains('done')
     // the same row may exist in the grid card and the focus card: keep both true
     const twins = document.querySelectorAll(
@@ -1015,6 +1050,9 @@ document.addEventListener('click', async (e) => {
   }
 
   if (e.target.closest('#undo-btn')) {
+    const btn = e.target.closest('#undo-btn')
+    if (btn.disabled) return
+    btn.disabled = true
     try {
       state = await api('/api/undo', {})
       spaceEls.forEach(({ el }) => el.remove())
@@ -1109,6 +1147,15 @@ async function firstRunDemo() {
   localStorage.setItem('dec-demo', '1')
   toast('now you')
 }
+
+// coming back to the tab: refresh immediately (the date may have rolled,
+// the agent may have worked) instead of waiting out a throttled poll
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    clearTimeout(pollTimer)
+    poll()
+  }
+})
 
 async function boot() {
   try {

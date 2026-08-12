@@ -444,6 +444,9 @@ body {
 
 /* The agent's touch is light: a sheen sweeps the card, the border warms. */
 .space.washed { animation: border-glow 900ms var(--ease); }
+
+/* navigation's lighter touch: border only, no sheen */
+.space.noted { animation: border-glow 900ms var(--ease); }
 .space.washed::after {
   content: "";
   position: absolute;

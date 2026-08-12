@@ -8,7 +8,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, extname, normalize } from 'node:path'
-import { ROOT, project, addCapture, check, undo, clearAsk } from './lib/core.mjs'
+import { ROOT, project, addCapture, check, undo, clearAsk, hasInbox } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 
@@ -25,6 +25,8 @@ const MIME = {
 
 await settle.writeMcpConfig()
 settle.scheduleSurfacing()
+// captures caught mid-restart must not strand: settle whatever waited
+if (hasInbox()) settle.schedule(5000)
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
