@@ -5,16 +5,25 @@
 // agent connected to the same tools your own Claude uses.
 
 import { createServer } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, extname, normalize } from 'node:path'
+import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
 import { ROOT, project, addCapture, check, undo, clearAsk, hasInbox, editText, retireSpace, restoreSpace } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
+import { getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
+import { docxText } from './lib/docx.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const PORT = Number(process.env.PORT || 3008)
+const UPLOADS = join(ROOT, 'data', 'uploads')
+// What the reading agent can genuinely open: documents, images, plain data.
+const UPLOAD_TYPES = new Set([
+  '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp',
+  '.txt', '.md', '.csv', '.tsv', '.json', '.xml', '.html', '.htm', '.ipynb',
+  '.docx', '.xlsx', '.pptx',
+])
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -95,6 +104,20 @@ function readBody(req) {
         reject(e)
       }
     })
+    req.on('error', reject)
+  })
+}
+
+function readRaw(req, cap) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (c) => {
+      size += c.length
+      if (size > cap) reject(new Error('file too large (15 MB cap)'))
+      else chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
   })
 }
@@ -211,6 +234,47 @@ const server = createServer(async (req, res) => {
     if (path === '/api/surface' && req.method === 'POST') {
       settle.runSurface()
       return json(res, 202, { scheduled: true })
+    }
+
+    // The gear: which engine and model do the organizing.
+    if (path === '/api/settings' && req.method === 'GET') {
+      return json(res, 200, { ...getSettings(), engines: await detectEngines() })
+    }
+    if (path === '/api/settings' && req.method === 'POST') {
+      const body = await readBody(req)
+      try {
+        const saved = await updateSettings(body)
+        return json(res, 200, { ...saved, engines: await detectEngines() })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+
+    // Dropped documents land as files; the capture carries the path and
+    // the settle agent reads it like any other words the person wrote.
+    if (path === '/api/upload' && req.method === 'POST') {
+      const rawName = basename(String(url.searchParams.get('name') || 'file')).replace(/[^\w.\- ]/g, '_').slice(0, 120)
+      const ext = extname(rawName).toLowerCase()
+      if (!UPLOAD_TYPES.has(ext)) return json(res, 400, { error: `can't read ${ext || 'that'} files yet` })
+      const buf = await readRaw(req, 15e6)
+      if (!buf.length) return json(res, 400, { error: 'empty file' })
+      mkdirSync(UPLOADS, { recursive: true })
+      const file = join(UPLOADS, `${Date.now()}-${rawName}`)
+      await writeFile(file, buf)
+      // Word docs aren't natively readable by the settle agent; extract the
+      // text into a sidecar the capture points at instead. The original stays.
+      let readable = file
+      if (ext === '.docx') {
+        try {
+          readable = `${file}.txt`
+          await writeFile(readable, docxText(buf))
+        } catch {
+          readable = file
+        }
+      }
+      await addCapture(`[attached file: ${readable}] ${rawName}`)
+      settle.schedule()
+      return json(res, 200, project(settle.status()))
     }
 
     // The assistant seam: MCP adapters (and anything else) call tools here.

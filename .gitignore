@@ -1,7 +1,22 @@
 data/state.json
 mcp.json
+mcp.*.json
 node_modules
 .DS_Store
 .agents/
 .claude/
 skills-lock.json
+data/settings.json
+data/uploads/
+
+# public repo profile (workspace charter)
+*.local.md
+.env*
+.secrets/
+brains/
+user-data/
+.claude/
+AGENTS.md
+.cursor/
+data/server.log
+data/backups/

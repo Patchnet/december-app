@@ -1481,6 +1481,104 @@ function maybeNotify(items) {
   localStorage.setItem('dec-notified', JSON.stringify(seen))
 }
 
+// ------------------------------------------------------------- the gear
+// Engine + model live server-side (data/settings.json): they belong to
+// the settle pass, not this browser.
+
+const settingsPop = $('#settings-pop')
+
+function renderSettings(s) {
+  const seg = $('#engine-seg')
+  seg.innerHTML = ''
+  for (const [key, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.role = 'radio'
+    b.textContent = label
+    b.setAttribute('aria-checked', String(s.engine === key))
+    b.disabled = !s.engines[key]
+    b.title = s.engines[key] ? '' : `${label} CLI not found on this machine`
+    b.addEventListener('click', () => saveSettings({ engine: key }))
+    seg.appendChild(b)
+  }
+  const input = $('#model-input')
+  if (document.activeElement !== input) input.value = s.model || ''
+}
+
+async function saveSettings(patch) {
+  try {
+    renderSettings(await api('/api/settings', patch))
+    toast('settings saved')
+  } catch (e) {
+    toast(e.message)
+  }
+}
+
+$('#gear-toggle').addEventListener('click', async () => {
+  const open = settingsPop.hidden
+  settingsPop.hidden = !open
+  $('#gear-toggle').setAttribute('aria-expanded', String(open))
+  if (open) {
+    try {
+      renderSettings(await api('/api/settings'))
+    } catch (e) {
+      toast(e.message)
+    }
+  }
+})
+
+$('#model-input').addEventListener('change', (e) => saveSettings({ model: e.target.value }))
+$('#model-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur()
+})
+
+document.addEventListener('mousedown', (e) => {
+  if (!settingsPop.hidden && !e.target.closest('#settings-pop, #gear-toggle')) {
+    settingsPop.hidden = true
+    $('#gear-toggle').setAttribute('aria-expanded', 'false')
+  }
+})
+
+// --------------------------------------------------------- drag and drop
+// A dropped document becomes a capture pointing at the saved file; the
+// settle agent reads it like anything else you wrote.
+
+const dropzone = $('#dropzone')
+let dragDepth = 0
+
+document.addEventListener('dragenter', (e) => {
+  if (![...e.dataTransfer.types].includes('Files')) return
+  e.preventDefault()
+  dragDepth++
+  dropzone.hidden = false
+})
+document.addEventListener('dragover', (e) => e.preventDefault())
+document.addEventListener('dragleave', (e) => {
+  e.preventDefault()
+  if (--dragDepth <= 0) {
+    dragDepth = 0
+    dropzone.hidden = true
+  }
+})
+document.addEventListener('drop', async (e) => {
+  e.preventDefault()
+  dragDepth = 0
+  dropzone.hidden = true
+  const files = [...e.dataTransfer.files].slice(0, 5)
+  for (const file of files) {
+    try {
+      const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'upload failed')
+      state = data
+      render()
+      toast(`reading ${file.name}`)
+    } catch (err) {
+      toast(err.message)
+    }
+  }
+})
+
 $('#theme-toggle').addEventListener('click', () => {
   const root = document.documentElement
   const next = root.dataset.theme === 'dark' ? 'light' : 'dark'

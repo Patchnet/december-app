@@ -1144,3 +1144,74 @@ a.retire-link:hover { color: var(--accent-ink); }
   /* keep the words readable when the sweep can't play */
   .inbox-text.reading { color: var(--text-2); background: none; animation: none; }
 }
+
+/* ------------------------------------------------- the gear + its panel */
+
+.theme-toggle .gear { width: 13px; height: 13px; }
+.theme-toggle .gear circle, .theme-toggle .gear path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+
+.settings-pop {
+  position: fixed;
+  top: calc(var(--space-5) + 34px);
+  right: var(--space-5);
+  z-index: 45;
+  width: 248px;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--card-shadow), 0 8px 24px rgba(15, 12, 8, 0.08);
+  font-size: var(--fs-small);
+}
+
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.set-label { color: var(--text-3); }
+
+.seg { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-pill); overflow: hidden; }
+.seg button {
+  padding: 3px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
+}
+.seg button + button { border-left: 1px solid var(--line-1); }
+.seg button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+.seg button:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+.set-input {
+  width: 128px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+.set-input:focus { outline: none; box-shadow: var(--focus-ring-field); border-color: var(--accent-edge); }
+.set-input::placeholder { color: var(--text-3); opacity: 0.7; }
+
+.set-note { color: var(--text-3); font-size: 12px; }
+
+/* --------------------------------------------------------- the dropzone */
+
+.dropzone[hidden] { display: none; }
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 2px dashed var(--accent-edge);
+  border-radius: var(--radius-lg);
+  margin: var(--space-4);
+  color: var(--accent-ink);
+  font-size: var(--fs-body);
+  pointer-events: none;
+}

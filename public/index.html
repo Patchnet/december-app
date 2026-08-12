@@ -15,6 +15,12 @@
         <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
         <div class="search-results" id="search-results"></div>
       </div>
+      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false">
+        <svg class="gear" viewBox="0 0 14 14" aria-hidden="true">
+          <circle cx="7" cy="7" r="2.1" />
+          <path d="M7 1.2v1.9 M7 10.9v1.9 M1.2 7h1.9 M10.9 7h1.9 M2.9 2.9l1.35 1.35 M9.75 9.75l1.35 1.35 M11.1 2.9 9.75 4.25 M4.25 9.75 2.9 11.1" />
+        </svg>
+      </button>
       <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
         <svg class="moon" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.6 8.7 A5.1 5.1 0 1 1 5.3 2.4 A4.1 4.1 0 0 0 11.6 8.7 Z" /></svg>
         <svg class="sun" viewBox="0 0 14 14" aria-hidden="true">
@@ -23,6 +29,20 @@
         </svg>
       </button>
     </div>
+
+    <div class="settings-pop" id="settings-pop" hidden>
+      <div class="set-row">
+        <span class="set-label">Engine</span>
+        <div class="seg" id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
+      </div>
+      <div class="set-row">
+        <label class="set-label" for="model-input">Model</label>
+        <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
+      </div>
+      <div class="set-note">who organizes your page, and with which model</div>
+    </div>
+
+    <div class="dropzone" id="dropzone" hidden>drop to add to your page</div>
 
     <h1 class="dateline" id="dateline"></h1>
 
