@@ -78,6 +78,14 @@ function pop(el) {
   el.classList.add('pop')
 }
 
+/** Replay the small status-swap on an element whose value just changed. */
+function bump(el) {
+  if (reduced || !el) return
+  el.classList.remove('bump')
+  void el.offsetWidth
+  el.classList.add('bump')
+}
+
 // ---------------------------------------------------------------- blocks
 
 // links in card content become quiet hyperlinks: host + path as the label,
@@ -512,6 +520,16 @@ function renderActivity() {
 const DORMANT_MS = 30 * 86400000
 const awake = new Set() // dormant spaces the user woke this session
 
+/** Quietly re-render one card (done items resort to the tail) with a FLIP
+    glide and no agent-touch sheen: this was the person's own hand. */
+function resortCard(sid) {
+  const known = spaceEls.get(sid)
+  if (!known) return
+  known.updatedAt = ''
+  known.quiet = true
+  withFlip(() => renderSpaces())
+}
+
 function renderSpaces(delayWash = new Set()) {
   const box = $('#spaces')
   const seen = new Set()
@@ -577,8 +595,10 @@ function renderSpaces(delayWash = new Set()) {
           dots[dots.length - 1]?.classList.add('just-marked')
         }
       }
-      // cards receiving a travel dot wash when the dot lands, not before
-      if (!delayWash.has(space.id)) washCard(known.el)
+      // cards receiving a travel dot wash when the dot lands, not before;
+      // quiet re-sorts (the person's own hand) get no sheen at all
+      if (!delayWash.has(space.id) && !known.quiet) washCard(known.el)
+      known.quiet = false
       known.updatedAt = space.updatedAt
     }
   })
@@ -1040,12 +1060,55 @@ document.addEventListener('click', async (e) => {
         setTimeout(() => washCard(row.closest('.space')), 300)
       }
     }
+
+    // the check counts: a space with exactly one tracker ticks it live —
+    // the number beats, the bar glides, and completion earns the moment
+    const host = row.closest('.space, .focus-card')
+    const sid = host?.dataset.sid
+    const isListItem = !!row.dataset.item
+    if (isListItem && sid) {
+      const sp = state.spaces.find((s) => s.id === sid)
+      const trackers = sp ? sp.blocks.filter((b) => b.type === 'tracker') : []
+      if (trackers.length === 1) {
+        const t = trackers[0]
+        const prevC = t.current
+        t.current = Math.max(0, prevC + (done ? 1 : -1))
+        const completedNow = done && prevC < t.target && t.current >= t.target
+        for (const bel of document.querySelectorAll(`[data-bid="${t.id}"]`)) {
+          const countEl = bel.querySelector('.tracker-count')
+          const b = countEl?.querySelector('b')
+          if (b) {
+            b.textContent = t.current
+            bump(countEl)
+          }
+          const meterBox = bel.querySelector('.meter')
+          const span = meterBox?.querySelector('span')
+          if (span) span.style.width = `${Math.min(100, Math.round((t.current / t.target) * 100))}%`
+          meterBox?.classList.toggle('full', t.current >= t.target)
+          countEl?.classList.toggle('full', t.current >= t.target)
+          if (completedNow) {
+            pop(meterBox)
+            celebrate(meterBox)
+          }
+        }
+        if (completedNow) setTimeout(() => washCard(spaceEls.get(sid)?.el), 250)
+      }
+    }
+
     try {
       state = await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done })
       // adopt silently; the row is already painted
-      const known = spaceEls.get(row.closest('.space')?.dataset.sid)
-      if (known) known.updatedAt = state.spaces.find((s) => s.id === row.closest('.space').dataset.sid)?.updatedAt
+      const known = sid && spaceEls.get(sid)
+      if (known) known.updatedAt = state.spaces.find((s) => s.id === sid)?.updatedAt
       prev = state
+      // after the moment, the finished item rests: the card re-sorts it
+      // into the done tail with a glide (no sheen; this was your hand)
+      if (isListItem && sid) {
+        setTimeout(() => {
+          resortCard(sid)
+          if (focusId === sid) buildFocus()
+        }, done ? 900 : 400)
+      }
     } catch (err) {
       toast(err.message)
     }
