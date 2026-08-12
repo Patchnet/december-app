@@ -114,8 +114,10 @@ function createWindow(url) {
 }
 
 function createTray() {
-  let image = nativeImage.createFromPath(join(app.getAppPath(), 'electron', 'tray-icon.svg'))
-  if (!image.isEmpty()) image = image.resize({ width: 18, height: 18 })
+  // Windows: multi-size .ico (16/20/24/32) picks the right DPI layer.
+  // macOS: template image, recolored by the menu bar automatically.
+  const file = process.platform === 'darwin' ? join('icons', 'trayTemplate.png') : join('icons', 'tray.ico')
+  const image = nativeImage.createFromPath(join(app.getAppPath(), 'electron', file))
   tray = new Tray(image)
   tray.setToolTip('December')
   tray.setContextMenu(Menu.buildFromTemplate([
