@@ -1,11 +1,21 @@
 ---
 enabled: true
-current: 0.6.0
+current: 0.7.0
 dev_flow: formal
 test_gate: local
 ---
 
 # December — Version History
+
+## 0.7.0 — 2026-08-12
+
+December meets its neighbors. One step — the connect wizard or the gear's new
+Connections cards — registers the page with Claude Code, Claude Desktop,
+Codex, or Cursor, publishes December's small house-manners skill beside each,
+and verifies the result. First-run setup shows the same cards with client
+logos; ChatGPT appears honestly as not-yet-connectable until sync arrives.
+Zero new dependencies; twelve new tests that never touch your real configs.
+Also rolls up the README letter (#18).
 
 ## 0.6.0 — 2026-08-12
 
