@@ -140,9 +140,6 @@ const RENDER = {
   tracker: (b, full_, hero) => {
     const pct = Math.min(100, Math.round((b.current / b.target) * 100))
     const full = b.current >= b.target
-    // year trackers carry a today marker at the point the year has reached
-    const yearPct = Math.round(((Date.now() - new Date(new Date().getFullYear(), 0, 1)) / 31536000000) * 100)
-    const notch = b.period === 'year' && !full ? `<span class="notch" style="left:${yearPct}%"></span>` : ''
     // the hero drops its title: the space name and the number already say it
     const title = hero ? '' : `<span class="block-title" style="margin:0">${esc(b.title)}</span>`
     return `
@@ -150,7 +147,7 @@ const RENDER = {
       ${title}
       <span class="tracker-count ${full ? 'full' : ''}"><b>${b.current}</b> of ${b.target}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
     </div>
-    <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span>${notch}</div>`
+    <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span></div>`
   },
 
   ledger: (b, full, hero) => {

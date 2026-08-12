@@ -606,15 +606,6 @@ body {
   transition: width var(--m-struct) var(--ease-out);
 }
 .meter.full span { background: var(--hue-ok); }
-/* year trackers carry a today marker: where the year stands, wordlessly */
-.meter .notch {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 1.5px;
-  background: var(--line-2);
-  border-radius: var(--radius-pill);
-}
 
 /* the quiet tail of a long list */
 .done-more {
