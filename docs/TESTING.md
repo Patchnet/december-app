@@ -20,6 +20,29 @@ runner and `node:assert`. No package.json, no runner install.
 - `test/settings.test.mjs` — gear settings validation: known engines only,
   defensive copies, engine metadata.
 
+- `test/desktop-runtime.test.mjs` — data-directory resolution, CLI path
+  resolution for GUI launches, and the desktop fixed-port decision.
+
+## Desktop smoke checklist
+
+After `npm install`, exercise Electron behavior manually:
+
+1. Run `npm run app`; confirm the main page opens and the December tray icon
+   appears.
+2. On a fresh Electron profile, confirm onboarding reports detected CLIs
+   honestly and offers capture-only mode when neither is available.
+3. Press `Ctrl+Alt+D`; confirm the window opens, rises to the front, and the
+   capture field has focus. Repeat from the tray's **Capture** command.
+4. Submit a capture; confirm it lands immediately. If the selected CLI is
+   available, confirm it settles. Otherwise confirm it stays saved with a
+   `capture only` status and no crash.
+5. Close the window, reopen it from the tray, then choose **Quit** and confirm
+   the local server stops.
+6. Run `node server.mjs` without Electron and confirm `/api/health` responds on
+   port 3008.
+7. Run `npm run dist:win` and confirm an unsigned NSIS installer exists in
+   `release/`.
+
 ## Rules
 
 - Run the suite before every commit (`test_gate: local`). Never commit over a

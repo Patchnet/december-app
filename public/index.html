@@ -39,10 +39,24 @@
         <label class="set-label" for="model-input">Model</label>
         <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
       </div>
+      <div class="set-paths">
+        <label class="set-label" for="claude-path">Claude CLI path</label>
+        <input class="set-input set-path" id="claude-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
+        <label class="set-label" for="codex-path">Codex CLI path</label>
+        <input class="set-input set-path" id="codex-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
+      </div>
       <div class="set-note">who organizes your page, and with which model</div>
     </div>
 
     <div class="dropzone" id="dropzone" hidden>drop to add to your page</div>
+
+    <section class="onboarding" id="onboarding" hidden aria-labelledby="onboarding-title">
+      <button class="onboarding-close" id="onboarding-close" aria-label="Close setup">&times;</button>
+      <h2 id="onboarding-title">Make December yours</h2>
+      <p>Your page stays local. Choose a CLI you already use, signed in with your own subscription. No API key is needed.</p>
+      <div class="onboarding-engines" id="onboarding-engines"></div>
+      <div class="onboarding-note" id="onboarding-note"></div>
+    </section>
 
     <h1 class="dateline" id="dateline"></h1>
 

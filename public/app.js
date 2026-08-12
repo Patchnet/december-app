@@ -437,6 +437,7 @@ function unbuild(el) {
 function renderInbox(targets = new Map()) {
   const box = $('#inbox')
   const failed = !state.settle.running && state.settle.lastError
+  const captureOnly = state.settle.captureOnly
   const ids = new Set(state.captures.map((c) => c.id))
 
   // captures that settled: the dot leaves the line, lands on its space,
@@ -481,7 +482,11 @@ function renderInbox(targets = new Map()) {
     }
     const text = row.querySelector('.inbox-text')
     const chip = row.querySelector('.inbox-state')
-    if (failed) {
+    if (captureOnly) {
+      text.classList.remove('reading')
+      chip.className = 'inbox-state capture-only'
+      chip.textContent = 'saved · capture only'
+    } else if (failed) {
       text.classList.remove('reading')
       chip.className = 'inbox-state failed'
       chip.innerHTML = `<i class="warn-dot"></i><button class="retry">retry</button>`
@@ -1486,8 +1491,10 @@ function maybeNotify(items) {
 // the settle pass, not this browser.
 
 const settingsPop = $('#settings-pop')
+let currentSettings = null
 
 function renderSettings(s) {
+  currentSettings = s
   const seg = $('#engine-seg')
   seg.innerHTML = ''
   for (const [key, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {
@@ -1503,6 +1510,13 @@ function renderSettings(s) {
   }
   const input = $('#model-input')
   if (document.activeElement !== input) input.value = s.model || ''
+  for (const key of ['claude', 'codex']) {
+    const pathInput = $(`#${key}-path`)
+    if (document.activeElement !== pathInput) pathInput.value = s.enginePaths?.[key] || ''
+    pathInput.placeholder = s.resolvedEngines?.[key] || 'auto-detect'
+    pathInput.title = s.resolvedEngines?.[key] || ''
+  }
+  renderOnboarding(s)
 }
 
 async function saveSettings(patch) {
@@ -1531,6 +1545,14 @@ $('#model-input').addEventListener('change', (e) => saveSettings({ model: e.targ
 $('#model-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') e.target.blur()
 })
+
+for (const key of ['claude', 'codex']) {
+  const input = $(`#${key}-path`)
+  input.addEventListener('change', (e) => saveSettings({ enginePaths: { [key]: e.target.value } }))
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') e.target.blur()
+  })
+}
 
 document.addEventListener('mousedown', (e) => {
   if (!settingsPop.hidden && !e.target.closest('#settings-pop, #gear-toggle')) {
@@ -1592,12 +1614,48 @@ $('#theme-toggle').addEventListener('click', () => {
 
 $('#dateline').addEventListener('click', () => (yearOpen ? closeFocus() : buildYear()))
 
+const launchParams = new URLSearchParams(location.search)
+const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
+const onboarding = $('#onboarding')
+
+function renderOnboarding(s) {
+  if (onboarding.hidden) return
+  const engines = [
+    ['claude', 'Claude Code', 'Run claude once and finish its sign-in flow. Then restart December to detect it.'],
+    ['codex', 'Codex', 'Run codex login once and finish its sign-in flow. Then restart December to detect it.'],
+  ]
+  $('#onboarding-engines').innerHTML = engines.map(([key, label, guidance]) => `
+    <button class="onboarding-engine ${s.engine === key ? 'selected' : ''}" data-onboard-engine="${key}" ${s.engines[key] ? '' : 'disabled'}>
+      <span><b>${label}</b><small>${s.engines[key] ? 'ready on this machine' : 'not detected'}</small></span>
+      <span>${s.engines[key] ? (s.engine === key ? 'selected' : 'use this') : 'connect first'}</span>
+    </button>
+    ${s.engines[key] ? '' : `<p class="onboarding-guidance">${guidance}</p>`}
+  `).join('')
+  const any = Object.values(s.engines).some(Boolean)
+  $('#onboarding-note').textContent = any
+    ? 'You can start writing now. December will organize new captures behind you.'
+    : 'No local AI was found yet. December still saves everything in capture-only mode; connect a CLI whenever you are ready.'
+}
+
+$('#onboarding-engines').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-onboard-engine]')
+  if (button) await saveSettings({ engine: button.dataset.onboardEngine })
+})
+
+$('#onboarding-close').addEventListener('click', () => {
+  onboarding.hidden = true
+  localStorage.setItem('dec-onboarding', '1')
+  launchParams.delete('firstrun')
+  history.replaceState(null, '', `${location.pathname}${launchParams.size ? `?${launchParams}` : ''}`)
+  $('#capture').focus()
+})
+
 // ----------------------------------------------------- the first-run demo
 // Once, on a truly empty page: the page performs its own pitch, then
 // hands you the pen. Any key or click skips it.
 
 async function firstRunDemo() {
-  if (reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length) return
+  if (shouldOnboard || reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length) return
   let alive = true
   const stop = () => {
     alive = false
@@ -1650,6 +1708,11 @@ async function boot() {
   try {
     state = await api('/api/state')
     render()
+    if (shouldOnboard) {
+      onboarding.hidden = false
+      renderSettings(await api('/api/settings'))
+    }
+    if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
     firstRunDemo()
   } catch (e) {

@@ -9,15 +9,15 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, project, addCapture, check, undo, clearAsk, hasInbox, editText, retireSpace, restoreSpace } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, check, undo, clearAsk, hasInbox, editText, retireSpace, restoreSpace } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
-import { getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
+import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const PORT = Number(process.env.PORT || 3008)
-const UPLOADS = join(ROOT, 'data', 'uploads')
+const UPLOADS = join(DATA_DIR, 'uploads')
 // What the reading agent can genuinely open: documents, images, plain data.
 const UPLOAD_TYPES = new Set([
   '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp',
@@ -34,16 +34,33 @@ const MIME = {
 }
 
 await settle.writeMcpConfig()
-settle.scheduleSurfacing()
+let engineAvailability = await detectEngines()
+let surfacingScheduled = false
+const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
+const settleStatus = () => {
+  const status = settle.status()
+  if (selectedEngineAvailable()) return status
+  return { ...status, running: false, pending: hasInbox(), lastError: null, captureOnly: true }
+}
+const scheduleSettle = (delay) => {
+  if (selectedEngineAvailable()) settle.schedule(delay)
+}
+const scheduleSurfacing = () => {
+  if (!surfacingScheduled && selectedEngineAvailable()) {
+    surfacingScheduled = true
+    settle.scheduleSurfacing()
+  }
+}
+scheduleSurfacing()
 // captures caught mid-restart must not strand: settle whatever waited
-if (hasInbox()) settle.schedule(5000)
+if (hasInbox()) scheduleSettle(5000)
 
 // the year is too precious for one copy: a dated snapshot every day, 30 kept
 function backup() {
   try {
-    const dir = join(ROOT, 'data', 'backups')
+    const dir = join(DATA_DIR, 'backups')
     mkdirSync(dir, { recursive: true })
-    const src = join(ROOT, 'data', 'state.json')
+    const src = join(DATA_DIR, 'state.json')
     const dest = join(dir, `state-${new Date().toISOString().slice(0, 10)}.json`)
     if (fsExists(src) && !fsExists(dest)) copyFileSync(src, dest)
     const all = readdirSync(dir).filter((f) => f.startsWith('state-')).sort()
@@ -51,7 +68,7 @@ function backup() {
   } catch {}
 }
 backup()
-setInterval(backup, 6 * 3600 * 1000)
+const backupTimer = setInterval(backup, 6 * 3600 * 1000)
 
 /** The year as a document you keep. */
 function exportMarkdown() {
@@ -139,7 +156,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST') console.log(new Date().toISOString(), req.method, path)
   try {
     if (path === '/api/state' && req.method === 'GET') {
-      return json(res, 200, project(settle.status()))
+      return json(res, 200, project(settleStatus()))
     }
 
     // Capture lands instantly; the settle pass runs behind you.
@@ -153,8 +170,8 @@ const server = createServer(async (req, res) => {
         ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter((l) => l.length > 2).slice(0, 25)
         : [text]
       for (const line of lines) await addCapture(line, body.hint)
-      settle.schedule()
-      return json(res, 200, project(settle.status()))
+      scheduleSettle()
+      return json(res, 200, project(settleStatus()))
     }
 
     // Manual, instant check from the page — no model involved.
@@ -162,7 +179,7 @@ const server = createServer(async (req, res) => {
       const { blockId, itemId, done } = await readBody(req)
       try {
         await check(blockId, itemId, done)
-        return json(res, 200, project(settle.status()))
+        return json(res, 200, project(settleStatus()))
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -171,7 +188,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/undo' && req.method === 'POST') {
       try {
         await undo()
-        return json(res, 200, project(settle.status()))
+        return json(res, 200, project(settleStatus()))
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -183,22 +200,22 @@ const server = createServer(async (req, res) => {
       await clearAsk()
       if (body.choice) {
         await addCapture(String(body.choice))
-        settle.schedule()
+        scheduleSettle()
       }
-      return json(res, 200, project(settle.status()))
+      return json(res, 200, project(settleStatus()))
     }
 
     // Retry a failed settle by hand.
     if (path === '/api/settle' && req.method === 'POST') {
-      settle.schedule(0)
-      return json(res, 202, { scheduled: true })
+      scheduleSettle(0)
+      return json(res, 202, { scheduled: selectedEngineAvailable(), captureOnly: !selectedEngineAvailable() })
     }
 
     // Small fixes by hand: rename, reword, retire, restore.
     if (path === '/api/edit' && req.method === 'POST') {
       try {
         await editText(await readBody(req))
-        return json(res, 200, project(settle.status()))
+        return json(res, 200, project(settleStatus()))
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -206,7 +223,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/retire' && req.method === 'POST') {
       try {
         const out = await retireSpace((await readBody(req)).spaceId)
-        return json(res, 200, { ...out, state: project(settle.status()) })
+        return json(res, 200, { ...out, state: project(settleStatus()) })
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -214,7 +231,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/restore' && req.method === 'POST') {
       try {
         const out = await restoreSpace((await readBody(req)).spaceId)
-        return json(res, 200, { ...out, state: project(settle.status()) })
+        return json(res, 200, { ...out, state: project(settleStatus()) })
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -232,19 +249,30 @@ const server = createServer(async (req, res) => {
 
     // Run the surfacing sense on demand.
     if (path === '/api/surface' && req.method === 'POST') {
-      settle.runSurface()
-      return json(res, 202, { scheduled: true })
+      if (selectedEngineAvailable()) settle.runSurface()
+      return json(res, 202, { scheduled: selectedEngineAvailable() })
     }
 
     // The gear: which engine and model do the organizing.
     if (path === '/api/settings' && req.method === 'GET') {
-      return json(res, 200, { ...getSettings(), engines: await detectEngines() })
+      return json(res, 200, {
+        ...getSettings(),
+        engines: engineAvailability,
+        resolvedEngines: Object.fromEntries(Object.entries(ENGINES).map(([key, value]) => [key, value.bin])),
+      })
     }
     if (path === '/api/settings' && req.method === 'POST') {
       const body = await readBody(req)
       try {
         const saved = await updateSettings(body)
-        return json(res, 200, { ...saved, engines: await detectEngines() })
+        engineAvailability = await detectEngines({ refresh: true })
+        scheduleSurfacing()
+        if (hasInbox()) scheduleSettle(0)
+        return json(res, 200, {
+          ...saved,
+          engines: engineAvailability,
+          resolvedEngines: Object.fromEntries(Object.entries(ENGINES).map(([key, value]) => [key, value.bin])),
+        })
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
@@ -273,8 +301,8 @@ const server = createServer(async (req, res) => {
         }
       }
       await addCapture(`[attached file: ${readable}] ${rawName}`)
-      settle.schedule()
-      return json(res, 200, project(settle.status()))
+      scheduleSettle()
+      return json(res, 200, project(settleStatus()))
     }
 
     // The assistant seam: MCP adapters (and anything else) call tools here.
@@ -284,7 +312,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/tool' && req.method === 'POST') {
       const { name, arguments: args } = await readBody(req)
       try {
-        const result = await callTool(name, args || {}, settle.status())
+        const result = await callTool(name, args || {}, settleStatus())
         return json(res, 200, { result })
       } catch (e) {
         return json(res, 400, { error: e.message })
@@ -303,3 +331,15 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`december listening on http://localhost:${PORT}`)
   console.log(`assistant tool surface: connect Claude with  claude mcp add december -- node ${join(ROOT, 'mcp-server.mjs')}`)
 })
+
+let shuttingDown = false
+function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
+  clearInterval(backupTimer)
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 3000).unref()
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)

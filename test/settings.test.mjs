@@ -13,7 +13,9 @@ test('defaults: a known engine and a string model', () => {
 test('getSettings returns a copy, not the live object', () => {
   const a = getSettings()
   a.engine = 'tampered'
+  a.enginePaths.claude = 'tampered'
   assert.notEqual(getSettings().engine, 'tampered')
+  assert.notEqual(getSettings().enginePaths.claude, 'tampered')
 })
 
 test('unknown engine is rejected before anything persists', async () => {

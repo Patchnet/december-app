@@ -1155,7 +1155,7 @@ a.retire-link:hover { color: var(--accent-ink); }
   top: calc(var(--space-5) + 34px);
   right: var(--space-5);
   z-index: 45;
-  width: 248px;
+  width: min(360px, calc(100vw - 36px));
   padding: var(--space-4) var(--space-4) var(--space-3);
   background: var(--elevated);
   border: 1px solid var(--line-1);
@@ -1197,6 +1197,71 @@ a.retire-link:hover { color: var(--accent-ink); }
 .set-input::placeholder { color: var(--text-3); opacity: 0.7; }
 
 .set-note { color: var(--text-3); font-size: 12px; }
+
+.set-paths {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0 var(--space-3);
+  margin-bottom: var(--space-2);
+  border-top: 1px solid var(--line-1);
+  border-bottom: 1px solid var(--line-1);
+}
+.set-path { width: 100%; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
+
+/* ----------------------------------------------------- first-run setup */
+
+.onboarding[hidden] { display: none; }
+.onboarding {
+  position: relative;
+  max-width: 640px;
+  margin: 0 0 var(--space-7);
+  padding: var(--space-6);
+  background: var(--surface-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+.onboarding h2 { margin: 0 0 var(--space-2); font-family: var(--font-serif); font-size: 22px; font-weight: 400; }
+.onboarding > p { margin: 0 34px var(--space-5) 0; color: var(--text-2); }
+.onboarding-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+.onboarding-engines { display: grid; gap: var(--space-2); }
+.onboarding-engine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  background: var(--elevated);
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.onboarding-engine.selected { border-color: var(--accent-edge); background: var(--accent-soft); color: var(--accent-ink); }
+.onboarding-engine:disabled { opacity: 0.62; cursor: default; }
+.onboarding-engine span { display: flex; flex-direction: column; }
+.onboarding-engine span:last-child { align-items: flex-end; font-size: 12px; }
+.onboarding-engine small { color: var(--text-3); font-size: 12px; font-weight: 400; }
+.onboarding-guidance { margin: 0 var(--space-4) var(--space-2); color: var(--text-3); font-size: 12px; }
+.onboarding-note { margin-top: var(--space-4); color: var(--text-2); font-size: 13px; }
+.inbox-state.capture-only { color: var(--text-3); font-size: 11.5px; }
 
 /* --------------------------------------------------------- the dropzone */
 

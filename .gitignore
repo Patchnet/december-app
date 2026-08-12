@@ -2,6 +2,7 @@ data/state.json
 mcp.json
 mcp.*.json
 node_modules
+release/
 .DS_Store
 .agents/
 .claude/

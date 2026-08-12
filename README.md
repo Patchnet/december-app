@@ -26,6 +26,36 @@ claude mcp add december -- node ~/december-public/mcp-server.mjs
 like "what's on my December?" or "log my September rent" — it reads and
 writes the same page through the same tools.
 
+## Desktop app
+
+The Electron app wraps the same dependency-free local server in a Windows
+desktop shell. It prefers `127.0.0.1:3008` (then `3009` if a development
+server already owns 3008), keeps one instance running in the
+tray, and focuses capture with `Ctrl+Alt+D`. Closing the window hides it;
+choose **Quit** from the tray to stop December and its server.
+
+On first run, December shows the Claude Code and Codex CLIs it can detect.
+Choose a signed-in CLI to organize captures with your existing subscription,
+or keep writing in capture-only mode until one is connected. The settings gear
+also accepts explicit CLI paths. `DECEMBER_CLAUDE` and `DECEMBER_CODEX` remain
+the highest-priority overrides.
+
+Desktop state is stored under Electron's per-user application-data directory.
+The shell passes that location through `DECEMBER_DATA_DIR`; standalone web mode
+still uses this repository's `data/` directory unless the variable is set.
+
+For desktop development and an unsigned Windows installer:
+
+```bash
+npm install
+npm run app
+npm run dist:win
+```
+
+The NSIS artifact is written to `release/`. A second December instance is
+focused instead of duplicated. If both owned ports are busy, startup reports a
+clear error instead of attaching to or replacing another process.
+
 ## Architecture — one writer behind the seam
 
 ```
