@@ -86,6 +86,10 @@
 
 * { box-sizing: border-box; }
 
+/* Keep iOS from inventing a larger type scale after rotation. The page's
+   own breakpoints, not device heuristics, decide how it should read. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
 /* said aloud, never drawn */
 .sr-only {
   position: absolute;
@@ -213,12 +217,12 @@ body {
   border: 0;
   padding: 0;
   margin: 0 0 var(--space-4);
-  caret-color: var(--accent);
+  caret-color: var(--text-1);
 }
 .cwrap { margin-bottom: var(--space-3); }
 .capture { margin-bottom: 0; }
 .capture:focus { outline: none; }
-.capture:focus-visible { outline: none; box-shadow: -10px 0 0 -9px var(--accent); }
+.capture:focus-visible { outline: none; }
 .capture::placeholder { color: var(--text-3); opacity: 0.7; }
 
 /* -------------------------------------------------- chips and the ask
@@ -357,17 +361,39 @@ body {
   background: var(--hue-warn);
 }
 
-/* The filing moment: a dot travels from your sentence to its space. */
-.travel-dot {
+/* The filing moment: a mote of light crosses to the space it landed in.
+   Nothing here has an edge — the core is bright, the halo is breath, and
+   the echoes trail a beat behind. */
+.mote {
+  position: fixed;
+  border-radius: var(--radius-pill);
+  background: var(--mote, var(--accent));
+  z-index: 55;
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+}
+.mote-core { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; }
+.mote-halo { width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0.32; }
+.mote-echo { width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; opacity: 0.34; }
+
+/* where it lands: a breath of light, handing off to the card's own sheen */
+.landing {
   position: fixed;
   width: 8px;
   height: 8px;
+  margin: -4px 0 0 -4px;
   border-radius: var(--radius-pill);
   background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  z-index: 55;
   pointer-events: none;
+  z-index: 54;
+  animation: landing-glow 720ms var(--ease-out) forwards;
 }
+@keyframes landing-glow {
+  0%   { opacity: 0.5; transform: scale(1); filter: blur(2px); }
+  35%  { opacity: 0.34; transform: scale(6); filter: blur(9px); }
+  100% { opacity: 0; transform: scale(11); filter: blur(16px); }
+}
+
 
 .activity {
   font-size: 11.5px;
@@ -528,6 +554,8 @@ body {
   color: var(--text-3);
   text-decoration: line-through;
   text-decoration-color: var(--line-2);
+  text-decoration-thickness: 0.06em;
+  text-decoration-skip-ink: none;
 }
 .solo:hover .solo-text { color: var(--accent-ink, var(--text-1)); }
 .solo-sub {
@@ -612,24 +640,18 @@ body {
 .row.done .tick path { animation: check-draw 260ms var(--ease-out) 40ms forwards; }
 .row.done.no-anim .tick path { stroke-dashoffset: 0; animation: none; }
 
-/* the strike hugs the words it crosses out, and whispers rather than
-   scribbles: a hairline in line-2, drawn over dimmed text */
-.row-text { flex: 0 1 auto; min-width: 0; position: relative; display: inline-block; overflow-wrap: anywhere; }
-.row-text::after {
-  content: "";
-  position: absolute;
-  left: -1px;
-  right: auto;
-  top: 54%;
-  height: 1px;
-  width: 0;
-  border-radius: var(--radius-pill);
-  background: var(--line-2);
-  transition: width var(--m-depth) var(--ease-out);
+/* Native decoration follows every wrapped line and the active font metrics.
+   A positioned rule only knew the box's midpoint, so zoomed or wrapped text
+   could leave the strike floating between lines. */
+.row-text { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.row.done .row-text {
+  color: var(--text-3);
+  opacity: 0.75;
+  text-decoration-line: line-through;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 0.06em;
+  text-decoration-skip-ink: none;
 }
-.row.done .row-text { color: var(--text-3); opacity: 0.75; }
-.row.done .row-text::after { width: calc(100% + 3px); }
-.row.done.no-anim .row-text::after { transition: none; }
 
 @keyframes check-draw { to { stroke-dashoffset: 0; } }
 
@@ -783,9 +805,26 @@ body {
 .space > * {
   transition: opacity var(--m-struct) var(--ease-out), filter var(--m-struct) var(--ease-out);
 }
-.space.building { border-color: transparent; box-shadow: none; }
+.space.building {
+  border-color: transparent;
+  box-shadow: none;
+  /* it holds its place and waits — the entrance belongs to the landing */
+  animation: none;
+}
 .space.building::before { opacity: 1; }
-.space.building > * { opacity: 0.25; filter: blur(5px); }
+.space.building > * { opacity: 0.22; filter: blur(5px); }
+
+/* the mote lands and the card condenses out of that light */
+.space.forming { animation: form-in 620ms var(--ease-expo) both; }
+@keyframes form-in {
+  0%   { transform: scale(0.97); filter: blur(6px); }
+  100% { transform: none; filter: blur(0); }
+}
+.space.forming > * { animation: form-content 480ms var(--ease-out) 80ms both; }
+@keyframes form-content {
+  from { opacity: 0.22; filter: blur(5px); }
+  to   { opacity: 1; filter: blur(0); }
+}
 
 .ghost-out {
   opacity: 0 !important;
@@ -923,7 +962,9 @@ body {
   display: grid;
   place-items: center;
   padding: 5vh 20px;
-  overflow: auto;
+  /* only the card scrolls: a scrolling wrap would carry the card past its
+     own frame and show a second scrollbar */
+  overflow: hidden;
   cursor: pointer;
 }
 
@@ -931,8 +972,14 @@ body {
   cursor: auto;
   width: 100%;
   max-width: 680px;
-  max-height: 88vh;
-  overflow: auto;
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* the page behind must not take over once this reaches its end */
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
   background: var(--elevated);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-xl, 20px);
@@ -943,6 +990,20 @@ body {
 :root[data-theme="dark"] .focus-card {
   box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.6), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
 }
+/* a quiet scrollbar, in the page's own ink rather than the browser's */
+.focus-card::-webkit-scrollbar { width: 10px; }
+.focus-card::-webkit-scrollbar-track { background: transparent; }
+.focus-card::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.focus-card::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+
+/* while a card is open the page beneath holds still */
+:root.modal-open, :root.modal-open body { overflow: hidden; }
+
 .focus-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
 @keyframes focus-in {
   from { opacity: 0; transform: translateY(10px) scale(0.97); filter: blur(4px); }
@@ -1400,7 +1461,7 @@ body {
   border-bottom: 1px solid var(--line-1);
   padding: 3px 0;
   width: 190px;
-  caret-color: var(--accent);
+  caret-color: var(--text-1);
   transition: border-color var(--m-ui) var(--ease);
 }
 .act-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
@@ -1416,7 +1477,7 @@ body {
   border-bottom: 1px solid var(--line-1);
   padding: 3px 0;
   width: 120px;
-  caret-color: var(--accent);
+  caret-color: var(--text-1);
   transition: border-color var(--m-ui) var(--ease);
 }
 .ask-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
@@ -1452,13 +1513,31 @@ body {
 .retire-link:hover { color: var(--bad-ink); }
 a.retire-link:hover { color: var(--accent-ink); }
 
-@media (max-width: 720px) {
-  .spaces { display: block; }
+/* Portrait tablets keep the two-card rhythm, but the navigation rail no
+   longer taxes each card's reading width. */
+@media (max-width: 900px) {
+  .shell { padding-inline: clamp(var(--space-5), 3.5vw, var(--space-6)); }
+  .body-grid { gap: 0; margin-top: var(--space-8); }
   .rail.on { display: none; }
+}
+
+@media (max-width: 720px) {
+  .body-grid { display: block; margin-top: var(--space-7); }
+  .spaces { display: block; }
   /* reserve exactly what the fixed capture occupies, plus breathing room */
-  .shell { padding: var(--space-5) var(--space-5) calc(var(--capture-h, 56px) + 72px); }
+  .shell {
+    width: 100%;
+    padding: max(var(--space-5), env(safe-area-inset-top))
+      max(var(--space-5), env(safe-area-inset-right))
+      calc(var(--capture-h, 56px) + 72px)
+      max(var(--space-5), env(safe-area-inset-left));
+  }
   .corner { position: static; justify-content: flex-end; margin-bottom: var(--space-3); }
   .enter-hint { display: none; }
+  .search { width: min(120px, calc(100vw - 92px)); }
+  .search:focus { width: min(200px, calc(100vw - 92px)); }
+  .search-results,
+  .search-results:has(.search-answer) { width: min(340px, calc(100vw - 36px)); }
   .capture {
     position: fixed;
     left: 0;
@@ -1472,14 +1551,37 @@ a.retire-link:hover { color: var(--accent-ink); }
     padding: var(--space-4) var(--space-5) calc(var(--space-4) + env(safe-area-inset-bottom));
     font-size: 16px;
   }
+  .space { padding: var(--space-4); }
+  .resting { max-width: none; }
+  .rest-row { align-items: flex-start; }
   .focus-capture {
     position: static;
     border-top: 1px solid var(--line-1);
     padding: var(--space-4) 0 0;
     background: transparent;
   }
-  .focus-wrap { padding: 2vh 10px; }
-  .focus-card { max-height: 92vh; padding: var(--space-6); }
+  .focus-wrap {
+    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  }
+  .focus-card {
+    max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+    scrollbar-gutter: auto;
+  }
+  .focus-card .space-name { font-size: clamp(22px, 7vw, var(--fs-lede)); }
+  .settings-pop {
+    top: 58px;
+    right: var(--space-5);
+    max-height: calc(100dvh - 76px);
+    overflow-y: auto;
+  }
+  .toast {
+    width: max-content;
+    max-width: calc(100vw - 36px);
+    bottom: calc(var(--capture-h, 56px) + var(--space-5) + env(safe-area-inset-bottom));
+    text-align: center;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1489,7 +1591,7 @@ a.retire-link:hover { color: var(--accent-ink); }
     transition-duration: 0.001ms !important;
   }
   .row.done .tick path { stroke-dashoffset: 0 !important; animation: none !important; }
-  .spark, .travel-dot { display: none !important; }
+  .spark, .mote, .landing { display: none !important; }
   /* keep the words readable when the sweep can't play */
   .inbox-text.reading { color: var(--text-2); background: none; animation: none; }
 }
@@ -1499,65 +1601,175 @@ a.retire-link:hover { color: var(--accent-ink); }
 .theme-toggle .gear { width: 13px; height: 13px; }
 .theme-toggle .gear circle, .theme-toggle .gear path { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
 
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(26, 24, 21, 0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in var(--m-depth) var(--ease) both;
+}
+:root[data-theme="dark"] .settings-backdrop { background: rgba(0, 0, 0, 0.5); }
+
 .settings-pop {
   position: fixed;
-  top: calc(var(--space-5) + 34px);
-  right: var(--space-5);
-  z-index: 45;
-  width: min(360px, calc(100vw - 36px));
-  padding: var(--space-4) var(--space-4) var(--space-3);
+  top: 50%;
+  left: 50%;
+  z-index: 71;
+  width: min(420px, calc(100vw - 40px));
+  max-height: min(82dvh, 680px);
+  overflow-y: auto;
+  padding: var(--space-5);
   background: var(--elevated);
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-md);
-  box-shadow: var(--card-shadow), 0 8px 24px rgba(15, 12, 8, 0.08);
+  border: 0;
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(38, 37, 33, 0.07),
+    0 2px 5px -2px rgba(38, 37, 33, 0.10),
+    0 16px 38px -12px rgba(38, 37, 33, 0.18);
   font-size: var(--fs-small);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+  transform: translate(-50%, -50%);
+  animation: settings-in var(--m-struct) var(--ease-expo) both;
+}
+.settings-pop:focus { outline: none; }
+:root[data-theme="dark"] .settings-pop {
+  box-shadow: 0 0 0 1px rgba(245, 241, 232, 0.09), 0 18px 42px -12px rgba(0, 0, 0, 0.62);
+}
+@keyframes settings-in {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)) scale(0.97); filter: blur(4px); }
+  to { opacity: 1; transform: translate(-50%, -50%); filter: blur(0); }
 }
 
-.set-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.set-label { color: var(--text-3); }
+.settings-head {
+  padding: 1px 2px var(--space-4);
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--line-1);
+}
+.settings-head h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.settings-head p { margin: 3px 0 0; color: var(--text-3); font-size: 12px; }
 
-.seg { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-pill); overflow: hidden; }
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 42px;
+  padding: 2px;
+  border-bottom: 1px solid var(--line-1);
+}
+.set-label { color: var(--text-3); font-size: 12.5px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-pill); background: var(--surface-1); }
 .seg button {
-  padding: 3px 10px;
+  position: relative;
+  min-height: 28px;
+  padding: 2px 10px;
   border: 0;
   background: transparent;
   color: var(--text-3);
   font: inherit;
-  font-size: var(--fs-small);
+  font-size: 12.5px;
   cursor: pointer;
   transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
 }
+.seg button::after { content: ""; position: absolute; inset: -6px 0; }
+.seg button:first-child { border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
+.seg button:last-child { border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
 .seg button + button { border-left: 1px solid var(--line-1); }
 .seg button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-ink); }
 .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 .seg button:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 
 .set-input {
-  width: 128px;
-  padding: 3px 8px;
+  width: 160px;
+  min-height: 32px;
+  padding: 4px 9px;
   border: 1px solid var(--line-1);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--surface-1);
   color: var(--text-1);
   font: inherit;
-  font-size: var(--fs-small);
+  font-size: 12.5px;
+  transition: border-color var(--m-ui) var(--ease), box-shadow var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
 }
-.set-input:focus { outline: none; box-shadow: var(--focus-ring-field); border-color: var(--accent-edge); }
+.set-input:focus { outline: none; box-shadow: var(--focus-ring-field); border-color: var(--accent-edge); background: var(--elevated); }
 .set-input::placeholder { color: var(--text-3); opacity: 0.7; }
 
-.set-note { color: var(--text-3); font-size: 12px; }
+.set-note { padding: 0 2px; color: var(--text-3); font-size: 11.5px; text-wrap: pretty; }
 
 .set-paths {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) 0 var(--space-3);
-  margin-bottom: var(--space-2);
-  border-top: 1px solid var(--line-1);
-  border-bottom: 1px solid var(--line-1);
+  padding: var(--space-4) 2px var(--space-3);
 }
 .set-path { width: 100%; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
+
+.settings-about {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 64px;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--m-ui) var(--ease), box-shadow var(--m-ui) var(--ease);
+}
+.settings-about:hover { background: var(--surface-1); }
+.settings-about:focus-visible { outline: none; background: var(--surface-1); box-shadow: var(--focus-ring-field); }
+.about-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--line-1);
+  font-family: var(--font-serif);
+  font-size: 17px;
+  color: var(--text-2);
+  transition: color var(--m-depth) var(--ease), background var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
+}
+.about-copy { min-width: 0; display: flex; flex-direction: column; }
+.about-copy strong { font-size: 13px; font-weight: 500; color: var(--text-1); }
+.about-note { position: relative; display: block; height: 18px; color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+.about-note > span {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transition: opacity var(--m-depth) cubic-bezier(0.2, 0, 0, 1),
+    transform var(--m-depth) cubic-bezier(0.2, 0, 0, 1),
+    filter var(--m-depth) cubic-bezier(0.2, 0, 0, 1);
+}
+.about-note-hover { opacity: 0; transform: translateY(4px); filter: blur(2px); }
+.about-arrow { color: var(--text-3); font-size: 16px; transition: color var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out); }
+.settings-about:hover .about-mark,
+.settings-about:focus-visible .about-mark { color: var(--accent-ink); background: var(--accent-soft); transform: translateY(-1px); }
+.settings-about:hover .about-note-rest,
+.settings-about:focus-visible .about-note-rest { opacity: 0; transform: translateY(-4px); filter: blur(2px); }
+.settings-about:hover .about-note-hover,
+.settings-about:focus-visible .about-note-hover { opacity: 1; transform: none; filter: blur(0); }
+.settings-about:hover .about-arrow,
+.settings-about:focus-visible .about-arrow { color: var(--accent-ink); transform: translate(2px, -2px); }
+
+@media (max-width: 720px) {
+  .settings-pop { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); padding: var(--space-5); border-radius: var(--radius-lg); }
+  .set-input { width: min(160px, 46vw); }
+  .set-paths { grid-template-columns: 1fr; }
+  .set-paths .set-input { width: 100%; }
+}
 
 /* ----------------------------------------------------- first-run setup */
 
@@ -1628,4 +1840,105 @@ a.retire-link:hover { color: var(--accent-ink); }
   color: var(--accent-ink);
   font-size: var(--fs-body);
   pointer-events: none;
+}
+
+/* ------------------------------------------------------ the opened card */
+/* A focused space gains resolution, not just room. */
+
+.focus-meta {
+  margin: calc(var(--space-3) * -1) 0 var(--space-5);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* a year of days: keeping-it-up made visible */
+.heatmap {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+.hm-week { display: flex; flex-direction: column; gap: 3px; }
+.hm-week i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--line-1);
+  transition: background var(--m-ui) var(--ease);
+}
+.hm-week i.on { background: var(--accent); }
+.hm-week i.future { background: transparent; }
+.hm-week i.pad { background: transparent; }
+.hm-months {
+  position: relative;
+  height: 13px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.hm-months span { position: absolute; left: calc(var(--w) * 12px); }
+.hm-legend {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.hm-legend b { color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* money by month, so the shape of a year is readable */
+.lm { margin-top: var(--space-5); }
+.lm:first-of-type { margin-top: var(--space-4); }
+.lm-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+.lm-name { color: var(--text-2); letter-spacing: 0.01em; }
+.lm-sum { color: var(--text-1); font-variant-numeric: tabular-nums; }
+.lm-bar {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  margin: 6px 0 var(--space-3);
+  overflow: hidden;
+}
+.lm .ledger-entry { color: var(--text-2); }
+.lm-bar span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width var(--m-enter) var(--ease-out);
+}
+
+/* am I ahead or behind, in words */
+.pace {
+  margin-top: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.pace.behind { color: var(--bad-ink); }
+
+/* the done pile folds away so open work is the page */
+.done-fold { margin-top: var(--space-3); }
+.done-fold summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-3);
+  list-style: none;
+  padding: 2px 0;
+  transition: color var(--m-ui) var(--ease);
+}
+.done-fold summary::-webkit-details-marker { display: none; }
+.done-fold summary:hover { color: var(--text-2); }
+.done-fold[open] summary { margin-bottom: var(--space-2); }
+
+/* prose wants a measure, not a card width */
+.focus-card .note-text {
+  max-width: 62ch;
+  line-height: 1.62;
+  text-wrap: pretty;
 }

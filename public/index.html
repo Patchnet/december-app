@@ -10,15 +10,27 @@
 </head>
 <body>
   <div class="shell" id="shell">
-    <div class="settings-pop" id="settings-pop" hidden>
+    <div class="settings-backdrop" id="settings-backdrop" hidden></div>
+    <section class="settings-pop" id="settings-pop" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" hidden>
+      <div class="settings-head">
+        <h2 id="settings-title">Settings</h2>
+        <p>Your page, your machine.</p>
+      </div>
+      <div class="set-row">
+        <span class="set-label">Appearance</span>
+        <div class="seg" id="theme-seg" role="radiogroup" aria-label="Appearance">
+          <button type="button" data-theme-set="light" role="radio" aria-checked="false">light</button>
+          <button type="button" data-theme-set="dark" role="radio" aria-checked="false">dark</button>
+        </div>
+      </div>
       <div class="set-row">
         <span class="set-label">Engine</span>
         <div class="seg" id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
       </div>
-      <div class="set-row">
-        <label class="set-label" for="model-input">Model</label>
+      <label class="set-row" for="model-input">
+        <span class="set-label">Model</span>
         <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
-      </div>
+      </label>
       <div class="set-paths">
         <label class="set-label" for="claude-path">Claude CLI path</label>
         <input class="set-input set-path" id="claude-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
@@ -26,7 +38,19 @@
         <input class="set-input set-path" id="codex-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
       </div>
       <div class="set-note">who organizes your page, and with which model</div>
-    </div>
+      <a class="settings-about" href="https://github.com/Patchnet/december-app" target="_blank" rel="noopener noreferrer"
+        aria-label="About December on GitHub (opens in a new tab)">
+        <span class="about-mark" aria-hidden="true">D</span>
+        <span class="about-copy">
+          <strong>About December</strong>
+          <span class="about-note" aria-hidden="true">
+            <span class="about-note-rest">takes you to GitHub</span>
+            <span class="about-note-hover">made with love by Patchnet AI</span>
+          </span>
+        </span>
+        <span class="about-arrow" aria-hidden="true">↗</span>
+      </a>
+    </section>
 
     <div class="dropzone" id="dropzone" hidden>drop to add to your page</div>
 
@@ -51,17 +75,11 @@
         <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
         <div class="search-results" id="search-results"></div>
       </div>
-      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false">
+      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false" aria-controls="settings-pop">
         <svg class="gear" viewBox="0 0 14 14" aria-hidden="true">
-          <circle cx="7" cy="7" r="2.1" />
-          <path d="M7 1.2v1.9 M7 10.9v1.9 M1.2 7h1.9 M10.9 7h1.9 M2.9 2.9l1.35 1.35 M9.75 9.75l1.35 1.35 M11.1 2.9 9.75 4.25 M4.25 9.75 2.9 11.1" />
-        </svg>
-      </button>
-      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
-        <svg class="moon" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.6 8.7 A5.1 5.1 0 1 1 5.3 2.4 A4.1 4.1 0 0 0 11.6 8.7 Z" /></svg>
-        <svg class="sun" viewBox="0 0 14 14" aria-hidden="true">
-          <circle cx="7" cy="7" r="2.7" />
-          <path d="M7 1v1.4 M7 11.6V13 M1 7h1.4 M11.6 7H13 M2.8 2.8l1 1 M10.2 10.2l1 1 M11.2 2.8l-1 1 M3.8 10.2l-1 1" />
+          <path d="M2 4.6h1.5 M7.5 4.6H12 M2 9.4h4.5 M10.5 9.4H12" />
+          <circle cx="5.5" cy="4.6" r="1.6" />
+          <circle cx="8.5" cy="9.4" r="1.6" />
         </svg>
       </button>
     </header>

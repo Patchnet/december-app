@@ -174,6 +174,166 @@ const rowMarkup = (b, i) => `
         <span class="row-text">${linkify(i.text)}</span>
       </button>`
 
+// ---------------------------------------------------------- the opened card
+// A focused space is not the same card with more room: each type gains the
+// resolution its small form cannot carry. Dots become a year, a total
+// becomes months, a count becomes pace.
+
+/** Counts read as people write them: 0.4166 -> 0.4, 139 -> 139. */
+const num = (n) => {
+  const v = Number(n) || 0
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10)
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+/** Longest and current run of consecutive marked days. */
+function streakRuns(dates) {
+  const set = new Set(dates)
+  let longest = 0
+  for (const d of set) {
+    const prev = localDay(new Date(new Date(`${d}T12:00`).getTime() - 86400000))
+    if (set.has(prev)) continue // only count from the start of a run
+    let n = 0
+    let cur = d
+    while (set.has(cur)) {
+      n++
+      cur = localDay(new Date(new Date(`${cur}T12:00`).getTime() + 86400000))
+    }
+    longest = Math.max(longest, n)
+  }
+  let current = 0
+  let cur = localDay()
+  if (!set.has(cur)) cur = localDay(new Date(Date.now() - 86400000)) // today still open
+  while (set.has(cur)) {
+    current++
+    cur = localDay(new Date(new Date(`${cur}T12:00`).getTime() - 86400000))
+  }
+  return { longest, current }
+}
+
+const FULL = {
+  // a year of days, so keeping-it-up is visible rather than counted
+  streak: (b, _full, hero) => {
+    const set = new Set(b.dates)
+    const today = localDay()
+    const year = Number(today.slice(0, 4))
+    // the page is a year, so the map is that year: jan 1 through dec 31
+    const first = new Date(year, 0, 1)
+    const gridStart = new Date(first)
+    gridStart.setDate(gridStart.getDate() - first.getDay()) // back to sunday
+    const weeks = []
+    const labels = []
+    let lastMonth = ''
+    for (let w = 0; w < 53; w++) {
+      const col = []
+      let colMonth = null
+      for (let d = 0; d < 7; d++) {
+        const day = new Date(gridStart)
+        day.setDate(day.getDate() + w * 7 + d)
+        if (day.getFullYear() !== year) {
+          col.push('<i class="pad"></i>') // days outside the year hold the shape
+          continue
+        }
+        if (colMonth === null) colMonth = day.getMonth()
+        const iso = localDay(day)
+        col.push(`<i class="${set.has(iso) ? 'on' : iso > today ? 'future' : ''}" title="${iso}"></i>`)
+      }
+      if (colMonth !== null && MONTHS[colMonth] !== lastMonth) {
+        lastMonth = MONTHS[colMonth]
+        labels.push(`<span style="--w:${w}">${lastMonth}</span>`)
+      }
+      weeks.push(`<div class="hm-week">${col.join('')}</div>`)
+    }
+    const { longest, current } = streakRuns(b.dates)
+    const inYear = b.dates.filter((d) => d.startsWith(String(year))).length
+    return `
+    ${hero ? '' : `<div class="block-title">${esc(b.title)}</div>`}
+    <div class="hm-months">${labels.join('')}</div>
+    <div class="heatmap">${weeks.join('')}</div>
+    <div class="hm-legend">
+      <span><b>${current}</b> day${current === 1 ? '' : 's'} running</span>
+      <span><b>${longest}</b> best</span>
+      <span><b>${inYear}</b> in ${year}</span>
+    </div>`
+  },
+
+  // where the money went, month by month, instead of a flat recent list
+  ledger: (b, _full, hero) => {
+    const byMonth = new Map()
+    for (const e of b.entries) {
+      const m = (e.at || '').slice(0, 7)
+      if (!m) continue
+      if (!byMonth.has(m)) byMonth.set(m, [])
+      byMonth.get(m).push(e)
+    }
+    const months = [...byMonth.entries()].sort((x, y) => y[0].localeCompare(x[0]))
+    const sums = months.map(([, es]) => es.reduce((n, e) => n + (Number(e.amount) || 0), 0))
+    const peak = Math.max(1, ...sums.map(Math.abs))
+    const rows = months
+      .map(([m, es], i) => {
+        const sum = sums[i]
+        const pct = Math.round((Math.abs(sum) / peak) * 100)
+        const name = `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(2, 4)}`
+        return `
+        <div class="lm">
+          <div class="lm-head">
+            <span class="lm-name">${name}</span>
+            <span class="lm-sum">${fmtAmount(sum, b.unit)}</span>
+          </div>
+          <div class="lm-bar"><span style="width:${pct}%"></span></div>
+          ${es
+            .slice()
+            .reverse()
+            .map((e) => `<div class="ledger-entry"${srcTitle(e.src)}><span>${linkify(e.label)}</span><span>${fmtAmount(e.amount, b.unit)}</span></div>`)
+            .join('')}
+        </div>`
+      })
+      .join('')
+    return `
+    ${b.title && !hero ? `<div class="block-title">${esc(b.title)}</div>` : ''}
+    <div class="ledger-total">${fmtAmount(b.total, b.unit)}</div>
+    ${rows}`
+  },
+
+  // a yearly target answers "am I ahead or behind", not just "how many"
+  tracker: (b, _full, hero) => {
+    const base = RENDER.tracker(b, false, hero)
+    // pace assumes an even accumulation. Below a handful of units, or before
+    // anything has happened, or once it is met, the claim is noise.
+    if (b.period !== 'year' || b.target < 8 || b.current <= 0 || b.current >= b.target) return base
+    const now = new Date()
+    const start = new Date(now.getFullYear(), 0, 1)
+    const end = new Date(now.getFullYear() + 1, 0, 1)
+    const through = (now - start) / (end - start)
+    const expected = b.target * through
+    const diff = Math.round((b.current - expected) * 10) / 10
+    const word =
+      Math.abs(diff) < 0.5
+        ? 'on pace'
+        : diff > 0
+          ? `${Math.abs(diff)} ahead of pace`
+          : `${Math.abs(diff)} behind pace`
+    return `${base}
+    <div class="pace ${diff < -0.5 ? 'behind' : ''}">${word} · ${Math.round(through * 100)}% through the year</div>`
+  },
+
+  // the done pile folds away so the open work is the page
+  list: (b) => {
+    const open = b.items.filter((i) => !i.done)
+    const done = b.items.filter((i) => i.done).sort((a, z) => (z.doneAt || '').localeCompare(a.doneAt || ''))
+    return `
+    ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
+    ${open.map((i) => rowMarkup(b, i)).join('')}
+    ${open.length === 0 ? '<div class="done-more">nothing open</div>' : ''}
+    ${
+      done.length
+        ? `<details class="done-fold"><summary>${done.length} done</summary>${done.map((i) => rowMarkup(b, i)).join('')}</details>`
+        : ''
+    }`
+  },
+}
+
 const RENDER = {
   // Open items in full; the done pile compresses to its two most recent.
   // The focused view shows the whole year.
@@ -195,7 +355,7 @@ const RENDER = {
     return `
     <div class="tracker-line">
       ${title}
-      <span class="tracker-count ${full ? 'full' : ''}"><b>${b.current}</b> of ${b.target}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
+      <span class="tracker-count ${full ? 'full' : ''}"><b>${num(b.current)}</b> of ${num(b.target)}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
     </div>
     <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span></div>`
   },
@@ -310,6 +470,14 @@ function soloOf(space) {
   return { block: solo, label: extra.length ? space.name : '' }
 }
 
+function touchedPhrase(iso) {
+  const days = Math.floor((Date.now() - new Date(iso)) / 86400000)
+  if (days <= 0) return 'touched today'
+  if (days === 1) return 'touched yesterday'
+  if (days < 30) return `touched ${days} days ago`
+  return `touched ${new Date(iso).toLocaleDateString('en', { month: 'short', day: 'numeric' })}`
+}
+
 function spaceInner(space, full = false) {
   // reminders that are open float to the top of the card
   const blocks = [...space.blocks].sort((a, b) => {
@@ -345,14 +513,19 @@ function spaceInner(space, full = false) {
       </${checkable ? 'button' : 'div'}>
       ${bits.length ? `<div class="solo-sub">${bits.join(' · ')}</div>` : ''}`
   }
+  const meta = full
+    ? [space.area, space.pinned ? 'pinned' : '', touchedPhrase(space.updatedAt)].filter(Boolean).join(' · ')
+    : ''
   return `
     ${corner}
     <h2 class="space-name">${esc(space.name)}</h2>
+    ${meta ? `<div class="focus-meta">${esc(meta)}</div>` : ''}
     ${blocks
       .map((b) => {
         const isHero = b.id === hero
         const compact = !full && !isHero && COMPACT[b.type]
-        const body = compact ? COMPACT[b.type](b) : RENDER[b.type] ? RENDER[b.type](b, full, isHero) : ''
+        const draw = full && FULL[b.type] ? FULL[b.type] : RENDER[b.type]
+        const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero) : ''
         return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
       })
       .join('')}`
@@ -399,9 +572,11 @@ function buildFocus() {
   }
   const card = wrap.querySelector('.focus-card')
   if (card && scrollTop) card.scrollTop = scrollTop
+  document.documentElement.classList.add('modal-open')
 }
 
 function closeFocus() {
+  document.documentElement.classList.remove('modal-open')
   $('#focus').dataset.confirm = ''
   focusId = null
   yearOpen = false
@@ -418,8 +593,10 @@ function renderYearline() {
   $('#dateline').textContent = `${now.toLocaleString('en', { month: 'long' })} ${now.getDate()}`
 }
 
-/** An accent dot arcs from where your sentence was to the space it landed
-    in. Slow enough to follow; the page holds still while it flies. */
+/** The filing moment: a mote of light leaves your sentence and dissolves
+    into the space it landed in. A bright core, a soft halo, and echoes that
+    lag a beat behind it — blurred while it is moving fast, sharp as it
+    arrives. The page holds still while it flies. */
 const inViewport = (r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
 
 function travelDot(fromRect, toEl, then, hue) {
@@ -427,43 +604,63 @@ function travelDot(fromRect, toEl, then, hue) {
   const to = toEl.getBoundingClientRect()
   // a flight nobody can see is just latency: skip when either end is offscreen
   if (!inViewport(fromRect) || !inViewport(to)) return then?.()
-  const dot = document.createElement('div')
-  dot.className = 'travel-dot'
-  if (hue) dot.style.background = hue
-  dot.style.left = `${fromRect.left}px`
-  dot.style.top = `${fromRect.top + fromRect.height / 2}px`
-  document.body.appendChild(dot)
-  const dx = to.left + 22 - fromRect.left
-  const dy = to.top + 22 - (fromRect.top + fromRect.height / 2)
-  dot
-    .animate(
-      [
-        { transform: 'translate(0, 0) scale(0.7)', opacity: 0, offset: 0 },
-        { transform: `translate(${dx * 0.18}px, ${dy * 0.18 - 22}px) scale(1.25)`, opacity: 1, offset: 0.3 },
-        { transform: `translate(${dx * 0.6}px, ${dy * 0.6 - 26}px) scale(1.15)`, opacity: 1, offset: 0.65 },
-        { transform: `translate(${dx}px, ${dy}px) scale(0.9)`, opacity: 1, offset: 1 },
-      ],
-      { duration: 900, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' }
-    )
-    .addEventListener('finish', () => {
-      dot.remove()
-      bloom(fromRect.left + dx, fromRect.top + fromRect.height / 2 + dy)
-      then?.()
+
+  const x0 = fromRect.left
+  const y0 = fromRect.top + fromRect.height / 2
+  const dx = to.left + 22 - x0
+  const dy = to.top + 22 - y0
+
+  // one arc, walked by every part; blur tracks speed, so it smears through
+  // the fast middle and resolves at both ends
+  const arc = (blur) => [
+    { transform: 'translate(0, 0) scale(0.45)', opacity: 0, filter: `blur(${blur * 0.6}px)`, offset: 0 },
+    { transform: `translate(${dx * 0.16}px, ${dy * 0.16 - 26}px) scale(1.18)`, opacity: 1, filter: `blur(${blur * 1.6}px)`, offset: 0.26 },
+    { transform: `translate(${dx * 0.62}px, ${dy * 0.62 - 30}px) scale(1)`, opacity: 1, filter: `blur(${blur}px)`, offset: 0.66 },
+    { transform: `translate(${dx}px, ${dy}px) scale(0.4)`, opacity: 0, filter: `blur(${blur * 0.4}px)`, offset: 1 },
+  ]
+
+  const parts = [
+    { cls: 'mote-halo', blur: 7, delay: 0 },
+    { cls: 'mote-core', blur: 1.2, delay: 0 },
+    { cls: 'mote-echo', blur: 2.4, delay: 80 },
+    { cls: 'mote-echo', blur: 2.4, delay: 145 },
+    { cls: 'mote-echo', blur: 2.4, delay: 200 },
+  ]
+
+  let lead = null
+  for (const p of parts) {
+    const el = document.createElement('div')
+    el.className = `mote ${p.cls}`
+    if (hue) el.style.setProperty('--mote', hue)
+    el.style.left = `${x0}px`
+    el.style.top = `${y0}px`
+    document.body.appendChild(el)
+    const anim = el.animate(arc(p.blur), {
+      duration: 840,
+      delay: p.delay,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'forwards',
     })
+    anim.addEventListener('finish', () => el.remove())
+    if (p.cls === 'mote-core') lead = anim
+  }
+
+  lead.addEventListener('finish', () => {
+    bloom(x0 + dx, y0 + dy)
+    then?.()
+  })
 }
 
-/** A soft ring where the dot lands. */
+/** Where the mote lands: a breath of light that swells and dissolves,
+    handing off to the card's own sheen. */
 function bloom(x, y) {
   if (reduced) return
-  const layer = document.createElement('div')
-  layer.className = 'spark'
-  layer.style.left = `${x}px`
-  layer.style.top = `${y}px`
-  const ring = document.createElement('span')
-  ring.className = 'ring'
-  layer.appendChild(ring)
-  document.body.appendChild(layer)
-  setTimeout(() => layer.remove(), 600)
+  const glow = document.createElement('div')
+  glow.className = 'landing'
+  glow.style.left = `${x}px`
+  glow.style.top = `${y}px`
+  document.body.appendChild(glow)
+  setTimeout(() => glow.remove(), 760)
 }
 
 function washCard(el) {
@@ -535,12 +732,35 @@ function travelTargets() {
   return targets
 }
 
+/** Spaces that appeared while something is still settling. The agent
+    creates a space BEFORE it files the capture, so without this the card
+    materializes whole on one poll and the mote arrives on the next — the
+    card beating its own animation. Held cards stay a hollow frame until
+    the mote lands on them. */
+function heldSpaces() {
+  if (!state.captures.length || !prev) return []
+  const before = new Set(prev.spaces.map((s) => s.id))
+  return state.spaces.filter((s) => !before.has(s.id)).map((s) => s.id)
+}
+
 // The building moment: a card under construction is a hollow dashed frame
-// with its content still forming; when the dot lands, it inks in.
+// with its content still forming; when the mote lands, it inks in.
 function unbuild(el) {
   if (!el?.classList.contains('building')) return
   el.classList.remove('building')
+  el.classList.add('forming')
+  setTimeout(() => el.classList.remove('forming'), 700)
   drawMeters(el)
+}
+
+/** Nothing left settling: release any frame still waiting on a mote that
+    is never coming (a failed pass, a capture filed to nothing). */
+function releaseHeld(targets) {
+  if (state.captures.length) return
+  const landing = new Set(targets.values())
+  for (const el of document.querySelectorAll('.space.building')) {
+    if (!landing.has(el.dataset.sid)) unbuild(el)
+  }
 }
 
 function renderInbox(targets = new Map()) {
@@ -894,6 +1114,26 @@ function renderSpaces(delayWash = new Set()) {
     rest.innerHTML = finishedRows + restRows + retiredRows
   }
 }
+
+/** A rotation should become the new layout immediately, not after the next
+    ten-second state poll. Only rebuild the column shells when the breakpoint
+    actually changes; CSS handles all fluid resizing within a layout. */
+function resizeLayout() {
+  clearTimeout(resizeLayout._t)
+  resizeLayout._t = setTimeout(() => {
+    if (!state) return
+    const box = $('#spaces')
+    if (box.children.length !== colCount()) withFlip(() => renderSpaces())
+
+    const capture = $('#capture')
+    if (capture?.value) {
+      capture.style.height = 'auto'
+      capture.style.height = `${Math.min(capture.scrollHeight, Math.round(innerHeight * 0.4))}px`
+      document.documentElement.style.setProperty('--capture-h', `${capture.offsetHeight}px`)
+    }
+  }, 120)
+}
+window.addEventListener('resize', resizeLayout)
 
 /** Trackers that just reached their target get the full §1.12 moment. */
 function celebrateDiffs() {
@@ -1269,10 +1509,12 @@ function render() {
   renderYearline()
   $('#shell').classList.toggle('settling', state.captures.length > 0)
   const targets = travelTargets()
+  const held = new Set([...targets.values(), ...heldSpaces()])
   withFlip(() => {
-    renderSpaces(new Set(targets.values()))
+    renderSpaces(held)
     renderInbox(targets)
   })
+  releaseHeld(targets)
   renderActivity()
   renderToday()
   renderCarryover()
@@ -2190,7 +2432,21 @@ function maybeNotify(items) {
 // the settle pass, not this browser.
 
 const settingsPop = $('#settings-pop')
+const settingsBackdrop = $('#settings-backdrop')
 let currentSettings = null
+
+const settingsFocusables = () =>
+  [...settingsPop.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')]
+
+function closeSettings(restoreFocus = true) {
+  if (settingsPop.hidden) return
+  settingsPop.hidden = true
+  settingsBackdrop.hidden = true
+  document.documentElement.classList.remove('modal-open')
+  const trigger = $('#gear-toggle')
+  trigger.setAttribute('aria-expanded', 'false')
+  if (restoreFocus) trigger.focus()
+}
 
 function renderSettings(s) {
   currentSettings = s
@@ -2229,15 +2485,18 @@ async function saveSettings(patch) {
 
 $('#gear-toggle').addEventListener('click', async () => {
   const open = settingsPop.hidden
-  settingsPop.hidden = !open
-  $('#gear-toggle').setAttribute('aria-expanded', String(open))
-  if (open) {
-    try {
-      renderSettings(await api('/api/settings'))
-    } catch (e) {
-      toast(e.message)
-    }
+  if (!open) return closeSettings()
+  settingsBackdrop.hidden = false
+  settingsPop.hidden = false
+  document.documentElement.classList.add('modal-open')
+  $('#gear-toggle').setAttribute('aria-expanded', 'true')
+  try {
+    renderSettings(await api('/api/settings'))
+  } catch (e) {
+    toast(e.message)
   }
+  const first = settingsPop.querySelector('#theme-seg button[aria-checked="true"]') || settingsFocusables()[0]
+  first?.focus()
 })
 
 $('#model-input').addEventListener('change', (e) => saveSettings({ model: e.target.value }))
@@ -2254,9 +2513,23 @@ for (const key of ['claude', 'codex']) {
 }
 
 document.addEventListener('mousedown', (e) => {
-  if (!settingsPop.hidden && !e.target.closest('#settings-pop, #gear-toggle')) {
-    settingsPop.hidden = true
-    $('#gear-toggle').setAttribute('aria-expanded', 'false')
+  if (!settingsPop.hidden && e.target === settingsBackdrop) closeSettings()
+})
+
+document.addEventListener('keydown', (e) => {
+  if (settingsPop.hidden) return
+  if (e.key === 'Escape') return closeSettings()
+  if (e.key !== 'Tab') return
+  const items = settingsFocusables()
+  if (!items.length) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
   }
 })
 
@@ -2300,14 +2573,28 @@ document.addEventListener('drop', async (e) => {
   }
 })
 
-$('#theme-toggle').addEventListener('click', () => {
+/** Appearance lives in settings now, as a choice rather than a toggle: the
+    corner stays for finding things. */
+function markTheme() {
+  const now = document.documentElement.dataset.theme || 'light'
+  for (const b of $('#theme-seg').querySelectorAll('[data-theme-set]')) {
+    b.setAttribute('aria-checked', String(b.dataset.themeSet === now))
+  }
+}
+
+$('#theme-seg').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-theme-set]')
+  if (!btn) return
   const root = document.documentElement
-  const next = root.dataset.theme === 'dark' ? 'light' : 'dark'
+  const next = btn.dataset.themeSet
+  if (root.dataset.theme === next) return
   root.classList.add('theming')
   root.dataset.theme = next
   localStorage.setItem('dec-theme', next)
+  markTheme()
   setTimeout(() => root.classList.remove('theming'), 320)
 })
+markTheme()
 
 // ------------------------------------------------------------------ boot
 
