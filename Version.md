@@ -1,6 +1,6 @@
 ---
 enabled: true
-current: 0.2.0
+current: 0.3.0
 dev_flow: formal
 test_gate: local
 ---
