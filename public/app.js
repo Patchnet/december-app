@@ -387,55 +387,12 @@ function travelTargets() {
   return targets
 }
 
-// ---------------------------------------------------------------- ghosts
-// The instant sketch: a faint guess appears the moment you type, and the
-// real settle inks over it.
-
-const ghosts = new Map() // captureId -> el
-
-function guessKind(text) {
-  const t = text.toLowerCase()
-  if (/remind|remember to|don't forget/.test(t)) return 'reminder'
-  if (/[$€£]|paid|spent|bought|cost/.test(t) && /\d/.test(t)) return 'ledger'
-  if (/\bof \d+|goal|target|by december|progress/.test(t)) return 'tracker'
-  return 'note'
-}
-
-function addGhost(c) {
-  if (reduced || ghosts.has(c.id)) return
-  const t = c.text.toLowerCase()
-  const space = state.spaces.find((s) => t.includes(s.name.toLowerCase())) ||
-    (c.hint && state.spaces.find((s) => s.name === c.hint))
-  const kind = guessKind(c.text)
-  if (space) {
-    // sketch lands inside the space it will likely join
-    const known = spaceEls.get(space.id)
-    if (!known) return
-    const el = document.createElement('div')
-    el.className = `block ghost gk-${kind}`
-    el.innerHTML = `<span class="gb gb-1"></span><span class="gb gb-2"></span>`
-    known.el.appendChild(el)
-    ghosts.set(c.id, el)
-  } else {
-    const el = document.createElement('article')
-    el.className = 'space ghost'
-    el.innerHTML = `
-      <h2 class="space-name">${esc(c.text.split(/[.,]/)[0].slice(0, 26))}</h2>
-      <div class="block gk-${kind}"><span class="gb gb-1"></span><span class="gb gb-2"></span></div>`
-    $('#spaces').prepend(el)
-    ghosts.set(c.id, el)
-  }
-}
-
-function removeGhost(cid) {
-  const el = ghosts.get(cid)
-  if (!el) return
-  ghosts.delete(cid)
-  // collapse, don't vanish: neighbors flow instead of jumping
-  el.style.height = `${el.offsetHeight}px`
-  void el.offsetHeight
-  el.classList.add('ghost-out')
-  setTimeout(() => el.remove(), 340)
+// The building moment: a card under construction is a hollow dashed frame
+// with its content still forming; when the dot lands, it inks in.
+function unbuild(el) {
+  if (!el?.classList.contains('building')) return
+  el.classList.remove('building')
+  drawMeters(el)
 }
 
 function renderInbox(targets = new Map()) {
@@ -449,7 +406,6 @@ function renderInbox(targets = new Map()) {
   let launch = 0
   for (const row of box.querySelectorAll('.inbox-row')) {
     if (!ids.has(row.dataset.cid) && !row.classList.contains('done-wait')) {
-      removeGhost(row.dataset.cid)
       row.classList.add('done-wait')
       const text = row.querySelector('.inbox-text')
       text.classList.remove('reading')
@@ -464,6 +420,7 @@ function renderInbox(targets = new Map()) {
       if (targetEl) {
         setTimeout(() => {
           travelDot(rect, targetEl, () => {
+            unbuild(targetEl)
             washCard(targetEl)
             fold()
           })
@@ -482,7 +439,6 @@ function renderInbox(targets = new Map()) {
       row.dataset.cid = c.id
       row.innerHTML = `<div><span class="inbox-text">${esc(c.text)}</span><span class="inbox-state"></span></div>`
       box.appendChild(row)
-      addGhost(c)
     }
     const text = row.querySelector('.inbox-text')
     const chip = row.querySelector('.inbox-state')
@@ -544,7 +500,10 @@ function renderSpaces(delayWash = new Set()) {
     const known = spaceEls.get(space.id)
     if (!known) {
       const el = document.createElement('article')
-      el.className = 'space fresh'
+      // a card born from a settling capture arrives as a hollow frame and
+      // inks in when the dot lands; anything else materializes whole
+      const building = delayWash.has(space.id) && !reduced
+      el.className = building ? 'space fresh building' : 'space fresh'
       el.style.animationDelay = `${Math.min(i * 45, 270)}ms`
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
@@ -552,7 +511,7 @@ function renderSpaces(delayWash = new Set()) {
       el.addEventListener('animationend', () => el.classList.add('settled'), { once: true })
       box.appendChild(el)
       spaceEls.set(space.id, { el, updatedAt: space.updatedAt })
-      drawMeters(el)
+      if (!building) drawMeters(el)
     } else if (known.updatedAt !== space.updatedAt) {
       const prevSpace = prev?.spaces.find((s) => s.id === space.id)
       known.el.innerHTML = spaceInner(space)
@@ -797,6 +756,7 @@ function renderHint() {
 
 function render() {
   renderYearline()
+  $('#shell').classList.toggle('settling', state.captures.length > 0)
   const targets = travelTargets()
   withFlip(() => {
     renderSpaces(new Set(targets.values()))
@@ -845,6 +805,7 @@ async function submitCapture() {
   field.value = ''
   field.style.height = 'auto'
   enterHint.classList.remove('on')
+  $('#shell').classList.remove('composing')
   localStorage.setItem('dec-files', String(Number(localStorage.getItem('dec-files') || 0) + 1))
   nextPrompt()
   try {
@@ -909,6 +870,7 @@ field.addEventListener('input', () => {
   field.style.height = 'auto'
   field.style.height = `${Math.min(field.scrollHeight, 200)}px`
   enterHint.classList.toggle('on', !!field.value.trim() && hintEligible())
+  $('#shell').classList.toggle('composing', !!field.value.trim())
 })
 
 // The page is the input: start typing anywhere and it lands in the capture.

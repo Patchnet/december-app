@@ -371,6 +371,15 @@ body {
 .activity.faded { opacity: 0; pointer-events: none; }
 .chips { transition: opacity 600ms var(--ease); }
 .chips.retired { opacity: 0; pointer-events: none; }
+
+/* while the person is composing or things are settling, everything under
+   their line steps back: no gray text competing with their own words */
+.today, .hint { transition: opacity var(--m-depth) var(--ease); }
+.shell.composing :is(.today, .chips, .activity, .hint),
+.shell.settling :is(.today, .chips, .activity, .hint) {
+  opacity: 0;
+  pointer-events: none;
+}
 .activity .undo {
   color: var(--accent-ink);
   background: none;
@@ -694,28 +703,28 @@ body {
 .streak-dots.mini { gap: 3px; }
 .streak-dots.mini i { width: 5px; height: 5px; }
 
-/* ---------------------------------------------------------- the ghosts
-   The instant sketch: dashed, faint, waiting to be inked. */
+/* --------------------------------------------------------- the building
+   The dashed hollow frame is reserved for the moment a card is actually
+   being built. Content forms inside it, blurred and faint; when the dot
+   lands the frame inks in: dashes fade, content sharpens, bars draw. */
 
-.space.ghost {
-  border-style: dashed;
-  opacity: 0.6;
-  box-shadow: none;
-  animation: materialize var(--m-enter) var(--ease-out) both;
+.space::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--m-struct) var(--ease);
 }
-.block.ghost { opacity: 0.55; }
-.gb {
-  display: block;
-  height: 9px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  margin-bottom: var(--space-2);
+.space > * {
+  transition: opacity var(--m-struct) var(--ease-out), filter var(--m-struct) var(--ease-out);
 }
-.gb-1 { width: 62%; }
-.gb-2 { width: 38%; }
-.gk-ledger .gb-1 { height: 20px; width: 34%; }
-.gk-tracker .gb-2 { height: 4px; width: 100%; }
-.gk-reminder .gb-2 { display: none; }
+.space.building { border-color: transparent; box-shadow: none; }
+.space.building::before { opacity: 1; }
+.space.building > * { opacity: 0.25; filter: blur(5px); }
+
 .ghost-out {
   opacity: 0 !important;
   height: 0 !important;
