@@ -125,10 +125,22 @@ The same surface is exposed over MCP, so an assistant you already use can read
 and write the page directly. That is the seam a digital worker would work
 through.
 
+Connect yours in one step — start December, then:
+
 ```bash
-claude mcp add december -- node ~/december-app/mcp-server.mjs
+node connect.mjs
 ```
 
+It finds Claude Code, Claude Desktop, Codex, and Cursor, connects the ones
+you choose (`--yes` takes them all), publishes December's small
+house-manners skill beside them, and checks the result. Prefer clicking?
+The gear's **Connections** cards do the same, and they are part of first-run
+setup in the desktop app. ChatGPT appears honestly as not-yet-connectable —
+a local-only server has nothing it can reach; that arrives with sync.
+
+The server must be running while an assistant works. The desktop app owns
+`http://localhost:3008` (falling back to `:3009`); `DECEMBER_URL` pins a
+connection anywhere else.
 ```bash
 node --test test/*.test.mjs
 ```

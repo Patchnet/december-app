@@ -14,6 +14,7 @@ import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
+import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const PORT = Number(process.env.PORT || 3008)
@@ -392,6 +393,24 @@ const server = createServer(async (req, res) => {
         })
       } catch (e) {
         return json(res, 400, { error: e.message })
+      }
+    }
+
+    // Connections are inspected without side effects. A write happens only
+    // after a person chooses a client in onboarding, settings, or the CLI.
+    if (path === '/api/connect' && req.method === 'GET') {
+      return json(res, 200, { clients: await connectionStatuses() })
+    }
+    if (path === '/api/connect' && req.method === 'POST') {
+      const { client } = await readBody(req)
+      if (!CONNECT_CLIENTS.includes(client)) return json(res, 400, { error: `unknown client: ${client}` })
+      try {
+        const registration = await registerClient(client)
+        const skills = await publishSkills()
+        const status = await verifyClient(client)
+        return json(res, 200, { client, status, registration, skills })
+      } catch (e) {
+        return json(res, 502, { error: e.message, client })
       }
     }
 

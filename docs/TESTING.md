@@ -21,6 +21,10 @@ runner and `node:assert`. No package.json, no runner install.
   in-memory zip; corrupt and empty documents rejected.
 - `test/settings.test.mjs` — gear settings validation: known engines only,
   defensive copies, engine metadata.
+- `test/connect.test.mjs` — isolated client-config round trips, Claude
+  Desktop backup behavior, forward-slash Codex TOML, skill version publishing,
+  detection/status shape, and the non-interactive wizard. Every home and app
+  data directory in these tests is a disposable fixture.
 - `test/settle.test.mjs` — robust surfacing-array extraction and item
   validation.
 

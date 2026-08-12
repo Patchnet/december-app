@@ -2849,6 +2849,72 @@ function maybeNotify(items) {
 const settingsPop = $('#settings-pop')
 const settingsBackdrop = $('#settings-backdrop')
 let currentSettings = null
+let currentConnections = null
+
+const connectionClients = [
+  { key: 'claude-code', label: 'Claude Code', logo: 'claude-code.png', guidance: 'Install Claude Code and sign in once.' },
+  { key: 'claude-desktop', label: 'Claude Desktop', logo: 'claude.png', guidance: 'Open Claude Desktop once so its local config exists.' },
+  { key: 'codex', label: 'Codex', logo: 'codex.png', guidance: 'Install Codex and finish its sign-in flow.' },
+  { key: 'cursor', label: 'Cursor', logo: 'cursor.png', guidance: 'Open Cursor once so its local config exists.' },
+]
+
+function connectionCopy(status) {
+  if (!status) return { line: 'checking this machine', action: '', disabled: true }
+  if (status.state === 'connected') return { line: 'connected to this December', action: 'reconnect', disabled: false }
+  if (status.state === 'available') return { line: 'available on this machine', action: 'connect', disabled: false }
+  if (status.state === 'error') return { line: status.detail || 'connection needs attention', action: 'reconnect', disabled: false }
+  return { line: 'not installed', action: '', disabled: true }
+}
+
+function providerMark(client) {
+  return `<img class="provider-logo" src="/providers/${client.logo}" alt="" />`
+}
+
+function renderConnectionSettings() {
+  const target = $('#connection-list')
+  target.innerHTML = connectionClients.map((client) => {
+    const status = currentConnections?.[client.key]
+    const copy = connectionCopy(status)
+    const guidance = status?.state === 'not-installed' ? client.guidance : copy.line
+    return `<div class="connection-row ${status?.state || 'checking'}">
+      ${providerMark(client)}
+      <span class="connection-name"><b>${client.label}</b><small>${esc(guidance)}</small></span>
+      ${copy.action ? `<button type="button" data-connect-client="${client.key}">${copy.action}</button>` : '<span class="connection-state">' + (status?.state === 'connected' ? '&#10003;' : '') + '</span>'}
+    </div>`
+  }).join('') + `<div class="connection-row unavailable">
+    ${providerMark({ logo: 'chatgpt.png' })}
+    <span class="connection-name"><b>ChatGPT</b><small>needs a remote connection — arrives with sync</small></span>
+    <button type="button" disabled>later</button>
+  </div>`
+}
+
+async function loadConnections() {
+  try {
+    currentConnections = (await api('/api/connect')).clients
+    renderConnectionSettings()
+    renderOnboarding()
+  } catch (error) {
+    currentConnections = null
+    renderConnectionSettings()
+    if (!onboarding.hidden) $('#onboarding-note').textContent = error.message
+  }
+}
+
+async function connectClient(client, button) {
+  if (button) {
+    button.disabled = true
+    button.textContent = 'connecting…'
+  }
+  try {
+    const result = await api('/api/connect', { client })
+    const label = connectionClients.find((item) => item.key === client)?.label || client
+    toast(result.status?.state === 'connected' ? `${label} connected` : (result.status?.detail || `${label} needs attention`))
+  } catch (error) {
+    toast(error.message)
+  } finally {
+    await loadConnections()
+  }
+}
 
 const settingsFocusables = () =>
   [...settingsPop.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')]
@@ -2887,7 +2953,8 @@ function renderSettings(s) {
     pathInput.placeholder = s.resolvedEngines?.[key] || 'auto-detect'
     pathInput.title = s.resolvedEngines?.[key] || ''
   }
-  renderOnboarding(s)
+  renderConnectionSettings()
+  renderOnboarding()
 }
 
 async function saveSettings(patch) {
@@ -2908,6 +2975,7 @@ $('#gear-toggle').addEventListener('click', async () => {
   $('#gear-toggle').setAttribute('aria-expanded', 'true')
   try {
     renderSettings(await api('/api/settings'))
+    await loadConnections()
   } catch (e) {
     toast(e.message)
   }
@@ -2934,6 +3002,11 @@ for (const key of ['claude', 'codex']) {
     if (e.key === 'Enter') e.target.blur()
   })
 }
+
+$('#connection-list').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-connect-client]')
+  if (button) connectClient(button.dataset.connectClient, button)
+})
 
 document.addEventListener('mousedown', (e) => {
   if (!settingsPop.hidden && e.target === settingsBackdrop) closeSettings()
@@ -3027,28 +3100,32 @@ const launchParams = new URLSearchParams(location.search)
 const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
 const onboarding = $('#onboarding')
 
-function renderOnboarding(s) {
+function renderOnboarding() {
   if (onboarding.hidden) return
-  const engines = [
-    ['claude', 'Claude Code', 'Run claude once and finish its sign-in flow. Then restart December to detect it.'],
-    ['codex', 'Codex', 'Run codex login once and finish its sign-in flow. Then restart December to detect it.'],
-  ]
-  $('#onboarding-engines').innerHTML = engines.map(([key, label, guidance]) => `
-    <button class="onboarding-engine ${s.engine === key ? 'selected' : ''}" data-onboard-engine="${key}" ${s.engines[key] ? '' : 'disabled'}>
-      <span><b>${label}</b><small>${s.engines[key] ? 'ready on this machine' : 'not detected'}</small></span>
-      <span>${s.engines[key] ? (s.engine === key ? 'selected' : 'use this') : 'connect first'}</span>
-    </button>
-    ${s.engines[key] ? '' : `<p class="onboarding-guidance">${guidance}</p>`}
-  `).join('')
-  const any = Object.values(s.engines).some(Boolean)
-  $('#onboarding-note').textContent = any
-    ? 'You can start writing now. December will organize new captures behind you.'
-    : 'No local AI was found yet. December still saves everything in capture-only mode; connect a CLI whenever you are ready.'
+  $('#onboarding-engines').innerHTML = connectionClients.map((client) => {
+    const status = currentConnections?.[client.key]
+    const copy = connectionCopy(status)
+    const guidance = status?.state === 'not-installed' ? client.guidance : copy.line
+    const connected = status?.state === 'connected'
+    return `<button class="onboarding-engine ${connected ? 'connected' : ''}" data-connect-client="${copy.action ? client.key : ''}" ${copy.disabled || connected ? 'disabled' : ''}>
+      ${providerMark(client)}
+      <span class="provider-copy"><b>${client.label}</b><small>${esc(guidance)}</small></span>
+      <span class="provider-action">${connected ? '&#10003;' : copy.action}</span>
+    </button>`
+  }).join('') + `<button class="onboarding-engine unavailable" disabled>
+    ${providerMark({ logo: 'chatgpt.png' })}
+    <span class="provider-copy"><b>ChatGPT</b><small>needs a remote connection — arrives with sync</small></span>
+    <span class="provider-action">later</span>
+  </button>`
+  const connected = Object.values(currentConnections || {}).filter((status) => status.state === 'connected').length
+  $('#onboarding-note').textContent = connected
+    ? `${connected} assistant${connected === 1 ? '' : 's'} connected. You can reconnect any time from the gear.`
+    : 'You can keep writing without a connection. December saves every capture locally.'
 }
 
 $('#onboarding-engines').addEventListener('click', async (event) => {
-  const button = event.target.closest('[data-onboard-engine]')
-  if (button) await saveSettings({ engine: button.dataset.onboardEngine })
+  const button = event.target.closest('[data-connect-client]')
+  if (button?.dataset.connectClient) await connectClient(button.dataset.connectClient, button)
 })
 
 $('#onboarding-close').addEventListener('click', () => {
@@ -3138,6 +3215,7 @@ async function boot() {
     if (shouldOnboard) {
       onboarding.hidden = false
       renderSettings(await api('/api/settings'))
+      await loadConnections()
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()

@@ -2018,6 +2018,50 @@ a.retire-link:hover { color: var(--accent-ink); }
 }
 .set-path { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
 
+.connection-settings {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+}
+.connection-settings h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.connection-settings > p { margin: var(--space-1) 0 var(--space-3); color: var(--text-3); font-size: 11.5px; }
+.connection-list { display: grid; gap: 2px; }
+.connection-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 45px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+.connection-row:hover { background: var(--surface-1); }
+.provider-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  filter: grayscale(1);
+  opacity: 0.76;
+}
+:root[data-theme="dark"] .provider-logo { filter: grayscale(1) invert(0.86); }
+.connection-name { min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.connection-name b { color: var(--text-1); font-size: 12.5px; font-weight: 500; }
+.connection-name small { overflow: hidden; color: var(--text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.connection-row button {
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.connection-row button:hover:not(:disabled) { border-color: var(--accent-edge); color: var(--accent-ink); }
+.connection-row button:disabled { border-color: transparent; color: var(--text-3); cursor: default; }
+.connection-state { width: 28px; color: var(--hue-ok); text-align: center; }
+
 .settings-about {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2103,14 +2147,15 @@ a.retire-link:hover { color: var(--accent-ink); }
   font-size: 20px;
   cursor: pointer;
 }
-.onboarding-engines { display: grid; gap: var(--space-2); }
+.onboarding-engines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 .onboarding-engine {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3) var(--space-4);
+  min-height: 68px;
+  padding: var(--space-3);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-md);
   background: var(--elevated);
@@ -2119,14 +2164,21 @@ a.retire-link:hover { color: var(--accent-ink); }
   text-align: left;
   cursor: pointer;
 }
-.onboarding-engine.selected { border-color: var(--accent-edge); background: var(--accent-soft); color: var(--accent-ink); }
+.onboarding-engine:hover:not(:disabled) { border-color: var(--accent-edge); background: var(--surface-2); }
+.onboarding-engine.connected { border-color: var(--accent-edge); background: var(--accent-soft); color: var(--accent-ink); }
 .onboarding-engine:disabled { opacity: 0.62; cursor: default; }
-.onboarding-engine span { display: flex; flex-direction: column; }
-.onboarding-engine span:last-child { align-items: flex-end; font-size: 12px; }
+.onboarding-engine.connected:disabled { opacity: 1; }
+.onboarding-engine .provider-logo { width: 24px; height: 24px; }
+.onboarding-engine .provider-copy { min-width: 0; display: flex; flex-direction: column; }
+.onboarding-engine .provider-action { color: var(--text-3); font-size: 12px; text-align: right; }
+.onboarding-engine.connected .provider-action { color: var(--hue-ok); font-size: 16px; }
 .onboarding-engine small { color: var(--text-3); font-size: 12px; font-weight: 400; }
-.onboarding-guidance { margin: 0 var(--space-4) var(--space-2); color: var(--text-3); font-size: 12px; }
 .onboarding-note { margin-top: var(--space-4); color: var(--text-2); font-size: 13px; }
 .working.capture-only { font-size: 11.5px; }
+
+@media (max-width: 620px) {
+  .onboarding-engines { grid-template-columns: 1fr; }
+}
 
 /* --------------------------------------------------------- the dropzone */
 
