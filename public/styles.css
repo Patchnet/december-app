@@ -373,10 +373,11 @@ body {
 .chips.retired { opacity: 0; pointer-events: none; }
 
 /* while the person is composing or things are settling, everything under
-   their line steps back: no gray text competing with their own words */
+   their line steps back: no gray text competing with their own words.
+   IDs only: the ask's own chips must never be caught by this fade. */
 .today, .hint { transition: opacity var(--m-depth) var(--ease); }
-.shell.composing :is(.today, .chips, .activity, .hint),
-.shell.settling :is(.today, .chips, .activity, .hint) {
+.shell.composing :is(#today, #suggest, #activity, #hint),
+.shell.settling :is(#today, #suggest, #activity, #hint) {
   opacity: 0;
   pointer-events: none;
 }
