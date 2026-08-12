@@ -13,35 +13,36 @@
   <div class="shell" id="shell">
     <div class="settings-backdrop" id="settings-backdrop" hidden></div>
     <section class="settings-pop" id="settings-pop" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" hidden>
-      <div class="settings-head">
-        <h2 id="settings-title">Settings</h2>
-        <p>Your page, your machine.</p>
-      </div>
-      <div class="set-row">
-        <span class="set-label">Appearance</span>
-        <div class="seg" id="theme-seg" role="radiogroup" aria-label="Appearance">
-          <button type="button" data-theme-set="light" role="radio" aria-checked="false">light</button>
-          <button type="button" data-theme-set="dark" role="radio" aria-checked="false">dark</button>
+      <h2 class="settings-title" id="settings-title">Settings</h2>
+
+      <div class="set-list">
+        <div class="set-row">
+          <span class="set-label">Appearance</span>
+          <div class="seg" id="theme-seg" role="radiogroup" aria-label="Appearance">
+            <button type="button" data-theme-set="light" role="radio" aria-checked="false">light</button>
+            <button type="button" data-theme-set="dark" role="radio" aria-checked="false">dark</button>
+          </div>
         </div>
+        <div class="set-row">
+          <span class="set-label">Engine</span>
+          <div class="seg" id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
+        </div>
+        <label class="set-row" for="model-input">
+          <span class="set-label">Model</span>
+          <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
+        </label>
+        <label class="set-row" for="claude-path">
+          <span class="set-label">Claude path</span>
+          <input class="set-input set-path" id="claude-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
+        </label>
+        <label class="set-row" for="codex-path">
+          <span class="set-label">Codex path</span>
+          <input class="set-input set-path" id="codex-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
+        </label>
       </div>
-      <div class="set-row">
-        <span class="set-label">Engine</span>
-        <div class="seg" id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
-      </div>
-      <label class="set-row" for="model-input">
-        <span class="set-label">Model</span>
-        <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
-      </label>
-      <div class="set-paths">
-        <label class="set-label" for="claude-path">Claude CLI path</label>
-        <input class="set-input set-path" id="claude-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
-        <label class="set-label" for="codex-path">Codex CLI path</label>
-        <input class="set-input set-path" id="codex-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
-      </div>
-      <div class="set-note">who organizes your page, and with which model</div>
+
       <a class="settings-about" href="https://github.com/Patchnet/december-app" target="_blank" rel="noopener noreferrer"
         aria-label="About December on GitHub (opens in a new tab)">
-        <span class="about-mark" aria-hidden="true">D</span>
         <span class="about-copy">
           <strong>About December</strong>
           <span class="about-note" aria-hidden="true">
@@ -65,10 +66,31 @@
 
     <h1 class="dateline" id="dateline" tabindex="0" role="button" aria-label="Open the year"></h1>
 
-    <div class="cwrap">
-      <textarea class="capture" id="capture" rows="1"
-        placeholder="What's up?" autofocus spellcheck="false"></textarea>
-      <span class="enter-hint" id="enter-hint" aria-hidden="true">&#8629;</span>
+    <div class="stage" id="stage" data-mode="idle">
+      <div class="cwrap">
+        <textarea class="capture" id="capture" rows="1"
+          placeholder="What's up?" autofocus spellcheck="false"></textarea>
+        <span class="enter-hint" id="enter-hint" aria-hidden="true">&#8629;</span>
+      </div>
+
+      <!-- One region, one job at a time: the question, what is settling, or
+           what needs you today. While you write, it clears for you. The
+           cards below never move because this never changes height. -->
+      <div class="moment">
+        <div class="pane pane-ask">
+          <div id="ask"></div>
+        </div>
+        <div class="pane pane-settling">
+          <div class="inbox" id="inbox"></div>
+          <div class="activity" id="activity" aria-live="polite"></div>
+        </div>
+        <div class="pane pane-idle">
+          <div class="co-nudge" id="co-nudge"></div>
+          <div class="chips" id="suggest"></div>
+          <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
+          <div class="hint" id="hint"></div>
+        </div>
+      </div>
     </div>
 
     <header class="corner">
@@ -84,15 +106,6 @@
         </svg>
       </button>
     </header>
-
-    <div id="answer"></div>
-    <div class="co-nudge" id="co-nudge"></div>
-    <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
-    <div class="chips" id="suggest"></div>
-    <div class="hint" id="hint"></div>
-    <div class="inbox" id="inbox"></div>
-    <div class="activity" id="activity" aria-live="polite"></div>
-    <div id="ask"></div>
 
     <div class="body-grid">
       <nav class="rail" id="rail" aria-label="Spaces"></nav>

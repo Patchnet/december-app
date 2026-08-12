@@ -11,6 +11,8 @@ const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 let state = null
 let prev = null // previous projection, for celebration diffs
+let booting = true // the first paint stages itself; every one after is live
+document.documentElement.classList.add('booting')
 const spaceEls = new Map() // id -> {el, updatedAt}
 let pollTimer = null
 
@@ -112,6 +114,17 @@ function bump(el) {
 // ---------------------------------------------------------------- blocks
 
 /** A due time said the way a person would say it. */
+/** A clock time the way a person says it: 17:30 -> 5:30pm, 18:00 -> 6pm. */
+function clockOf(at) {
+  if (!/^\d{2}:\d{2}$/.test(at || '')) return ''
+  const [h, m] = at.split(':').map(Number)
+  const d = new Date()
+  d.setHours(h, m, 0, 0)
+  // "5:30 pm" -> "5:30pm", "6:00 pm" -> "6pm": the page writes times the
+  // terse way a person does
+  return d.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(':00', '').replace(/\s/g, '')
+}
+
 function whenPhrase(b, now = new Date()) {
   if (!b.when) return null
   const today = localDay(now)
@@ -123,18 +136,18 @@ function whenPhrase(b, now = new Date()) {
     const due = new Date(now)
     due.setHours(h, m, 0, 0)
     const mins = Math.round((due - now) / 60000)
-    const clock = due.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(':00', '')
+    const clock = clockOf(b.at)
     if (mins < -5) return { text: `${clock}, passed`, urgent: true }
     if (mins <= 1) return { text: 'now', urgent: true }
     if (mins < 60) return { text: `in ${mins} min`, urgent: true }
     if (mins < 180) return { text: `in ${Math.round(mins / 60)} hours`, urgent: true }
     return { text: clock, urgent: false }
   }
-  if (b.when === tomorrow) return { text: b.at ? `tomorrow ${b.at}` : 'tomorrow', urgent: false }
-  return {
-    text: new Date(`${b.when}T12:00:00`).toLocaleString('en', { month: 'short', day: 'numeric' }).toLowerCase(),
-    urgent: false,
-  }
+  if (b.when === tomorrow) return { text: b.at ? `tomorrow ${clockOf(b.at)}` : 'tomorrow', urgent: false }
+  // a time answered for a date further out was being dropped here: the
+  // person told the page when it was and the page never said it back
+  const day = new Date(`${b.when}T12:00:00`).toLocaleString('en', { month: 'short', day: 'numeric' }).toLowerCase()
+  return { text: b.at ? `${day}, ${clockOf(b.at)}` : day, urgent: false }
 }
 
 // links in card content become quiet hyperlinks: host + path as the label,
@@ -350,6 +363,16 @@ const RENDER = {
   tracker: (b, full_, hero) => {
     const pct = Math.min(100, Math.round((b.current / b.target) * 100))
     const full = b.current >= b.target
+    // A small whole target counts better than it fills: twelve dots say
+    // "none yet" where a bar at 0% just looks broken.
+    const countable =
+      Number.isInteger(b.current) && Number.isInteger(b.target) && b.target <= 24 && b.target > 1
+    const pips = countable
+      ? `<div class="pips ${full ? 'full' : ''}" role="img" aria-label="${b.current} of ${b.target}${b.unit ? ` ${b.unit}` : ''}">${Array.from(
+          { length: b.target },
+          (_, i) => `<i class="${i < b.current ? 'on' : ''}" style="--i:${i}"></i>`
+        ).join('')}</div>`
+      : ''
     // the hero drops its title: the space name and the number already say it
     const title = hero ? '' : `<span class="block-title" style="margin:0">${esc(b.title)}</span>`
     return `
@@ -357,7 +380,7 @@ const RENDER = {
       ${title}
       <span class="tracker-count ${full ? 'full' : ''}"><b>${num(b.current)}</b> of ${num(b.target)}${b.unit ? ` <span class="tracker-unit">${esc(b.unit)}</span>` : ''}</span>
     </div>
-    <div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span></div>`
+    ${pips || `<div class="meter ${full ? 'full' : ''}" data-meter="${b.id}"><span style="width:${pct}%"></span></div>`}`
   },
 
   ledger: (b, full, hero) => {
@@ -386,10 +409,13 @@ const RENDER = {
       const today = i === 0 && !on
       days.push(`<i class="${on ? 'on' : ''}${today ? 'today' : ''}" style="--i:${13 - i}"></i>`)
     }
+    // A hero tracker can drop its title because its number carries a unit
+    // ("139 of 200 miles"). A streak's number carries nothing, so dropping
+    // the title left the card reading as a space name and a bare 1.
     return `
     <div class="tracker-line">
-      ${hero ? '' : `<span class="block-title" style="margin:0">${esc(b.title)}</span>`}
-      <span class="streak-count">${b.dates.length}</span>
+      ${b.title ? `<span class="block-title" style="margin:0">${esc(b.title)}</span>` : ''}
+      <span class="streak-count">${b.dates.length} <span class="tracker-unit">day${b.dates.length === 1 ? '' : 's'}</span></span>
     </div>
     <div class="streak-line"><span class="streak-dots">${days.join('')}</span></div>`
   },
@@ -485,10 +511,8 @@ function spaceInner(space, full = false) {
     return w(a) - w(b)
   })
   const hero = full ? null : heroId(space)
-  const corner = full
-    ? ''
-    : `<div class="card-tools">
-        <button class="card-tool ${space.complete ? 'ready' : ''}" data-finish="${space.id}" aria-label="Close this space out" title="close out">
+  const corner = `<div class="card-tools">
+        <button class="card-tool ${space.complete ? 'ready' : ''}" data-finish="${space.id}" aria-label="${space.finished ? 'Reopen this space' : 'Close this space out'}" title="${space.finished ? 'reopen' : 'close out'}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 6.5"/></svg>
         </button>
         <button class="card-tool ${space.pinned ? 'on' : ''}" data-pin="${space.id}" aria-label="${space.pinned ? 'Unpin' : 'Pin'}" title="${space.pinned ? 'unpin' : 'pin'}">
@@ -557,21 +581,20 @@ function buildFocus() {
       <article class="focus-card" data-sid="${space.id}">
         ${spaceInner(space, true)}
         <textarea class="capture focus-capture" rows="1" placeholder="Add to ${esc(space.name)}…" spellcheck="false"></textarea>
-        <div class="space-verbs">
-          <button class="co-link" data-finish="${space.id}">${space.finished ? 'reopen it' : 'close it out'}</button>
-          <button class="retire-link" data-retire="${space.id}">retire this space</button>
-        </div>
       </article>
     </div>`
   wrap.dataset.u = space.updatedAt
   const fieldEl = wrap.querySelector('.focus-capture')
   if (fieldEl) {
     fieldEl.value = draft
-    if (hadFocus || !draft) fieldEl.focus()
+    // the add-to field sits at the foot of the card: focusing it normally
+    // scrolls it into view, which opened every long card at its bottom
+    if (hadFocus || !draft) fieldEl.focus({ preventScroll: true })
     if (draft) fieldEl.setSelectionRange(caret, caret)
   }
   const card = wrap.querySelector('.focus-card')
-  if (card && scrollTop) card.scrollTop = scrollTop
+  // a card opens at its top; only a re-render keeps where you were
+  card?.scrollTo({ top: scrollTop, behavior: 'auto' })
   document.documentElement.classList.add('modal-open')
 }
 
@@ -677,7 +700,11 @@ function washCard(el) {
 function withFlip(fn) {
   if (reduced) return fn()
   const before = new Map()
-  for (const el of document.querySelectorAll('#spaces .space')) before.set(el, el.getBoundingClientRect())
+  // everything the header can shove: the cards, the rail beside them, and
+  // the quiet spaces below. Measuring only the grid left the rest snapping.
+  for (const el of document.querySelectorAll('#spaces .space, #rail, #resting')) {
+    before.set(el, el.getBoundingClientRect())
+  }
   fn()
   const moves = []
   for (const [el, a] of before) {
@@ -690,18 +717,30 @@ function withFlip(fn) {
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([el, dx, dy])
   }
   if (!moves.length) return
-  for (const [el, dx, dy] of moves) {
-    el.style.transition = 'none'
-    el.style.transform = `translate(${dx}px, ${dy}px)`
+  // Settling reads as a settling, not a snap: the page resolves from the
+  // top down, and how far a card travels decides how long it takes. One
+  // duration for every card made a 6px nudge look as laborious as a
+  // full-column move, and every card starting on the same frame made the
+  // whole grid move like one object.
+  const plan = moves
+    .map(([el, dx, dy]) => ({ el, dx, dy, top: el.getBoundingClientRect().top, dist: Math.hypot(dx, dy) }))
+    .sort((p, q) => p.top - q.top)
+  for (const m of plan) {
+    m.el.style.transition = 'none'
+    m.el.style.transform = `translate(${m.dx}px, ${m.dy}px)`
   }
   void document.body.offsetHeight
-  for (const [el] of moves) {
-    el.style.transition = 'transform var(--m-struct) var(--ease-expo)'
-    el.style.transform = ''
-  }
+  let longest = 0
+  plan.forEach((m, i) => {
+    const dur = Math.round(Math.min(460, 250 + m.dist * 0.55))
+    const delay = Math.min(i * 14, 110)
+    longest = Math.max(longest, dur + delay)
+    m.el.style.transition = `transform ${dur}ms var(--ease-settle) ${delay}ms`
+    m.el.style.transform = ''
+  })
   setTimeout(() => {
-    for (const [el] of moves) el.style.transition = ''
-  }, 420)
+    for (const m of plan) m.el.style.transition = ''
+  }, longest + 60)
 }
 
 /** Data reveal: bars draw to their mark instead of appearing at it. */
@@ -741,6 +780,22 @@ function heldSpaces() {
   if (!state.captures.length || !prev) return []
   const before = new Set(prev.spaces.map((s) => s.id))
   return state.spaces.filter((s) => !before.has(s.id)).map((s) => s.id)
+}
+
+/** Pinning does not change a space's content, so its updatedAt does not
+    move and the card's markup is never rebuilt. The tools have to be synced
+    on their own or an unpinned card keeps a solid pin forever. */
+function syncTools(el, space) {
+  if (!el) return
+  el.classList.toggle('pinned', !!space.pinned)
+  const pin = el.querySelector('[data-pin]')
+  if (pin) {
+    pin.classList.toggle('on', !!space.pinned)
+    pin.setAttribute('aria-label', space.pinned ? 'Unpin' : 'Pin')
+    pin.setAttribute('title', space.pinned ? 'unpin' : 'pin')
+    pin.querySelector('svg')?.setAttribute('fill', space.pinned ? 'currentColor' : 'none')
+  }
+  el.querySelector('[data-finish]')?.classList.toggle('ready', !!space.complete)
 }
 
 // The building moment: a card under construction is a hollow dashed frame
@@ -857,13 +912,17 @@ function askToFinish(space) {
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
-      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-label="Close out this space">
-        <h2 class="space-name">Close out ${esc(space.name)}?</h2>
-        <p class="co-read">${open.length} thing${open.length === 1 ? '' : 's'} still unfinished. Closing keeps everything as it is and moves the space down to finished; you can reopen it anytime.</p>
+      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-labelledby="co-title">
+        <h2 class="space-name" id="co-title">Close out ${esc(space.name)}?</h2>
+        <p class="co-read">${
+          open.length
+            ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} still unfinished.`
+            : 'Nothing here is unfinished.'
+        } You can reopen it anytime.</p>
         <div class="confirm-list">${open.slice(0, 6).map((t) => `<div class="confirm-item">${esc(t)}</div>`).join('')}${open.length > 6 ? `<div class="confirm-item more">and ${open.length - 6} more</div>` : ''}</div>
-        <div class="chips" style="margin-top:16px">
-          <button class="chip-btn" data-confirm-finish="${space.id}">close it out anyway</button>
-          <button class="co-link" data-close>keep it open</button>
+        <div class="co-actions">
+          <button class="btn-solid" data-confirm-finish="${space.id}">Close it out</button>
+          <button class="btn-quiet" data-close>Keep it open</button>
         </div>
       </article>
     </div>`
@@ -878,17 +937,6 @@ function openThings(space) {
     if (b.type === 'tracker' && b.current < b.target) out.push(`${b.title || 'goal'}: ${b.current} of ${b.target}`)
   }
   return out
-}
-
-/** How many things in a space are still waiting on you. */
-function countOpen(space) {
-  let n = 0
-  for (const b of space?.blocks || []) {
-    if (b.type === 'list') n += b.items.filter((i) => !i.done).length
-    if (b.type === 'reminder' && !b.done) n++
-    if (b.type === 'tracker' && b.current < b.target) n++
-  }
-  return n
 }
 
 // ---------------------------------------------------------- the layout
@@ -919,9 +967,15 @@ function placeCards(box, ordered) {
   if (!cols.length) return
   const heights = cols.map(() => 0)
   const want = cols.map(() => [])
+  const STICK = 140 // px of imbalance a card tolerates to stay put
   for (const el of ordered) {
     let target = 0
     for (let i = 1; i < cols.length; i++) if (heights[i] < heights[target]) target = i
+    // a card that already lives somewhere stays there unless the shortest
+    // column is genuinely shorter: re-balancing on every small height change
+    // is what makes the page churn
+    const cur = cols.indexOf(el.parentElement)
+    if (cur !== -1 && heights[cur] <= heights[target] + STICK) target = cur
     want[target].push(el)
     heights[target] += el.offsetHeight + 14
   }
@@ -980,6 +1034,8 @@ function renderSpaces(delayWash = new Set()) {
   ensureColumns(box)
   active.forEach((space, i) => {
     seen.add(space.id)
+    // whatever branch runs below, the tools reflect the space afterwards
+    queueMicrotask(() => syncTools(spaceEls.get(space.id)?.el, space))
     const known = spaceEls.get(space.id)
     if (!known) {
       const el = document.createElement('article')
@@ -990,7 +1046,11 @@ function renderSpaces(delayWash = new Set()) {
       el.tabIndex = 0
       el.setAttribute('role', 'button')
       el.setAttribute('aria-label', `${space.name}, open`)
-      el.style.animationDelay = `${Math.min(i * 45, 270)}ms`
+      // on the first paint the cards follow the header in, a beat apart and
+      // for longer; afterwards a new card arrives on its own immediately
+      el.style.animationDelay = booting
+        ? `${260 + Math.min(i * 55, 660)}ms`
+        : `${Math.min(i * 45, 270)}ms`
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
       el.classList.toggle('pinned', !!space.pinned)
@@ -1100,9 +1160,9 @@ function renderSpaces(delayWash = new Set()) {
       ? ''
       : `<div class="rest-head">finished</div>` +
         finished
-          .map((s) => {
+          .map((s, i) => {
             const mon = s.finishedAt ? new Date(s.finishedAt).toLocaleString('en', { month: 'long' }).toLowerCase() : ''
-            return `<button class="rest-row" data-reopen="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">${mon ? `done in ${mon}` : 'done'}</span></button>`
+            return `<button class="rest-row" data-reopen="${s.id}" style="--d:${Math.min(i * 26, 160)}ms"><span>${esc(s.name)}</span><span class="rest-when">${mon ? `done in ${mon}` : 'done'}</span></button>`
           })
           .join('')
     const retiredRows = !retired.length
@@ -1125,17 +1185,45 @@ function resizeLayout() {
     const box = $('#spaces')
     if (box.children.length !== colCount()) withFlip(() => renderSpaces())
 
-    const capture = $('#capture')
-    if (capture?.value) {
-      capture.style.height = 'auto'
-      capture.style.height = `${Math.min(capture.scrollHeight, Math.round(innerHeight * 0.4))}px`
-      document.documentElement.style.setProperty('--capture-h', `${capture.offsetHeight}px`)
-    }
+    if ($('#capture')?.value) fitCapture()
   }, 120)
 }
 window.addEventListener('resize', resizeLayout)
 
 /** Trackers that just reached their target get the full §1.12 moment. */
+/** Closing a space out is the one moment December is allowed to be glad,
+    so it gets its own gesture rather than the small confetti a finished
+    tracker gets. It is sized to the card and made of light: a breath of
+    colour, and a few motes that rise and let go. */
+function celebrateSpace(cardEl) {
+  if (reduced || !cardEl) return
+  const r = cardEl.getBoundingClientRect()
+  if (!(r.bottom > 0 && r.top < innerHeight)) return
+  const size = Math.min(Math.max(r.width, 240), 420)
+  const layer = document.createElement('div')
+  layer.className = 'seal'
+  layer.style.left = `${r.left + r.width / 2}px`
+  layer.style.top = `${r.top + Math.min(r.height / 2, 150)}px`
+  layer.style.setProperty('--size', `${size}px`)
+
+  const bloom = document.createElement('span')
+  bloom.className = 'seal-bloom'
+  layer.appendChild(bloom)
+
+  for (let i = 0; i < 7; i++) {
+    const mote = document.createElement('i')
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.7 // upward, loosely
+    const dist = size * (0.26 + Math.random() * 0.3)
+    mote.style.setProperty('--dx', `${Math.cos(angle) * dist}px`)
+    mote.style.setProperty('--dy', `${Math.sin(angle) * dist}px`)
+    mote.style.animationDelay = `${70 + i * 50}ms`
+    layer.appendChild(mote)
+  }
+
+  document.body.appendChild(layer)
+  setTimeout(() => layer.remove(), 1600)
+}
+
 function celebrateDiffs() {
   if (!prev) return
   const prevBlocks = new Map()
@@ -1196,8 +1284,20 @@ function renderSuggestions() {
   box.dataset.key = key
   box.classList.remove('retired')
   box.innerHTML = list
-    .map((s, i) => `<button class="chip-btn" data-suggest="${esc(s)}" style="--d:${i * 45}ms">${esc(s)}</button>`)
+    .map((s, i) => `<button class="chip-btn chip-in" data-suggest="${esc(s)}" style="--d:${i * 70}ms">${esc(s)}</button>`)
     .join('')
+}
+
+/** The question already says what shape the answer takes, so the field can
+    show it: "type it" tells nobody anything. */
+function askHint(q) {
+  const t = String(q).toLowerCase()
+  if (t.includes('what time') || t.includes('which time')) return 'like 7pm'
+  if (t.includes('how much') || t.includes('how many')) return 'like 20'
+  if (t.includes('what day') || t.includes('which day') || t.startsWith('when')) return 'like friday'
+  if (t.includes('how long')) return 'like 45 min'
+  if (t.includes('where')) return 'type it'
+  return 'type it'
 }
 
 function renderAsk() {
@@ -1216,15 +1316,31 @@ function renderAsk() {
   if (box.dataset.aid === state.ask.id) return
   box.dataset.aid = state.ask.id
   const opts = state.ask.options || []
+  // The guesses are guesses. Every question keeps a way to answer it in your
+  // own words — offering three wrong options and no way past them is worse
+  // than asking nothing at all.
   box.innerHTML = `
     <div class="ask">
       <div class="ask-q">${esc(state.ask.question)}</div>
-      <div class="chips">
-        ${opts.map((o, i) => `<button class="chip-btn" data-answer="${esc(o)}" style="--d:${i * 45}ms">${esc(o)}</button>`).join('')}
-        ${opts.length ? '' : '<input class="ask-input" placeholder="type it" autocomplete="off" spellcheck="false" aria-label="Your answer" />'}
+      ${
+        opts.length
+          ? `<div class="chips">${opts
+              .map((o, i) => `<button class="chip-btn" data-answer="${esc(o)}" style="--d:${i * 45}ms">${esc(o)}</button>`)
+              .join('')}</div>`
+          : ''
+      }
+      <div class="ask-reply" style="--d:${opts.length ? opts.length * 45 + 40 : 60}ms">
+        <input class="ask-input" placeholder="${opts.length ? 'or say it your way' : askHint(state.ask.question)}"
+          autocomplete="off" spellcheck="false" aria-label="Your answer" />
         <button class="skip" data-dismiss>skip</button>
       </div>
     </div>`
+  // The caret lands in the answer, which says "this is for you" better than
+  // any label could — but never while you are mid-sentence somewhere else.
+  const busy = document.activeElement === field || field.value.trim()
+  if (!busy && !reduced) {
+    setTimeout(() => box.querySelector('.ask-input')?.focus({ preventScroll: true }), 260)
+  }
 }
 
 /** The page faces the day: what has become relevant rises to the top —
@@ -1248,8 +1364,21 @@ function renderToday() {
       }
     }
   }
+  // the page must not say the same thing twice: an open ask already puts
+  // this question on screen, so surfacing it again reads as a flicker where
+  // one replaces the other
+  const askWords = state.ask ? words(state.ask.question) : null
+  const echoesAsk = (label) => {
+    if (!askWords || !askWords.size) return false
+    const mine = words(label)
+    if (!mine.size) return false
+    let hit = 0
+    for (const w of mine) if (askWords.has(w)) hit++
+    return hit / mine.size >= 0.5
+  }
   for (const su of state.surfaced || []) {
     if (seen.has(`${su.spaceId}|${su.label.toLowerCase()}`)) continue
+    if (echoesAsk(su.label)) continue
     items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
   }
   // soonest first, so the strip reads like a morning
@@ -1269,16 +1398,6 @@ function renderToday() {
   box.innerHTML = shown
     .map((i) => {
       const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
-      const spaceName = state.spaces.find((s) => s.id === i.sid)?.name || ''
-      const input = `<input class="act-input" data-sid="${i.sid || ''}" placeholder="or say what happened…" />`
-      const openChip = i.sid ? `<button class="chip-btn" data-jump="${i.sid}">open</button>` : ''
-      const moment =
-        i.kind === 'reminder'
-          ? `<button class="chip-btn" data-act-done="${i.bid}">done</button>
-             <button class="chip-btn" data-act-later="${i.bid}">not yet</button>
-             ${openChip}${input}`
-          : `<button class="chip-btn" data-act-handled="${esc(i.label)}">handled</button>
-             ${openChip}${input}`
       const row =
         i.kind === 'reminder'
           ? `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}">
@@ -1287,7 +1406,7 @@ function renderToday() {
           : `<button class="today-row plain">
               <span class="tick-slot"></span>
               <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-      return `<div class="today-item">${row}<div class="act-moment" hidden>${moment}</div></div>`
+      return `<div class="today-item" data-sid="${i.sid || ''}">${row}</div>`
     })
     .join('') + (rest > 0 ? `<div class="today-more">+${rest} more</div>` : '')
 }
@@ -1502,7 +1621,31 @@ function renderCarryoverNudge() {
 
 function renderHint() {
   const empty = !state.spaces.length && !state.captures.length && !(state.suggestions || []).length
-  $('#hint').textContent = empty ? 'Rent, a habit, a goal, a stray thought. Write it and it organizes itself.' : ''
+  // the placeholder already asks the question; this only has to promise
+  // the one thing a new page cannot show yet
+  $('#hint').textContent = empty ? 'Write anything. It organizes itself.' : ''
+}
+
+/** The stage has one job at a time, in this order: what you are writing
+    beats a question, a question beats what is settling, and what is
+    settling beats the day. Panes cross-fade in place — nothing below the
+    stage ever moves, because the stage never changes height. */
+function renderStage() {
+  const stage = $('#stage')
+  if (!stage) return
+  const composing = !!field.value.trim()
+  const mode = composing
+    ? 'composing'
+    : state.ask
+      ? 'asking'
+      : state.captures.length || state.settle.running
+        ? 'settling'
+        : 'idle'
+  if (stage.dataset.mode !== mode) stage.dataset.mode = mode
+  const show = { ask: mode === 'asking', settling: mode === 'settling', idle: mode === 'idle' }
+  for (const [name, on] of Object.entries(show)) {
+    stage.querySelector(`.pane-${name}`)?.classList.toggle('off', !on)
+  }
 }
 
 function render() {
@@ -1510,25 +1653,34 @@ function render() {
   $('#shell').classList.toggle('settling', state.captures.length > 0)
   const targets = travelTargets()
   const held = new Set([...targets.values(), ...heldSpaces()])
+  // one FLIP around the whole pass: anything that grows above the grid
+  // (the strip, an ask, chips, activity) glides the cards down instead of
+  // snapping them. Measuring around the grid alone missed every one of them.
   withFlip(() => {
     renderSpaces(held)
     renderInbox(targets)
+    renderActivity()
+    renderToday()
+    renderCarryover()
+    renderCarryoverNudge()
+    renderSuggestions()
+    renderAsk()
+    renderHint()
+    renderRail()
   })
   releaseHeld(targets)
-  renderActivity()
-  renderToday()
-  renderCarryover()
-  renderCarryoverNudge()
-  renderSuggestions()
-  renderAsk()
-  renderHint()
-  renderRail()
+  renderStage()
   celebrateDiffs()
   // keep an open focus view current with what the agent changes
   if (focusId) {
     const space = state.spaces.find((s) => s.id === focusId)
     if (!space) closeFocus()
     else if ($('#focus').dataset.u !== space.updatedAt) buildFocus()
+  }
+  if (booting) {
+    // long enough for the last staged card to land, then never again
+    setTimeout(() => document.documentElement.classList.remove('booting'), 1400)
+    booting = false
   }
   prev = state
 }
@@ -1645,26 +1797,6 @@ document.addEventListener('keydown', async (e) => {
   }
 })
 
-// the action moment's input: what happened, in your words, scoped
-document.addEventListener('keydown', async (e) => {
-  const ai = e.target.closest?.('.act-input')
-  if (!ai || e.key !== 'Enter') return
-  e.preventDefault()
-  const text = ai.value.trim()
-  if (!text) return
-  const hint = state.spaces.find((s) => s.id === ai.dataset.sid)?.name
-  ai.value = ''
-  ai.closest('.act-moment').hidden = true
-  try {
-    state = await api('/api/capture', { text, hint })
-    render()
-    schedulePoll()
-    toast(hint ? `settling into ${hint}` : 'settling')
-  } catch (err) {
-    toast(err.message)
-  }
-})
-
 // talking to a space from inside its focus view
 document.addEventListener('keydown', async (e) => {
   const fc = e.target.closest?.('.focus-capture')
@@ -1724,25 +1856,68 @@ field.addEventListener('blur', () => setTimeout(renderSuggestions, 160))
 const enterHint = $('#enter-hint')
 const hintEligible = () => Number(localStorage.getItem('dec-files') || 0) < 5
 
-field.addEventListener('input', () => {
+const CAPTURE_BASE = 17 // px, the size a short line is written at
+const CAPTURE_FLOOR = 14 // it never shrinks past this; past here it scrolls
+
+/** Fit the field to what is in it: grow, then shrink the text to a floor,
+    then scroll. Everything is measured at CAPTURE_BASE, never at whatever
+    size is currently applied — the old code switched to a smaller font at a
+    height threshold, which lowered the height, which switched it back. */
+function fitCapture() {
+  // it may grow into the space above the grid — which is blank while you
+  // compose — but never past it, because the cards do not move
+  const gridTop = document.querySelector('.body-grid')?.getBoundingClientRect().top ?? 0
+  const fieldTop = field.getBoundingClientRect().top
+  const room = Math.max(60, Math.round(gridTop - fieldTop - 28))
+  const max = Math.min(room, Math.round(innerHeight * 0.4), 220)
+  field.style.fontSize = ''
   field.style.height = 'auto'
-  field.style.height = `${Math.min(field.scrollHeight, Math.round(innerHeight * 0.4))}px`
+  const natural = field.scrollHeight // always at the base size
+  let size = CAPTURE_BASE
+  if (natural > max) {
+    // a linear guess is only an estimate — smaller text also rewraps into
+    // fewer lines. Guess high, then step down to the first size that really
+    // fits, so no stray scrollbar appears and then disappears again.
+    size = Math.max(CAPTURE_FLOOR, Math.ceil(CAPTURE_BASE * (max / natural) * 2) / 2)
+    field.style.fontSize = `${size}px`
+    field.style.height = 'auto'
+    while (size > CAPTURE_FLOOR && field.scrollHeight > max) {
+      size = Math.max(CAPTURE_FLOOR, size - 0.5)
+      field.style.fontSize = `${size}px`
+      field.style.height = 'auto'
+    }
+  }
+  field.style.fontSize = size >= CAPTURE_BASE ? '' : `${size}px`
+  // The box is sized from the content measured at the BASE size, never from
+  // what it looks like after shrinking. Sizing it from the shrunk text made
+  // the field collapse the moment the font stepped down, then grow, then
+  // collapse again — the big/small/big wobble.
+  const boxH = Math.min(natural, max)
+  field.style.height = `${boxH}px`
+  field.style.overflowY = field.scrollHeight > boxH + 1 ? 'auto' : 'hidden'
+  document.documentElement.style.setProperty('--capture-h', `${field.offsetHeight}px`)
+  return natural
+}
+
+field.addEventListener('input', () => {
+  const natural = fitCapture()
   enterHint.classList.toggle('on', !!field.value.trim() && hintEligible())
   $('#shell').classList.toggle('composing', !!field.value.trim())
+  renderStage()
   renderSuggestions()
   // a dump is an object, not a floating wall: contain it past two lines
   // on a phone the field is fixed to the bottom edge: the page must always
   // be able to scroll clear of whatever height it grows to
-  document.documentElement.style.setProperty('--capture-h', `${field.offsetHeight}px`)
   const cwrap = field.closest('.cwrap')
-  const big = field.scrollHeight > 64
+  // hysteresis: it becomes a block at 72 and stops being one at 52, so a
+  // single character near the boundary cannot toggle the treatment
+  const big = cwrap.classList.contains('big') ? natural > 52 : natural > 72
   cwrap.classList.toggle('big', big)
-  if (big) {
-    const n = field.value.split('\n').filter((l) => l.trim()).length
-    cwrap.dataset.hint = n > 1 ? `${n} lines · enter files each one` : ''
-  } else {
-    cwrap.dataset.hint = ''
-  }
+  // Every line files separately, so say so the moment there IS a second
+  // line. Tying the notice to the block treatment meant a two-line thought
+  // — the most ordinary case there is — was split in two with no warning.
+  const n = field.value.split('\n').filter((l) => l.trim()).length
+  cwrap.dataset.hint = n > 1 ? `${n} lines · enter files each one` : ''
 })
 
 // The page is the input: start typing anywhere and it lands in the capture.
@@ -1773,10 +1948,6 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  if (e.target.closest('[data-answer-close]')) {
-    $('#answer').innerHTML = ''
-    return
-  }
   const confirmFin = e.target.closest('[data-confirm-finish]')
   if (confirmFin) {
     const id = confirmFin.dataset.confirmFinish
@@ -1814,7 +1985,7 @@ document.addEventListener('click', async (e) => {
       return
     }
     const el = document.querySelector(`.space[data-sid="${finBtn.dataset.finish}"]`)
-    if (!sp?.finished && el && !reduced) celebrate(el.querySelector('.space-name'))
+    if (!sp?.finished && el && !reduced) celebrateSpace(el)
     try {
       const out = await api('/api/finish', { spaceId: finBtn.dataset.finish, finished: !sp?.finished })
       state = out.state
@@ -1823,14 +1994,25 @@ document.addEventListener('click', async (e) => {
         spaceEls.delete(finBtn.dataset.finish)
         closeFocus()
         if (leaving && !reduced) {
-          // it settles downward and out; the grid closes the gap behind it
-          leaving.style.height = `${leaving.offsetHeight}px`
+          // Pin it where it already is and lift it out of the flow, so the
+          // cards behind start closing the gap on the same frame it begins
+          // to go. Collapsing it first and reflowing after read as two
+          // separate events for something that is one.
+          const r = leaving.getBoundingClientRect()
+          Object.assign(leaving.style, {
+            position: 'fixed',
+            left: `${r.left}px`,
+            top: `${r.top}px`,
+            width: `${r.width}px`,
+            height: `${r.height}px`,
+            margin: '0',
+            zIndex: '5',
+          })
+          document.body.appendChild(leaving) // out of its column entirely
           void leaving.offsetHeight
           leaving.classList.add('leaving')
-          setTimeout(() => {
-            leaving.remove()
-            withFlip(() => render())
-          }, 420)
+          withFlip(() => render())
+          setTimeout(() => leaving.remove(), 460)
         } else {
           leaving?.remove()
           render()
@@ -1857,31 +2039,7 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // retire a space (one gentle confirm), restore a retired one
-  const ret = e.target.closest('[data-retire]')
-  if (ret) {
-    if (!ret.dataset.armed) {
-      ret.dataset.armed = '1'
-      ret.textContent = 'retire? this hides the space; it stays restorable below the grid'
-      setTimeout(() => {
-        ret.dataset.armed = ''
-        ret.textContent = 'retire this space'
-      }, 4000)
-      return
-    }
-    try {
-      const out = await api('/api/retire', { spaceId: ret.dataset.retire })
-      state = out.state
-      spaceEls.get(ret.dataset.retire)?.el.remove()
-      spaceEls.delete(ret.dataset.retire)
-      closeFocus()
-      render()
-      toast(`${out.name} retired`)
-    } catch (err) {
-      toast(err.message)
-    }
-    return
-  }
+  // restoring a space set aside before closing out replaced retiring
   const rest = e.target.closest('[data-restore]')
   if (rest) {
     try {
@@ -1972,13 +2130,6 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // the receipt stub unfolds its full story
-  const stub = e.target.closest('.act-stub.more')
-  if (stub) {
-    $('#activity').classList.toggle('open')
-    return
-  }
-
   // Clean Slate: park it, resume it, look back, navigate, answer, bulk out
   if (e.target.closest('[data-co-park]')) {
     coParked = true
@@ -2023,70 +2174,33 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // an attention row's body opens its action moment (the tick still checks)
+  // An attention row points at a card. Clicking it goes there — it used to
+  // unfold chips and a text field in place, which made the strip a second
+  // place to work instead of a way into the one that already exists.
+  // (The tick still checks the thing off without leaving.)
   const tRow = e.target.closest('#today .today-row')
   if (tRow && !e.target.closest('.tick')) {
-    const moment = tRow.parentElement.querySelector('.act-moment')
-    const wasHidden = moment.hidden
-    for (const m of document.querySelectorAll('.act-moment')) m.hidden = true
-    moment.hidden = !wasHidden
-    return
-  }
-
-  // moment: done — same joy as the tick
-  const actDone = e.target.closest('[data-act-done]')
-  if (actDone) {
-    const row = document.querySelector(`#today .row[data-block="${actDone.dataset.actDone}"]`)
-    row?.querySelector('.tick')?.click()
-    actDone.closest('.act-moment').hidden = true
-    return
-  }
-
-  // moment: not yet — the clock rolls to tomorrow
-  const actLater = e.target.closest('[data-act-later]')
-  if (actLater) {
-    const tomorrow = localDay(new Date(Date.now() + 86400000))
-    try {
-      await api('/api/tool', { name: 'december_update_block', arguments: { blockId: actLater.dataset.actLater, reminder_when: tomorrow } })
-      state = await api('/api/state')
-      render()
-      toast('tomorrow, then')
-    } catch (err) {
-      toast(err.message)
-    }
-    return
-  }
-
-  // moment: handled — the surfaced item stands down
-  const actHandled = e.target.closest('[data-act-handled]')
-  if (actHandled) {
-    const label = actHandled.dataset.actHandled
-    const remaining = (state.surfaced || []).filter((s) => s.label !== label)
-    try {
-      await api('/api/tool', {
-        name: 'december_surface',
-        arguments: { items: remaining.map((s) => ({ label: s.label, reason: s.reason, space: state.spaces.find((x) => x.id === s.spaceId)?.name || s.label, until: s.until || undefined })) },
-      })
-      state.surfaced = remaining
-      render()
-      toast('handled')
-    } catch (err) {
-      toast(err.message)
-    }
+    const sid = tRow.closest('.today-item')?.dataset.sid
+    if (sid) jumpToSpace(sid)
     return
   }
 
   // manual check on a list item or reminder — instant, no model.
   // One click, one request: taps during the round trip are ignored.
-  const row = e.target.closest('.row[data-block]')
+  // A solo card IS its reminder: the whole card is the checkbox, markup and
+  // aria and all. It was left out of this selector, so the most common card
+  // on the page could not be ticked off by clicking it — and because it is a
+  // button, the open-the-card handler below skipped it too. It did nothing.
+  const row = e.target.closest('.row[data-block], .solo[data-block]')
   if (row) {
     if (row.dataset.busy) return
     row.dataset.busy = '1'
     setTimeout(() => delete row.dataset.busy, 600)
     const done = !row.classList.contains('done')
     // the same row may exist in the grid card and the focus card: keep both true
+    const item = row.dataset.item ? `[data-item="${row.dataset.item}"]` : ''
     const twins = document.querySelectorAll(
-      `.row[data-block="${row.dataset.block}"]${row.dataset.item ? `[data-item="${row.dataset.item}"]` : ''}`
+      `.row[data-block="${row.dataset.block}"]${item}, .solo[data-block="${row.dataset.block}"]${item}`
     )
     for (const twin of twins) {
       twin.classList.remove('no-anim')
@@ -2094,8 +2208,10 @@ document.addEventListener('click', async (e) => {
       twin.setAttribute('aria-checked', String(done))
     }
     if (done) {
-      pop(row.querySelector('.tick'))
-      celebrate(row.querySelector('.tick'))
+      // a solo card has no tick of its own; the card is the mark
+      const mark = row.querySelector('.tick') || row
+      pop(mark)
+      celebrate(mark)
       // finishing the whole list earns the card a wash
       const blockEl = row.closest('[data-bid]')
       if (blockEl && ![...blockEl.querySelectorAll('.row')].some((r) => !r.classList.contains('done'))) {
@@ -2108,11 +2224,17 @@ document.addEventListener('click', async (e) => {
     const host = row.closest('.space, .focus-card')
     const sid = host?.dataset.sid
     const isListItem = !!row.dataset.item
+    // Checking a repeating reminder does not finish it — the server rolls
+    // its clock to the next occurrence. The tick was left painted on, so
+    // the page said "handled" and then quietly un-ticked itself later.
+    const before = !isListItem && state.spaces.find((s) => s.id === sid)?.blocks.find((b) => b.id === row.dataset.block)
+    const rolls = done && before?.type === 'reminder' && !!before.repeat && !!before.when
     if (isListItem && sid) {
       const sp = state.spaces.find((s) => s.id === sid)
-      const trackers = sp ? sp.blocks.filter((b) => b.type === 'tracker') : []
-      if (trackers.length === 1) {
-        const t = trackers[0]
+      // the same rule the server applies, so the page never paints a number
+      // the server is about to disagree with
+      const t = trackerCounting(sp, sp?.blocks.find((b) => b.id === row.dataset.block))
+      if (t) {
         const prevC = t.current
         t.current = Math.max(0, prevC + (done ? 1 : -1))
         const completedNow = done && prevC < t.target && t.current >= t.target
@@ -2139,8 +2261,18 @@ document.addEventListener('click', async (e) => {
 
     try {
       state = await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done })
-      // adopt silently; the row is already painted
       const known = sid && spaceEls.get(sid)
+      if (rolls) {
+        // say what actually happened: it came round again, on this date
+        const now = state.spaces.find((s) => s.id === sid)?.blocks.find((b) => b.id === row.dataset.block)
+        prev = state
+        resortCard(sid)
+        if (focusId === sid) buildFocus()
+        const w = now && whenPhrase(now)
+        toast(w ? `done · back ${w.text}` : 'done')
+        return
+      }
+      // adopt silently; the row is already painted
       if (known) known.updatedAt = state.spaces.find((s) => s.id === sid)?.updatedAt
       prev = state
       // after the moment, the finished item rests: the card re-sorts it
@@ -2228,7 +2360,14 @@ document.addEventListener('keydown', async (e) => {
     }
     return
   }
-  if (e.key === 'Escape' && focusId && !document.querySelector('[contenteditable="true"]')) closeFocus()
+  // Escape closes whatever is over the page — a focused card, the year, the
+  // intro, the close-out question. It used to answer only to a focused card,
+  // so the one dialog that asks you something was the one you could not
+  // dismiss with the key everyone reaches for. Clean Slate keeps its own.
+  const carryoverUp = !!(state?.carryover && !coParked && document.querySelector('.co-card'))
+  if (e.key === 'Escape' && !carryoverUp && $('#focus').innerHTML && !document.querySelector('[contenteditable="true"]')) {
+    closeFocus()
+  }
   // the ceremony answers to the keyboard, and never traps you
   if (state?.carryover && !coParked && document.querySelector('.co-card')) {
     if (e.key === 'Escape') {
@@ -2305,6 +2444,16 @@ document.addEventListener('dblclick', (e) => {
   el.addEventListener('blur', onBlur)
 })
 
+/** The page's copy of the server's rule (lib/core.mjs trackerCounting): a
+    tracker moves with a list only when it is counting that exact list. */
+function trackerCounting(space, block) {
+  if (!space || !block || block.type !== 'list') return null
+  const trackers = space.blocks.filter((b) => b.type === 'tracker')
+  const lists = space.blocks.filter((b) => b.type === 'list')
+  if (trackers.length !== 1 || lists.length !== 1 || lists[0].id !== block.id) return null
+  return trackers[0].target === block.items.length ? trackers[0] : null
+}
+
 function jumpToSpace(sid) {
   let el = document.querySelector(`.space[data-sid="${sid}"]`)
   if (!el) {
@@ -2362,7 +2511,7 @@ searchEl.addEventListener('input', () => {
   const hits = searchEverything(q)
   resultsEl.innerHTML = hits.length
     ? hits
-        .map((h) => `<button class="search-hit" data-shit="${h.sid}"><span class="sh-label">${esc(h.label.slice(0, 44))}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
+        .map((h, i) => `<button class="search-hit" data-hit="${h.sid}" style="--d:${Math.min(i * 28, 140)}ms"><span class="sh-label">${esc(h.label.slice(0, 44))}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
         .join('')
     : '<div class="search-none">nothing found</div>'
   resultsEl.classList.add('on')
@@ -2384,7 +2533,7 @@ searchEl.addEventListener('keydown', (e) => {
     }
     const first = resultsEl.querySelector('.search-hit')
     if (first) {
-      jumpToSpace(first.dataset.shit)
+      jumpToSpace(first.dataset.hit)
       searchEl.value = ''
       closeSearch()
       searchEl.blur()
@@ -2395,7 +2544,7 @@ searchEl.addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => {
   const hit = e.target.closest('.search-hit')
   if (hit) {
-    jumpToSpace(hit.dataset.shit)
+    jumpToSpace(hit.dataset.hit)
     searchEl.value = ''
     closeSearch()
     return

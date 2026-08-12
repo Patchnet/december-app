@@ -154,10 +154,29 @@ async function serveStatic(res, urlPath) {
   res.end(await readFile(file))
 }
 
+// Any page open in another tab can POST to a loopback server without a
+// preflight, and every route here writes. A browser always stamps Origin on
+// a cross-site request, so refusing the ones that are not local is enough
+// to keep a hostile page from rewriting or wiping your year. Requests with
+// no Origin at all — the MCP adapter, the desktop shell, curl — are yours.
+function foreignOrigin(req) {
+  const origin = req.headers.origin
+  if (!origin) return false
+  try {
+    const host = new URL(origin).hostname
+    return host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]'
+  } catch {
+    return true
+  }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const path = url.pathname
   if (req.method === 'POST') console.log(new Date().toISOString(), req.method, path)
+  if (req.method === 'POST' && foreignOrigin(req)) {
+    return json(res, 403, { error: 'refused: this page did not come from December' })
+  }
   try {
     if (path === '/api/state' && req.method === 'GET') {
       return json(res, 200, project(settleStatus()))
@@ -170,8 +189,10 @@ const server = createServer(async (req, res) => {
       const body = await readBody(req)
       const text = String(body.text || '').trim()
       if (!text) return json(res, 400, { error: 'empty' })
+      // every line a person actually wrote is kept: the old floor of three
+      // characters silently swallowed "AC", "Rx", "gym" out of a dump
       const lines = text.includes('\n')
-        ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter((l) => l.length > 2).slice(0, 25)
+        ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 25)
         : [text]
       for (const line of lines) await addCapture(line, body.hint)
       scheduleSettle()
@@ -222,6 +243,9 @@ const server = createServer(async (req, res) => {
     // Ask the page a question and get an answer, not a filed note.
     if (path === '/api/query' && req.method === 'POST') {
       const { question } = await readBody(req)
+      if (!selectedEngineAvailable()) {
+        return json(res, 503, { error: 'no engine connected, so nothing can read the page back to you' })
+      }
       try {
         const answer = await settle.answerQuestion(String(question || ''))
         return json(res, 200, { answer })

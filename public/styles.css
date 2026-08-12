@@ -51,8 +51,10 @@
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  /* repositioning wants a curve that leaves gently and arrives gently;
+     expo alone whips out of the gate and reads as a snap */
+  --ease-settle: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-pop: cubic-bezier(0.34, 1.28, 0.5, 1);
-  --ease-select: cubic-bezier(0.3, 1.28, 0.36, 1);
 
   --m-press: 120ms; --m-ui: 140ms; --m-depth: 220ms;
   --m-enter: 320ms; --m-struct: 380ms; --m-draw: 700ms;
@@ -189,7 +191,23 @@ body {
 /* -------------------------------------------------------- the capture
    The page is the input: no box, no chrome, just the caret, top left. */
 
-.cwrap { position: relative; max-width: 640px; }
+/* The field is anchored: it keeps a one-line footprint in the layout no
+   matter how much is in it, and grows over the space below instead of
+   pushing it. That space is already blank while you compose — the strip,
+   the chips and the ask all step back — so what you are writing takes it,
+   and nothing under the fold moves. */
+.cwrap {
+  position: relative;
+  max-width: 640px;
+  height: calc(17px * 1.5);
+}
+.cwrap .capture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+}
 
 /* the quiet Enter affordance: only while there is text, only early on */
 .enter-hint {
@@ -237,7 +255,17 @@ body {
   margin: 0 0 var(--space-3);
 }
 .chips:empty { margin: 0; }
-#suggest:empty { display: none; }
+
+/* The suggestion row keeps its place whether or not it holds anything.
+   Chips answer a focus and leave again constantly — letting that resize
+   the page kicks every card below it. One row, always, never wrapping. */
+#suggest {
+  min-height: 26px;
+  flex-wrap: nowrap;
+  /* it answers the field it sits under, so it rides close to it */
+  margin: var(--space-2) 0 var(--space-3);
+}
+#suggest:empty { margin: var(--space-2) 0 var(--space-3); }
 
 .chip-btn {
   position: relative;
@@ -260,28 +288,64 @@ body {
 .chip-btn:hover { color: var(--text-1); background: var(--surface-2); }
 .chip-btn:active { transform: scale(0.96); transition: transform var(--m-press) var(--ease); }
 .chip-btn:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
-.chip-btn.picked { animation: pick 320ms var(--ease-select); }
-@keyframes pick {
-  0% { transform: scale(0.96); }
-  60% { transform: scale(1.07); }
-  100% { transform: none; }
+/* chips arrive one after another: up, out of a little blur, never a pop */
+.chip-btn.chip-in { animation: chip-in 380ms var(--ease-out) both; animation-delay: var(--d, 0ms); }
+@keyframes chip-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.94); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+/* Choosing is a confirmation, not a performance. The chip takes the accent,
+   settles a hair under the finger, and the page moves on. The old version
+   sprang 7% past its own size over 320ms — longer than the 200ms before the
+   DOM swaps, so the bounce was cut off mid-spring as well as being loud. */
+.chip-btn.picked {
+  background: var(--accent-soft);
+  border-color: var(--accent-edge);
+  color: var(--accent-ink);
+  transform: scale(0.985);
+  transition: background 110ms var(--ease), border-color 110ms var(--ease),
+    color 110ms var(--ease), transform 150ms var(--ease-out);
+  animation: none;
 }
 
 /* the ask is a margin note, not a dialog box */
 .ask {
   max-width: 640px;
-  border-left: 2px solid var(--accent-edge);
-  padding: var(--space-1) 0 var(--space-1) var(--space-5);
+  /* no rule, no panel: the page has no boxes anywhere else, and an accent
+     bar made this read as a widget bolted on rather than the page asking.
+     It rides close under the line you write on — it is a reply to that. */
   margin: var(--space-3) 0 var(--space-4);
-  animation: materialize var(--m-struct) var(--ease-out) both;
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease);
 }
 .ask.out { opacity: 0; transform: translateY(-4px); pointer-events: none; }
-.ask-q { font-size: 14px; color: var(--text-2); margin-bottom: var(--space-2); text-wrap: balance; }
-.ask .chips { margin: 0; }
+
+/* the question is the page speaking, so it is set like the page speaks:
+   serif, in ink, at the size of a card's own name */
+.ask-q {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--text-1);
+  margin-bottom: var(--space-3);
+  text-wrap: pretty;
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+/* the answer arrives a beat after the question, the way a reply does */
+.ask .chips { margin: 0; animation: rise var(--m-enter) var(--ease-out) 90ms both; }
+
+/* your own words, always available, under whatever it guessed */
+.ask-reply {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  animation: rise var(--m-enter) var(--ease-out) both;
+  animation-delay: var(--d, 90ms);
+}
+.ask .chips + .ask-reply .ask-input { width: 220px; }
 .ask .skip {
   font: inherit;
-  font-size: 13px;
+  font-size: 11.5px;
   color: var(--text-3);
   background: none;
   border: 0;
@@ -289,8 +353,9 @@ body {
   padding: 6px var(--space-2);
   margin: -6px 0;
   border-radius: var(--radius-sm);
+  transition: color var(--m-ui) var(--ease);
 }
-.ask .skip:hover { color: var(--text-1); }
+.ask .skip:hover { color: var(--text-2); }
 
 /* ----------------------------------------------------------- the inbox */
 
@@ -445,7 +510,7 @@ body {
 
 /* ---------------------------------------------------------- the spaces */
 
-.body-grid { display: flex; gap: var(--space-8); margin-top: var(--space-9); align-items: flex-start; }
+.body-grid { display: flex; gap: var(--space-8); margin-top: var(--space-5); align-items: flex-start; }
 
 /* The rail: text only, appears once the page has grown enough to need it. */
 .rail {
@@ -847,7 +912,7 @@ body {
   align-items: baseline;
   gap: var(--space-3);
   width: 100%;
-  padding: 5px 0;
+  padding: 3px 0;
   background: none;
   border: 0;
   font: inherit;
@@ -1061,22 +1126,35 @@ body {
 
 /* ------------------------------------------------------------ the toast */
 
+/* The receipt: what just happened, said once, in the page's own voice.
+   It is the only dark surface December has, so it earns the serif and a
+   little more air than a system toast would take. */
 .toast {
   position: fixed;
   left: 50%;
   bottom: var(--space-8);
-  transform: translate(-50%, 12px);
+  transform: translate(-50%, 10px) scale(0.97);
   background: var(--text-1);
   color: var(--bg);
-  font-size: 13px;
-  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+  max-width: min(440px, calc(100vw - 40px));
+  text-align: center;
+  text-wrap: pretty;
+  padding: 9px var(--space-5) 10px;
   border-radius: var(--radius-pill);
+  box-shadow: 0 10px 30px -10px rgba(15, 12, 8, 0.35), 0 2px 8px -3px rgba(15, 12, 8, 0.2);
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--m-enter) var(--ease-out), transform var(--m-enter) var(--ease-out);
+  transition: opacity var(--m-enter) var(--ease-out), transform var(--m-enter) var(--ease-settle);
   z-index: 60;
 }
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
+:root[data-theme="dark"] .toast {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), 0 2px 8px -3px rgba(0, 0, 0, 0.4);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
 
 /* --------------------------------------------------------------- shared */
 
@@ -1101,14 +1179,18 @@ body {
 
 /* dump mode: a lot of text becomes one contained object */
 .cwrap.big .capture {
-  font-size: 15px;
-  line-height: 1.55;
+  /* size is fitted in one place now: a font-size here fought the fitter
+     and made the field oscillate as it grew */
   padding-left: var(--space-4);
   border-left: 2px solid var(--line-2);
-  overflow-y: auto;
 }
+.capture { transition: padding-left 160ms var(--ease); }
 .cwrap::after {
   content: attr(data-hint);
+  position: absolute;
+  top: var(--capture-h, 26px);
+  right: 0;
+  z-index: 3;
   display: block;
   text-align: right;
   font-size: 11.5px;
@@ -1366,6 +1448,18 @@ body {
   transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
 }
 .card-tool svg { width: 15px; height: 15px; display: block; }
+
+/* In the enlarged card the tools are the only way to act on the space, so
+   they are present rather than waiting for a hover — same buttons, same
+   corner, just already there. */
+.focus-card .card-tools {
+  opacity: 1;
+  transform: none;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+.focus-card .card-tool { width: 30px; height: 30px; }
+.focus-card .card-tool svg { width: 17px; height: 17px; }
 .card-tool:hover { background: var(--surface-1); color: var(--text-1); }
 .card-tool:active { transform: scale(0.92); }
 .card-tool:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
@@ -1392,24 +1486,20 @@ body {
 .confirm-item.more { color: var(--text-3); border-left-color: transparent; }
 
 /* finishing is a departure, not a deletion */
+/* It is lifted out of the flow at the pixel it already occupied, so the
+   cards behind it begin closing the gap on the same frame it starts to go.
+   One overlapping beat instead of collapse-then-reflow. */
 .space.leaving {
-  overflow: hidden;
+  pointer-events: none;
   opacity: 0;
-  height: 0 !important;
-  margin-bottom: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  border-width: 0 !important;
-  transform: translateY(10px);
-  transition: opacity var(--m-depth) var(--ease), transform var(--m-struct) var(--ease-expo),
-    height var(--m-struct) var(--ease-expo), margin var(--m-struct) var(--ease-expo),
-    padding var(--m-struct) var(--ease-expo);
+  transform: scale(0.965) translateY(6px);
+  filter: blur(4px);
+  transition: opacity 340ms var(--ease), transform 420ms var(--ease-settle),
+    filter 340ms var(--ease);
 }
 
 /* rows and strips settle rather than snap */
 .rest-row, .today-item { transition: opacity var(--m-depth) var(--ease); }
-.space-verbs { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-5); }
-.space-verbs .retire-link { margin-top: 0; }
 
 /* a finished space says so before it steps aside */
 .wrap-up-unused {
@@ -1443,44 +1533,24 @@ body {
 
 /* the action moment: click a line with a clock, answer it right there.
    [hidden] is a UA style, so an author display rule must yield to it. */
-.act-moment[hidden] { display: none; }
-.act-moment {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 2px 0 var(--space-2) 28px;
-  animation: rise var(--m-ui) var(--ease-out) both;
-}
-.act-input {
-  font: inherit;
-  font-size: 13px;
-  color: var(--text-1);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line-1);
-  padding: 3px 0;
-  width: 190px;
-  caret-color: var(--text-1);
-  transition: border-color var(--m-ui) var(--ease);
-}
-.act-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
-.act-input::placeholder { color: var(--text-3); opacity: 0.7; }
 
 /* an open ask answers by typing: a time, an amount, a date */
 .ask-input {
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-1);
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line-1);
-  padding: 3px 0;
-  width: 120px;
+  padding: 4px 0;
+  width: 190px;
   caret-color: var(--text-1);
   transition: border-color var(--m-ui) var(--ease);
 }
-.ask-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
+/* an open question's field is live before you touch it: the line under it
+   is already lit, so where to answer is obvious without being told */
+.ask-input { border-bottom-color: var(--accent-edge); }
+.ask-input:focus { outline: none; border-bottom-color: var(--accent); }
 .ask-input::placeholder { color: var(--text-3); opacity: 0.7; }
 .ask-input:disabled { opacity: 0.5; }
 
@@ -1538,10 +1608,16 @@ a.retire-link:hover { color: var(--accent-ink); }
   .search:focus { width: min(200px, calc(100vw - 92px)); }
   .search-results,
   .search-results:has(.search-answer) { width: min(340px, calc(100vw - 36px)); }
-  .capture {
+  .cwrap { position: static; height: auto; }
+  .cwrap .capture {
     position: fixed;
     left: 0;
     right: 0;
+    /* the base rule pins this to top: 0. Setting bottom without clearing
+       top left it over-constrained, and top won: on a phone the writing
+       line sat across the date at the very top of the page instead of
+       resting on the bottom edge where your thumb is. */
+    top: auto;
     bottom: 0;
     z-index: 60;
     max-width: none;
@@ -1643,33 +1719,49 @@ a.retire-link:hover { color: var(--accent-ink); }
   to { opacity: 1; transform: translate(-50%, -50%); filter: blur(0); }
 }
 
-.settings-head {
-  padding: 1px 2px var(--space-4);
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--line-1);
-}
-.settings-head h2 {
-  margin: 0;
+/* Five decisions and a link. No sections, no disclosures, no explanations:
+   every row is a label and the control that answers it, on one grid. */
+.settings-title {
+  margin: 0 2px var(--space-4);
   font-family: var(--font-serif);
   font-size: 20px;
   font-weight: 400;
   line-height: 1.2;
-  text-wrap: balance;
 }
-.settings-head p { margin: 3px 0 0; color: var(--text-3); font-size: 12px; }
 
+.set-list { display: flex; flex-direction: column; }
 .set-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  min-height: 42px;
-  padding: 2px;
-  border-bottom: 1px solid var(--line-1);
+  gap: var(--space-4);
+  min-height: 44px;
+  padding: 0 2px;
 }
-.set-label { color: var(--text-3); font-size: 12.5px; }
+.set-label { color: var(--text-2); font-size: 13px; }
+
+/* the caption belongs to the pair above it, not to the dialog */
+.set-note { margin: var(--space-1) 2px 0; font-size: 11.5px; color: var(--text-3); }
+
+/* paths are auto-detected: they are here when needed, not in the way */
+.set-more { margin-top: var(--space-3); }
+.set-more summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: 3px 2px;
+  transition: color var(--m-ui) var(--ease);
+}
+.set-more summary::-webkit-details-marker { display: none; }
+.set-more summary::after { content: " ›"; display: inline-block; transition: transform var(--m-ui) var(--ease); }
+.set-more[open] summary::after { transform: rotate(90deg); }
+.set-more summary:hover { color: var(--text-2); }
+.set-more[open] summary { margin-bottom: var(--space-1); }
 
 .seg { display: inline-flex; border: 1px solid var(--line-1); border-radius: var(--radius-pill); background: var(--surface-1); }
+.set-row .seg { flex: 0 0 auto; }
+.set-row .seg button { flex: 1 1 auto; justify-content: center; }
 .seg button {
   position: relative;
   min-height: 28px;
@@ -1691,7 +1783,7 @@ a.retire-link:hover { color: var(--accent-ink); }
 .seg button:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 
 .set-input {
-  width: 160px;
+  width: 180px;
   min-height: 32px;
   padding: 4px 9px;
   border: 1px solid var(--line-1);
@@ -1714,16 +1806,18 @@ a.retire-link:hover { color: var(--accent-ink); }
   gap: var(--space-2) var(--space-3);
   padding: var(--space-4) 2px var(--space-3);
 }
-.set-path { width: 100%; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
+.set-path { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
 
 .settings-about {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  min-height: 64px;
+  min-height: 52px;
   margin-top: var(--space-4);
-  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  padding: var(--space-2);
+  border-top: 1px solid var(--line-1);
+  border-radius: 0;
   border-radius: var(--radius-md);
   color: inherit;
   text-decoration: none;
@@ -1942,3 +2036,256 @@ a.retire-link:hover { color: var(--accent-ink); }
   line-height: 1.62;
   text-wrap: pretty;
 }
+
+/* A small whole target counts rather than fills: one dot per unit, filled
+   as it is met. Reads as "none yet" at zero, where a bar reads as broken. */
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: var(--space-2);
+}
+.pips i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  transition: background var(--m-ui) var(--ease);
+}
+.pips i.on { background: var(--accent); }
+.pips.full i.on { background: var(--good-ink, var(--accent)); }
+/* they fill in sequence when the card first arrives */
+.space.fresh .pips i.on,
+.block.arrive .pips i.on,
+.space.forming .pips i.on {
+  animation: pip-in 260ms var(--ease-out) both;
+  animation-delay: calc(var(--i) * 26ms);
+}
+@keyframes pip-in {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ------------------------------------------------------- the first paint */
+/* A page that appears all at once reads as a screenshot. On the first
+   render only, the parts arrive in the order you would read them: the date,
+   the line you write on, what needs you, then the cards. Every later change
+   animates on its own terms — this staging never runs twice. */
+:root.booting .dateline { animation: rise var(--m-enter) var(--ease-out) 0ms both; }
+:root.booting .cwrap { animation: rise var(--m-enter) var(--ease-out) 70ms both; }
+:root.booting #ask { animation: rise var(--m-enter) var(--ease-out) 120ms both; }
+:root.booting #suggest { animation: rise var(--m-enter) var(--ease-out) 160ms both; }
+:root.booting #today { animation: rise var(--m-enter) var(--ease-out) 210ms both; }
+:root.booting .corner { animation: rise var(--m-enter) var(--ease-out) 260ms both; }
+:root.booting .rail { animation: rise var(--m-enter) var(--ease-out) 300ms both; }
+:root.booting #resting { animation: rise var(--m-enter) var(--ease-out) 900ms both; }
+@media (prefers-reduced-motion: reduce) {
+  :root.booting .dateline, :root.booting .cwrap, :root.booting #suggest,
+  :root.booting #today, :root.booting #ask, :root.booting .corner,
+  :root.booting .rail, :root.booting #resting { animation: none; }
+}
+
+/* ------------------------------------------------- presented, not displayed */
+/* Everything that arrives on the page arrives: nothing is allowed to simply
+   appear. These are the moments the audit found still popping in. */
+
+/* the line you just wrote, taking its place while it settles */
+.inbox-row > div { animation: rise var(--m-enter) var(--ease-out) both; }
+.inbox-row.out > div { animation: none; }
+
+/* a space closing out, arriving in the list below the grid */
+.rest-head { animation: rise var(--m-enter) var(--ease-out) both; }
+.rest-row {
+  animation: rise var(--m-enter) var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+
+/* the way back, offered rather than posted */
+.activity .undo { animation: rise var(--m-enter) var(--ease-out) 120ms both; }
+
+/* last year's threads, asking for a moment */
+.co-nudge-btn { animation: rise var(--m-enter) var(--ease-out) both; }
+
+/* results answer as you type, one after another */
+.search-hit {
+  animation: chip-in 240ms var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+.search-none { animation: rise var(--m-enter) var(--ease-out) both; }
+
+/* the rail gaining a new area or space */
+.rail-area { animation: rise var(--m-enter) var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .inbox-row > div, .rest-head, .rest-row, .activity .undo,
+  .co-nudge-btn, .search-hit, .search-none, .rail-area { animation: none; }
+}
+
+/* ==========================================================  the stage
+   The top of the page is one region with a fixed height, not a stack that
+   grows. It holds whichever moment is current — a question, what is
+   settling, or what needs you today — and while you write, it clears so
+   your words can have it. Because its height never changes, the cards and
+   the rail below it never move. */
+
+@media (min-width: 721px) {
+  .stage {
+    position: relative;
+    /* sized to the tallest moment it must hold, not to a third of the
+       screen: everything below it starts this much sooner */
+    height: clamp(112px, 15vh, 150px);
+    margin-bottom: var(--space-2);
+  }
+  .stage .cwrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 4;
+  }
+
+  /* every pane occupies the same ground; only one is lit at a time */
+  .moment {
+    position: absolute;
+    top: calc(17px * 1.5 + var(--space-1));
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: grid;
+    overflow: hidden;
+  }
+  .moment > .pane {
+    grid-area: 1 / 1;
+    align-self: start;
+    min-width: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+    transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
+  }
+  .pane[hidden] { display: none; }
+  .pane.off {
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+  }
+  /* the capture may take the whole stage while it is being written in */
+  .stage[data-mode="composing"] .moment { opacity: 0; pointer-events: none; }
+  .moment { transition: opacity var(--m-depth) var(--ease), top var(--m-struct) var(--ease-settle); }
+
+  /* A question owns the stage outright: the writing line steps aside and
+     the question takes its place, so there is exactly one thing to type
+     into. Answer it or skip it, and the line comes back. */
+  /* The writing line and the question are never both on screen. A
+     cross-fade always has frames showing both, whatever the timing, so the
+     line does not fade at all — it is simply gone the instant the question
+     owns the stage, and the question rises into the space it left. */
+  .stage[data-mode="asking"] .cwrap {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: none;
+  }
+  /* and the same going back: the question leaves at once rather than
+     fading out while the writing line is already returning */
+  .pane-ask { transition: none; }
+  .pane-ask.off { visibility: hidden; }
+  :root.booting .moment { transition: none; }
+  .stage[data-mode="asking"] .moment { top: 0; }
+  /* the question starts on the very line the writing line occupies, so it
+     reads as taking that line's place rather than sitting below it */
+  .stage[data-mode="asking"] .ask { margin-top: 0; }
+}
+
+/* on a phone the capture is pinned to the bottom edge and the page scrolls
+   above it, so the stage stays a plain stack */
+@media (max-width: 720px) {
+  .stage { display: block; }
+  .moment { display: block; }
+  .moment > .pane { display: block; }
+  .pane.off { display: none; }
+}
+
+/* --------------------------------------------------- a real pair of buttons
+   A decision needs a shape: the action that happens is solid, the one that
+   changes nothing is quiet. Before this the primary was a suggestion-style
+   pill and the secondary a text link, so neither read as the choice. */
+.co-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+.btn-solid,
+.btn-quiet {
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--m-ui) var(--ease), border-color var(--m-ui) var(--ease),
+    color var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
+}
+.btn-solid {
+  border: 1px solid var(--text-1);
+  background: var(--text-1);
+  color: var(--bg);
+}
+.btn-solid:hover { background: var(--text-2); border-color: var(--text-2); }
+.btn-solid:active { transform: scale(0.975); }
+.btn-quiet {
+  border: 1px solid var(--line-1);
+  background: transparent;
+  color: var(--text-2);
+}
+.btn-quiet:hover { border-color: var(--line-2); color: var(--text-1); }
+.btn-quiet:active { transform: scale(0.975); }
+.btn-solid:focus-visible,
+.btn-quiet:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+/* the things you would be leaving behind, read as a list not a paragraph */
+.confirm-list { margin: var(--space-4) 0 0; }
+.confirm-item { padding: 4px 0 4px var(--space-4); }
+
+/* ------------------------------------------------------------- closing out
+   The one moment the page is glad. Not confetti — a breath of colour the
+   width of the card and a few motes that rise and let go. Everything is the
+   page's own accent; the old version threw three colours at 24px and read
+   as a party favour. */
+.seal { position: fixed; pointer-events: none; z-index: 50; }
+
+.seal-bloom {
+  position: absolute;
+  left: calc(var(--size) / -2);
+  top: calc(var(--size) / -2);
+  width: var(--size);
+  height: var(--size);
+  border-radius: var(--radius-pill);
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 68%);
+  opacity: 0;
+  animation: seal-bloom 1150ms var(--ease-out) forwards;
+}
+@keyframes seal-bloom {
+  0%   { opacity: 0; transform: scale(0.5); filter: blur(8px); }
+  28%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.28); filter: blur(20px); }
+}
+
+.seal i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0;
+  animation: seal-mote 1050ms var(--ease-out) forwards;
+}
+@keyframes seal-mote {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.5); filter: blur(0); }
+  22%  { opacity: 0.7; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.35); filter: blur(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) { .seal { display: none; } }
