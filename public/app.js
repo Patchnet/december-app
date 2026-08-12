@@ -80,6 +80,27 @@ function pop(el) {
   el.classList.add('pop')
 }
 
+/** Say what a number did, right where it happened, then let it go. */
+function markChange(el, label) {
+  if (reduced || !el || !label) return
+  const tag = document.createElement('span')
+  tag.className = 'delta'
+  tag.textContent = label
+  el.appendChild(tag)
+  setTimeout(() => tag.classList.add('out'), 1400)
+  setTimeout(() => tag.remove(), 2000)
+}
+
+/** Reworded text glows once so the change is seen, not discovered later. */
+function markEdited(el) {
+  if (!el) return
+  el.classList.remove('edited')
+  void el.offsetWidth
+  el.classList.add('edited')
+  clearTimeout(el._editT)
+  el._editT = setTimeout(() => el.classList.remove('edited'), 1800)
+}
+
 /** Replay the small status-swap on an element whose value just changed. */
 function bump(el) {
   if (reduced || !el) return
@@ -89,6 +110,32 @@ function bump(el) {
 }
 
 // ---------------------------------------------------------------- blocks
+
+/** A due time said the way a person would say it. */
+function whenPhrase(b, now = new Date()) {
+  if (!b.when) return null
+  const today = localDay(now)
+  const tomorrow = localDay(new Date(now.getTime() + 86400000))
+  if (b.when < today) return { text: 'overdue', urgent: true }
+  if (b.when === today) {
+    if (!b.at) return { text: 'today', urgent: false }
+    const [h, m] = b.at.split(':').map(Number)
+    const due = new Date(now)
+    due.setHours(h, m, 0, 0)
+    const mins = Math.round((due - now) / 60000)
+    const clock = due.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(':00', '')
+    if (mins < -5) return { text: `${clock}, passed`, urgent: true }
+    if (mins <= 1) return { text: 'now', urgent: true }
+    if (mins < 60) return { text: `in ${mins} min`, urgent: true }
+    if (mins < 180) return { text: `in ${Math.round(mins / 60)} hours`, urgent: true }
+    return { text: clock, urgent: false }
+  }
+  if (b.when === tomorrow) return { text: b.at ? `tomorrow ${b.at}` : 'tomorrow', urgent: false }
+  return {
+    text: new Date(`${b.when}T12:00:00`).toLocaleString('en', { month: 'short', day: 'numeric' }).toLowerCase(),
+    urgent: false,
+  }
+}
 
 // links in card content become quiet hyperlinks: host + path as the label,
 // raw urls never shown
@@ -121,7 +168,8 @@ const srcTitle = (src) => {
 }
 
 const rowMarkup = (b, i) => `
-      <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}"${srcTitle(i.src)}>
+      <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}"
+        role="checkbox" aria-checked="${i.done}" aria-label="${esc(i.text)}"${srcTitle(i.src)}>
         <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
         <span class="row-text">${linkify(i.text)}</span>
       </button>`
@@ -191,13 +239,15 @@ const RENDER = {
     <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(b.text)}</div>`,
 
   reminder: (b) => {
-    const when = b.when
-      ? `<span class="when-sub">${new Date(`${b.when}T12:00:00`).toLocaleString('en', { month: 'short', day: 'numeric' }).toLowerCase()}${b.repeat ? ` · ${b.repeat}` : ''}</span>`
+    const w = whenPhrase(b)
+    const when = w
+      ? `<span class="when-sub ${w.urgent ? 'urgent' : ''}">${esc(w.text)}${b.repeat ? ` · ${b.repeat}` : ''}</span>`
       : b.repeat
         ? `<span class="when-sub">${b.repeat}</span>`
         : ''
     return `
-    <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}">
+    <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}"
+      role="checkbox" aria-checked="${b.done}" aria-label="${esc(b.text)}">
       <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
       <span class="row-text">${linkify(b.text)}</span>${when}
     </button>`
@@ -238,6 +288,28 @@ function heroId(space) {
   return null
 }
 
+// A space holding one short thing does not need a heading, a checkbox, and
+// a line that all say the same thing. The thing becomes the card.
+const STOP = new Set(['a','an','the','my','your','with','from','for','to','at','on','in','of','and','is','was'])
+const words = (t) => new Set(String(t).toLowerCase().match(/[a-z0-9']+/g)?.filter((w) => !STOP.has(w)) || [])
+
+function soloOf(space) {
+  if (space.blocks.length !== 1) return null
+  const b = space.blocks[0]
+  const solo = b.type === 'reminder'
+    ? b
+    : b.type === 'note' && !b.title && b.text.length <= 140 && !b.text.includes('\n')
+      ? b
+      : null
+  if (!solo) return null
+  // the space name earns its place only when it says something the line does
+  // not — matched by stem, so "Plumbing" stays quiet next to "plumber"
+  const inText = [...words(solo.text || '')]
+  const covered = (w) => inText.some((t) => t.startsWith(w.slice(0, 4)) || w.startsWith(t.slice(0, 4)))
+  const extra = [...words(space.name)].filter((w) => !covered(w))
+  return { block: solo, label: extra.length ? space.name : '' }
+}
+
 function spaceInner(space, full = false) {
   // reminders that are open float to the top of the card
   const blocks = [...space.blocks].sort((a, b) => {
@@ -245,7 +317,36 @@ function spaceInner(space, full = false) {
     return w(a) - w(b)
   })
   const hero = full ? null : heroId(space)
+  const corner = full
+    ? ''
+    : `<div class="card-tools">
+        <button class="card-tool ${space.complete ? 'ready' : ''}" data-finish="${space.id}" aria-label="Close this space out" title="close out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 6.5"/></svg>
+        </button>
+        <button class="card-tool ${space.pinned ? 'on' : ''}" data-pin="${space.id}" aria-label="${space.pinned ? 'Unpin' : 'Pin'}" title="${space.pinned ? 'unpin' : 'pin'}">
+          <svg viewBox="0 0 24 24" fill="${space.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 6 4 4v2h-5v5h-2v-5H6v-2l4-4-1-6Z"/></svg>
+        </button>
+      </div>`
+  const solo = full ? null : soloOf(space)
+  if (solo) {
+    const b = solo.block
+    const w = b.type === 'reminder' ? whenPhrase(b) : null
+    const bits = [
+      w ? `<span class="${w.urgent ? 'urgent' : ''}">${esc(w.text)}</span>` : '',
+      b.repeat || '',
+      solo.label ? esc(solo.label) : '',
+    ].filter(Boolean)
+    const checkable = b.type === 'reminder'
+    return `
+      ${corner}
+      <${checkable ? 'button' : 'div'} class="solo ${b.done ? 'done' : ''}"
+        ${checkable ? `data-block="${b.id}" role="checkbox" aria-checked="${b.done}" aria-label="${esc(b.text)}"` : ''}>
+        <span class="solo-text">${linkify(b.text)}</span>
+      </${checkable ? 'button' : 'div'}>
+      ${bits.length ? `<div class="solo-sub">${bits.join(' · ')}</div>` : ''}`
+  }
   return `
+    ${corner}
     <h2 class="space-name">${esc(space.name)}</h2>
     ${blocks
       .map((b) => {
@@ -283,7 +384,10 @@ function buildFocus() {
       <article class="focus-card" data-sid="${space.id}">
         ${spaceInner(space, true)}
         <textarea class="capture focus-capture" rows="1" placeholder="Add to ${esc(space.name)}…" spellcheck="false"></textarea>
-        <button class="retire-link" data-retire="${space.id}">retire this space</button>
+        <div class="space-verbs">
+          <button class="co-link" data-finish="${space.id}">${space.finished ? 'reopen it' : 'close it out'}</button>
+          <button class="retire-link" data-retire="${space.id}">retire this space</button>
+        </div>
       </article>
     </div>`
   wrap.dataset.u = space.updatedAt
@@ -298,10 +402,13 @@ function buildFocus() {
 }
 
 function closeFocus() {
+  $('#focus').dataset.confirm = ''
   focusId = null
   yearOpen = false
+  yearShown = null
   $('#focus').innerHTML = ''
   $('#focus').dataset.u = ''
+  $('#focus').dataset.help = ''
 }
 
 // ---------------------------------------------------------------- render
@@ -364,6 +471,8 @@ function washCard(el) {
   el.classList.remove('washed')
   void el.offsetWidth
   el.classList.add('washed')
+  clearTimeout(el._washT)
+  el._washT = setTimeout(() => el.classList.remove('washed'), 1000)
 }
 
 /** FLIP: when the grid changes shape, cards glide to their new places
@@ -499,34 +608,131 @@ function renderInbox(targets = new Map()) {
   }
 }
 
-/** Receipts are stubs: one short line; the full story one click away.
-    Rebuilt only when the receipt actually changes, so it never re-animates
-    on an idle poll. */
+/** The card's own sheen already said what happened. All the top keeps is
+    a small mark that undo is available, and only for a moment. */
 function renderActivity() {
   const el = $('#activity')
   const acts = state.activity || []
-  const key = acts.length ? `${acts[0].at}|${acts.length}|${state.canUndo}` : ''
+  const key = acts.length ? `${acts[0].at}|${state.canUndo}` : ''
   if (el.dataset.key === key) return
   el.dataset.key = key
-  if (!acts.length) {
+  if (!acts.length || !state.canUndo) {
     el.innerHTML = ''
-    el.classList.remove('open')
     return
   }
-  const latest = acts[0]
-  const n = acts.length
-  const stub =
-    n === 1
-      ? `<b>${esc(latest.space)}</b> · ${esc(latest.summary.slice(0, 72))}`
-      : `<b>${esc(latest.space)}</b> · ${n} recent changes`
   el.classList.remove('faded')
   el.innerHTML =
-    `<span class="act-stub ${n > 1 ? 'more' : ''}">${stub}</span>` +
-    (state.canUndo ? ` · <button class="undo" id="undo-btn">undo</button>` : '') +
-    (n > 1 ? `<div class="act-list">${acts.map((a) => `<div class="act-item"><b>${esc(a.space)}</b> ${esc(a.summary)}</div>`).join('')}</div>` : '')
-  // transients leave: the receipt has its moment, then steps back
+    `<span class="sr-only">${esc(acts[0].space)}: ${esc(acts[0].summary)}</span>` +
+    `<button class="undo" id="undo-btn" title="${esc(acts[0].space)} · ${esc(acts[0].summary)}">undo</button>`
   clearTimeout(renderActivity._t)
-  renderActivity._t = setTimeout(() => el.classList.add('faded'), 45000)
+  renderActivity._t = setTimeout(() => el.classList.add('faded'), 8000)
+}
+
+/** Closing something out is always a question, and an honest one: it
+    names what will be left unfinished. */
+function askToFinish(space) {
+  const open = openThings(space)
+  const wrap = $('#focus')
+  wrap.dataset.confirm = space.id
+  wrap.innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-label="Close out this space">
+        <h2 class="space-name">Close out ${esc(space.name)}?</h2>
+        <p class="co-read">${open.length} thing${open.length === 1 ? '' : 's'} still unfinished. Closing keeps everything as it is and moves the space down to finished; you can reopen it anytime.</p>
+        <div class="confirm-list">${open.slice(0, 6).map((t) => `<div class="confirm-item">${esc(t)}</div>`).join('')}${open.length > 6 ? `<div class="confirm-item more">and ${open.length - 6} more</div>` : ''}</div>
+        <div class="chips" style="margin-top:16px">
+          <button class="chip-btn" data-confirm-finish="${space.id}">close it out anyway</button>
+          <button class="co-link" data-close>keep it open</button>
+        </div>
+      </article>
+    </div>`
+}
+
+/** The actual things still waiting, in the person's own words. */
+function openThings(space) {
+  const out = []
+  for (const b of space?.blocks || []) {
+    if (b.type === 'list') for (const i of b.items) if (!i.done) out.push(i.text)
+    if (b.type === 'reminder' && !b.done) out.push(b.text)
+    if (b.type === 'tracker' && b.current < b.target) out.push(`${b.title || 'goal'}: ${b.current} of ${b.target}`)
+  }
+  return out
+}
+
+/** How many things in a space are still waiting on you. */
+function countOpen(space) {
+  let n = 0
+  for (const b of space?.blocks || []) {
+    if (b.type === 'list') n += b.items.filter((i) => !i.done).length
+    if (b.type === 'reminder' && !b.done) n++
+    if (b.type === 'tracker' && b.current < b.target) n++
+  }
+  return n
+}
+
+// ---------------------------------------------------------- the layout
+// CSS multi-column rebalances the whole flow whenever any card changes
+// height, so cards leap between columns and nothing can be animated. We
+// own the columns instead: a card is assigned one and keeps it, so growth
+// only ever pushes what is directly below it.
+
+const colCount = () => (innerWidth <= 720 ? 1 : 2)
+
+function ensureColumns(box) {
+  const want = colCount()
+  if (box.children.length === want && box.firstElementChild?.classList.contains('col')) return
+  const cards = [...box.querySelectorAll('.space')]
+  box.innerHTML = ''
+  for (let i = 0; i < want; i++) {
+    const col = document.createElement('div')
+    col.className = 'col'
+    box.appendChild(col)
+  }
+  for (const c of cards) box.firstElementChild.appendChild(c)
+}
+
+/** Place cards in order, each into the currently shortest column. Cards
+    already in the right place are left alone entirely. */
+function placeCards(box, ordered) {
+  const cols = [...box.querySelectorAll('.col')]
+  if (!cols.length) return
+  const heights = cols.map(() => 0)
+  const want = cols.map(() => [])
+  for (const el of ordered) {
+    let target = 0
+    for (let i = 1; i < cols.length; i++) if (heights[i] < heights[target]) target = i
+    want[target].push(el)
+    heights[target] += el.offsetHeight + 14
+  }
+  // touch the DOM only where it actually differs: re-appending a node
+  // restarts its animations, so a needless move replays the sheen
+  cols.forEach((col, i) => {
+    const have = [...col.children]
+    const need = want[i]
+    if (have.length === need.length && have.every((el, n) => el === need[n])) return
+    for (const el of need) col.appendChild(el)
+  })
+}
+
+/** A card that changed content grows or shrinks into its new size. */
+function animateHeight(el, from) {
+  if (reduced) return
+  const to = el.offsetHeight
+  if (from === to || !from) return
+  el.style.height = `${from}px`
+  el.style.overflow = 'hidden'
+  void el.offsetHeight
+  el.style.transition = 'height var(--m-struct) var(--ease-expo)'
+  el.style.height = `${to}px`
+  const done = () => {
+    el.style.height = ''
+    el.style.overflow = ''
+    el.style.transition = ''
+    el.removeEventListener('transitionend', done)
+  }
+  el.addEventListener('transitionend', done)
+  setTimeout(done, 500)
 }
 
 const DORMANT_MS = 30 * 86400000
@@ -546,9 +752,12 @@ function renderSpaces(delayWash = new Set()) {
   const box = $('#spaces')
   const seen = new Set()
   const now = Date.now()
-  const active = state.spaces.filter((s) => now - new Date(s.updatedAt) < DORMANT_MS || awake.has(s.id))
-  const resting = state.spaces.filter((s) => !active.includes(s))
+  const live = state.spaces.filter((s) => !s.finished)
+  const finished = state.spaces.filter((s) => s.finished)
+  const active = live.filter((s) => now - new Date(s.updatedAt) < DORMANT_MS || awake.has(s.id))
+  const resting = live.filter((s) => !active.includes(s))
 
+  ensureColumns(box)
   active.forEach((space, i) => {
     seen.add(space.id)
     const known = spaceEls.get(space.id)
@@ -558,17 +767,24 @@ function renderSpaces(delayWash = new Set()) {
       // inks in when the dot lands; anything else materializes whole
       const building = delayWash.has(space.id) && !reduced
       el.className = building ? 'space fresh building' : 'space fresh'
+      el.tabIndex = 0
+      el.setAttribute('role', 'button')
+      el.setAttribute('aria-label', `${space.name}, open`)
       el.style.animationDelay = `${Math.min(i * 45, 270)}ms`
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
+      el.classList.toggle('pinned', !!space.pinned)
       // once the entrance ends, stop its fill so FLIP transforms can act
       el.addEventListener('animationend', () => el.classList.add('settled'), { once: true })
-      box.appendChild(el)
+      ;(box.querySelector('.col') || box).appendChild(el)
       spaceEls.set(space.id, { el, updatedAt: space.updatedAt })
       if (!building) drawMeters(el)
     } else if (known.updatedAt !== space.updatedAt) {
       const prevSpace = prev?.spaces.find((s) => s.id === space.id)
+      const heightBefore = known.el.offsetHeight
       known.el.innerHTML = spaceInner(space)
+      animateHeight(known.el, heightBefore)
+      known.el.classList.toggle('pinned', !!space.pinned)
       known.el.style.animationDelay = '0ms'
       known.el.classList.remove('fresh')
       // blocks the agent just added rise in individually
@@ -580,6 +796,25 @@ function renderSpaces(delayWash = new Set()) {
           bel.style.setProperty('--d', `${Math.min(n++, 4) * 45}ms`)
         }
       }
+      // reworded text is not a flicker: it says it changed
+      const prevText = new Map()
+      for (const pb of prevSpace?.blocks || []) {
+        if (pb.type === 'list') for (const i of pb.items) prevText.set(i.id, i.text)
+        if (pb.type === 'note' || pb.type === 'reminder') prevText.set(pb.id, pb.text)
+      }
+      for (const b of space.blocks) {
+        const bel0 = known.el.querySelector(`[data-bid="${b.id}"]`)
+        if (!bel0) continue
+        if (b.type === 'list') {
+          for (const i of b.items) {
+            if (prevText.has(i.id) && prevText.get(i.id) !== i.text) {
+              markEdited(bel0.querySelector(`[data-item="${i.id}"] .row-text`))
+            }
+          }
+        } else if ((b.type === 'note' || b.type === 'reminder') && prevText.has(b.id) && prevText.get(b.id) !== b.text) {
+          markEdited(bel0.querySelector('.note-text, .row-text'))
+        }
+      }
       // changed numbers beat; changed meters glide from where they were
       for (const b of space.blocks) {
         const pb = prevSpace?.blocks.find((x) => x.id === b.id)
@@ -588,6 +823,7 @@ function renderSpaces(delayWash = new Set()) {
         if (!bel) continue
         if (b.type === 'tracker' && pb.current !== b.current) {
           bump(bel.querySelector('.tracker-count'))
+          markChange(bel.querySelector('.tracker-count'), `${b.current > pb.current ? '+' : ''}${b.current - pb.current}`)
           const span = bel.querySelector('.meter span')
           if (span && !reduced) {
             const target = span.style.width
@@ -600,6 +836,7 @@ function renderSpaces(delayWash = new Set()) {
         }
         if (b.type === 'ledger' && (pb.total ?? 0) !== (b.total ?? 0)) {
           bump(bel.querySelector('.ledger-total'))
+          markChange(bel.querySelector('.ledger-total'), `+${fmtAmount((b.total ?? 0) - (pb.total ?? 0), b.unit)}`)
           bel.querySelector('.ledger-entry')?.classList.add('entry-in')
         }
         if (b.type === 'streak' && b.dates.length > (pb.dates?.length ?? 0)) {
@@ -621,23 +858,13 @@ function renderSpaces(delayWash = new Set()) {
     }
   }
 
-  // Keep the grid in liveness order without replaying entrances.
-  const order = active.map((s) => s.id)
-  const domOrder = [...box.children].map((el) => el.dataset.sid)
-  if (order.join() !== domOrder.join()) {
-    for (const id of order) {
-      const known = spaceEls.get(id)
-      if (known) {
-        known.el.classList.add('settled')
-        box.appendChild(known.el)
-      }
-    }
-  }
+  // ordering is a placement decision, made once, for all columns
+  placeCards(box, active.map((s) => spaceEls.get(s.id)?.el).filter(Boolean))
 
   // The year accumulates; the page doesn't. Quiet spaces rest below.
   const rest = $('#resting')
   const retired = state.retired || []
-  const key = resting.map((s) => s.id).join() + '|' + retired.map((s) => s.id).join()
+  const key = resting.map((s) => s.id).join() + '|' + retired.map((s) => s.id).join() + '|' + finished.map((s) => s.id).join()
   if (rest.dataset.key !== key) {
     rest.dataset.key = key
     const restRows = !resting.length
@@ -649,13 +876,22 @@ function renderSpaces(delayWash = new Set()) {
             return `<button class="rest-row" data-wake="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">quiet since ${mon}</span></button>`
           })
           .join('')
+    const finishedRows = !finished.length
+      ? ''
+      : `<div class="rest-head">finished</div>` +
+        finished
+          .map((s) => {
+            const mon = s.finishedAt ? new Date(s.finishedAt).toLocaleString('en', { month: 'long' }).toLowerCase() : ''
+            return `<button class="rest-row" data-reopen="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">${mon ? `done in ${mon}` : 'done'}</span></button>`
+          })
+          .join('')
     const retiredRows = !retired.length
       ? ''
       : `<div class="rest-head">retired</div>` +
         retired
           .map((s) => `<button class="rest-row" data-restore="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">restore</span></button>`)
           .join('')
-    rest.innerHTML = restRows + retiredRows
+    rest.innerHTML = finishedRows + restRows + retiredRows
   }
 }
 
@@ -679,33 +915,49 @@ function celebrateDiffs() {
 
 function renderRail() {
   const rail = $('#rail')
-  const on = state.spaces.length >= 6
+  const on = state.spaces.filter((s) => !s.finished).length >= 6
   rail.classList.toggle('on', on)
   if (!on) return
-  const key = state.spaces.map((s) => s.id + s.name).join()
+  const key = state.spaces.map((s) => s.id + s.name + s.area + s.finished).join()
   if (rail.dataset.key === key) return
   rail.dataset.key = key
-  rail.innerHTML = state.spaces
-    .map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`)
-    .join('')
+  const live = state.spaces.filter((s) => !s.finished)
+  const byArea = new Map()
+  for (const s of live) {
+    const a = s.area || 'other'
+    if (!byArea.has(a)) byArea.set(a, [])
+    byArea.get(a).push(s)
+  }
+  // group only once the page has enough spaces to need it
+  const grouped = live.length >= 8 && byArea.size > 1 && [...byArea.keys()].some((k) => k !== 'other')
+  rail.innerHTML = grouped
+    ? [...byArea.entries()]
+        .map(
+          ([area, list]) =>
+            `<div class="rail-area">${esc(area)}</div>` +
+            list.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
+        )
+        .join('')
+    : live.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
 }
 
 let attentionCount = 0
 
-/** The busyness budget: attention beats suggestions; settling beats both. */
+/** Suggestions are an answer to a question you only ask with an empty,
+    focused field. At rest they do not exist. */
 function renderSuggestions() {
   const box = $('#suggest')
-  const cap = state.captures.length ? 0 : attentionCount >= 3 ? 2 : 3
-  const list = (state.suggestions || []).slice(0, cap)
-  const key = `${cap}|${list.join('|')}`
+  // ask the DOM, never a flag: any render self-corrects. Autofocus on load
+  // does not count as asking; you have to reach for the field yourself.
+  const show = reachedFor && document.activeElement === field && !field.value.trim() && !state.captures.length
+  const list = show ? (state.suggestions || []).slice(0, attentionCount >= 3 ? 2 : 3) : []
+  const key = `${show}|${list.join('|')}`
   if (box.dataset.key === key) return
   box.dataset.key = key
   box.classList.remove('retired')
   box.innerHTML = list
     .map((s, i) => `<button class="chip-btn" data-suggest="${esc(s)}" style="--d:${i * 45}ms">${esc(s)}</button>`)
     .join('')
-  clearTimeout(renderSuggestions._t)
-  if (list.length) renderSuggestions._t = setTimeout(() => box.classList.add('retired'), 120000)
 }
 
 function renderAsk() {
@@ -723,11 +975,13 @@ function renderAsk() {
   }
   if (box.dataset.aid === state.ask.id) return
   box.dataset.aid = state.ask.id
+  const opts = state.ask.options || []
   box.innerHTML = `
     <div class="ask">
       <div class="ask-q">${esc(state.ask.question)}</div>
       <div class="chips">
-        ${state.ask.options.map((o, i) => `<button class="chip-btn" data-answer="${esc(o)}" style="--d:${i * 45}ms">${esc(o)}</button>`).join('')}
+        ${opts.map((o, i) => `<button class="chip-btn" data-answer="${esc(o)}" style="--d:${i * 45}ms">${esc(o)}</button>`).join('')}
+        ${opts.length ? '' : '<input class="ask-input" placeholder="type it" autocomplete="off" spellcheck="false" aria-label="Your answer" />'}
         <button class="skip" data-dismiss>skip</button>
       </div>
     </div>`
@@ -746,9 +1000,10 @@ function renderToday() {
   for (const s of state.spaces) {
     for (const b of s.blocks) {
       if (b.type === 'reminder' && !b.done && b.when && b.when <= tomorrow) {
-        // under a header that already says today, only NOT-today earns a label
-        const sub = b.when < today ? 'overdue' : b.when === today ? '' : 'tomorrow'
-        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub })
+        const w = whenPhrase(b)
+        // under a header that already says today, a bare "today" says nothing
+        const sub = w && w.text !== 'today' ? w.text : ''
+        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub, urgent: !!w?.urgent, when: `${b.when} ${b.at || '99:99'}` })
         seen.add(`${s.id}|${b.text.toLowerCase()}`)
       }
     }
@@ -757,6 +1012,8 @@ function renderToday() {
     if (seen.has(`${su.spaceId}|${su.label.toLowerCase()}`)) continue
     items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
   }
+  // soonest first, so the strip reads like a morning
+  items.sort((a, x) => (a.when || '').localeCompare(x.when || ''))
   attentionCount = items.length
   maybeNotify(items.filter((i) => i.kind === 'reminder' || i.kind === 'surfaced'))
   const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
@@ -767,10 +1024,11 @@ function renderToday() {
   box.dataset.key = key
   // every row shares one left column, and every row opens into a moment:
   // answer it right here — done, not yet, or say what happened
-  box.innerHTML = items
-    .slice(0, 4)
+  const shown = items.slice(0, 3)
+  const rest = items.length - shown.length
+  box.innerHTML = shown
     .map((i) => {
-      const sub = i.sub ? `<span class="today-sub ${i.sub === 'overdue' ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
+      const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
       const spaceName = state.spaces.find((s) => s.id === i.sid)?.name || ''
       const input = `<input class="act-input" data-sid="${i.sid || ''}" placeholder="or say what happened…" />`
       const openChip = i.sid ? `<button class="chip-btn" data-jump="${i.sid}">open</button>` : ''
@@ -783,7 +1041,7 @@ function renderToday() {
              ${openChip}${input}`
       const row =
         i.kind === 'reminder'
-          ? `<button class="row today-row" data-block="${i.bid}">
+          ? `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}">
               <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
               <span class="row-text">${esc(i.label)}</span>${sub}</button>`
           : `<button class="today-row plain">
@@ -791,22 +1049,32 @@ function renderToday() {
               <span class="row-text">${esc(i.label)}</span>${sub}</button>`
       return `<div class="today-item">${row}<div class="act-moment" hidden>${moment}</div></div>`
     })
-    .join('')
+    .join('') + (rest > 0 ? `<div class="today-more">+${rest} more</div>` : '')
 }
 
 // ------------------------------------------------------------- year view
 
 let yearOpen = false
+let yearShown = null // null = this year; otherwise an archived year object
+
+async function openPastYear(y) {
+  try {
+    yearShown = await api(`/api/year/${y}`)
+    buildYear()
+  } catch (err) {
+    toast(err.message)
+  }
+}
 
 function buildYear() {
-  const y = state.year
+  const y = yearShown || state.year
   if (!y) return
   const wrap = $('#focus')
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   const rows = names
     .map((name, m) => {
       const data = y.months[m]
-      const future = m > y.month
+      const future = !yearShown && m > state.year.month
       const dots = Array.from({ length: Math.min(data.events, 28) }, () => '<i></i>').join('')
       const hl = data.highlights.map((h) => `<div class="ym-hl">${esc(h)}</div>`).join('')
       return `
@@ -820,16 +1088,176 @@ function buildYear() {
       </div>`
     })
     .join('')
+  const past = !!yearShown
+  const years = state.archivedYears || []
+  const nav = [...years, state.year.year]
+    .map((yy) =>
+      yy === y.year
+        ? `<span class="year-now">${yy}</span>`
+        : `<button class="year-jump" data-year="${yy}">${yy}</button>`
+    )
+    .join('')
+  const held = past && y.spaces?.length
+    ? `<div class="rest-head" style="margin-top:20px">what the year held</div>` +
+      y.spaces.map((s) => `<div class="ym-hl"><b>${esc(s.name)}</b>${s.stats.length ? ` · ${esc(s.stats.join(' · '))}` : ''}</div>`).join('')
+    : ''
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card year-card">
         <h2 class="space-name">${y.year}</h2>
+        ${years.length ? `<div class="year-nav">${nav}</div>` : ''}
         ${rows}
-        <a class="retire-link" href="/api/export.md" download>download the year</a>
+        ${held}
+        ${past ? '' : `<a class="retire-link" href="/api/export.md" download>download the year</a>`}
       </article>
     </div>`
   yearOpen = true
+}
+
+// Clean Slate: every year is a new page. The old one is read aloud,
+// then each open thread gets its own card and its own yes or no.
+// Nothing is forced: it can be parked, revisited, and every answer changed.
+
+let coIndex = 0
+const coAnswered = new Map() // id -> kept?  (the dots remember AND navigate)
+let coParked = false
+
+const coCount = () => state.carryover?.items.length || 0
+
+function renderCarryover() {
+  const co = state.carryover
+  const wrap = $('#focus')
+  if (!co || coParked) {
+    if (wrap.dataset.co) {
+      wrap.dataset.co = ''
+      wrap.innerHTML = ''
+    }
+    return
+  }
+  const key = `${co.fromYear}:${coIndex}`
+  if (wrap.dataset.co === key) return
+  wrap.dataset.co = key
+  const f = co.finished
+  const kinds = { list: 'list', tracker: 'goal', reminder: 'reminder', streak: 'habit' }
+  const n = co.items.length
+  let card
+
+  if (coIndex === 0) {
+    const words = (f.highlights || []).length
+      ? `<div class="co-words">${f.highlights.map((h) => `<div class="co-word">${esc(h)}</div>`).join('')}</div>`
+      : ''
+    card = `
+      <h2 class="space-name">Clean slate.</h2>
+      <p class="co-read">${co.fromYear} is a full page now: <b>${f.done}</b> thing${f.done === 1 ? '' : 's'} finished, <b>${f.met}</b> goal${f.met === 1 ? '' : 's'} met, <b>${f.moments}</b> moment${f.moments === 1 ? '' : 's'} written.</p>
+      ${words}
+      <p class="co-read">It stays whole. <button class="co-link" data-co-look>Look through ${co.fromYear}</button> anytime.</p>
+      ${n ? `<p class="co-read"><b>${n}</b> thread${n === 1 ? ' was' : 's were'} still open when the page turned. One at a time: keep it, or leave it.</p>` : '<p class="co-read">Nothing was left open. The new page is yours.</p>'}
+      <div class="chips" style="margin-top:14px">
+        <button class="chip-btn" data-co-next>${n ? 'turn the page' : 'begin the year'}</button>
+        ${n ? '<button class="co-link" data-co-park>later</button>' : ''}
+      </div>`
+  } else {
+    const it = co.items[coIndex - 1]
+    const answered = coAnswered.get(it.id)
+    const dots = co.items
+      .map((x, i) => {
+        const cls = i === coIndex - 1 ? 'now' : coAnswered.has(x.id) ? (coAnswered.get(x.id) ? 'kept' : 'left') : ''
+        return `<button class="co-dot ${cls}" data-co-goto="${i + 1}" aria-label="thread ${i + 1}"></button>`
+      })
+      .join('')
+    // past card five, offer the way out
+    const bulk =
+      n > 5 && coIndex >= 5
+        ? `<div class="co-bulk">
+             <button class="co-link" data-co-all="yes">keep everything else</button>
+             <button class="co-link" data-co-all="no">leave everything else</button>
+           </div>`
+        : ''
+    card = `
+      <div class="co-ghost" aria-hidden="true">${co.fromYear}</div>
+      <div class="co-dots">${dots}</div>
+      <div class="co-item-label">${esc(it.title || it.text || '')}</div>
+      <div class="when-sub" style="margin:0 0 18px">${esc(it.space)} · ${kinds[it.kind]}${it.note ? ` · ${esc(it.note)}` : ''}</div>
+      <div class="chips">
+        <button class="chip-btn ${answered === true ? 'chosen' : ''}" data-co-yes>bring it in</button>
+        <button class="chip-btn ${answered === false ? 'chosen' : ''}" data-co-no>leave it with ${co.fromYear}</button>
+      </div>
+      ${bulk}`
+  }
+
+  wrap.innerHTML = `
+    <div class="focus-backdrop"></div>
+    <div class="focus-wrap">
+      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-label="Clean slate">${card}</article>
+    </div>`
+  if (!reduced) wrap.querySelector('.chip-btn')?.focus()
+}
+
+/** Answer the current card; when every thread has an answer, commit. */
+function coAnswer(yes, el) {
+  const co = state.carryover
+  const it = co?.items[coIndex - 1]
+  if (!it) return
+  coAnswered.set(it.id, yes)
+  if (yes && el) {
+    pop(el)
+    const r = el.getBoundingClientRect()
+    bloom(r.left + r.width / 2, r.top + r.height / 2)
+  }
+  const cardEl = document.querySelector('.co-card')
+  cardEl?.classList.add(yes ? 'co-exit-kept' : 'co-exit-left')
+  const after = reduced ? 0 : 260
+  // move to the next thread that still has no answer
+  const nextUnanswered = co.items.findIndex((x, i) => i >= coIndex && !coAnswered.has(x.id))
+  setTimeout(() => {
+    if (nextUnanswered === -1) coCommit()
+    else {
+      coIndex = nextUnanswered + 1
+      renderCarryover()
+    }
+  }, after)
+}
+
+async function coCommit() {
+  const ids = [...coAnswered.entries()].filter(([, keep]) => keep).map(([id]) => id)
+  const wrap = $('#focus')
+  wrap.dataset.co = 'closing'
+  wrap.innerHTML = `
+    <div class="focus-backdrop"></div>
+    <div class="focus-wrap">
+      <article class="focus-card co-card" role="dialog" aria-modal="true">
+        <h2 class="space-name">The new page is yours.</h2>
+        ${ids.length ? `<p class="co-read">${ids.length} thread${ids.length === 1 ? '' : 's'} carried over. The rest stays with the old year.</p>` : '<p class="co-read">Nothing carried. All of it stays with the old year.</p>'}
+      </article>
+    </div>`
+  try {
+    state = await api('/api/carryover', ids.length ? { ids } : { dismiss: true })
+    coIndex = 0
+    coAnswered.clear()
+    coParked = false
+    setTimeout(() => {
+      wrap.dataset.co = ''
+      wrap.innerHTML = ''
+      spaceEls.forEach(({ el }) => el.remove())
+      spaceEls.clear()
+      render()
+    }, reduced ? 0 : 1600)
+  } catch (err) {
+    toast(err.message)
+  }
+}
+
+/** Parked: the page works normally, one quiet line holds the moment. */
+function renderCarryoverNudge() {
+  const el = $('#co-nudge')
+  const show = state.carryover && coParked
+  const key = show ? `${state.carryover.fromYear}:${coCount()}` : ''
+  if (el.dataset.key === key) return
+  el.dataset.key = key
+  el.innerHTML = show
+    ? `<button class="co-nudge-btn" data-co-resume>clean slate waiting · ${coCount()} thread${coCount() === 1 ? '' : 's'} from ${state.carryover.fromYear}</button>`
+    : ''
 }
 
 function renderHint() {
@@ -847,6 +1275,8 @@ function render() {
   })
   renderActivity()
   renderToday()
+  renderCarryover()
+  renderCarryoverNudge()
   renderSuggestions()
   renderAsk()
   renderHint()
@@ -881,12 +1311,31 @@ async function poll() {
 
 // --------------------------------------------------------------- actions
 
+// a question ends in '?' or opens like one: answered, never filed
+const QUESTION_RE = /^(how|what|when|where|which|who|why|do i|did i|am i|is there|are there|can i|have i|show me|list )\b/i
+const looksLikeQuestion = (t) => t.endsWith('?') || QUESTION_RE.test(t.trim())
+
+/** Questions belong with finding, not with writing: the answer appears in
+    the search results, and leaves when the search does. */
+async function askThePage(question) {
+  const box = $('#search-results')
+  box.classList.add('on')
+  box.innerHTML = `<div class="search-answer thinking">thinking<span class="a-dots"><i>.</i><i>.</i><i>.</i></span></div>`
+  try {
+    const { answer } = await api('/api/query', { question })
+    box.innerHTML = `<div class="search-answer">${esc(answer)}</div>`
+  } catch (err) {
+    box.innerHTML = `<div class="search-answer">couldn't answer: ${esc(err.message)}</div>`
+  }
+}
+
 async function submitCapture() {
   const field = $('#capture')
   const text = field.value.trim()
   if (!text) return
   field.value = ''
   field.style.height = 'auto'
+  document.documentElement.style.setProperty('--capture-h', `${field.offsetHeight}px`)
   enterHint.classList.remove('on')
   $('#shell').classList.remove('composing')
   const cw = field.closest('.cwrap')
@@ -936,6 +1385,24 @@ field.addEventListener('keydown', (e) => {
   }
 })
 
+// answering an open ask: a time, an amount, a date, typed
+document.addEventListener('keydown', async (e) => {
+  const ai = e.target.closest?.('.ask-input')
+  if (!ai || e.key !== 'Enter') return
+  e.preventDefault()
+  const choice = ai.value.trim()
+  if (!choice) return
+  ai.disabled = true
+  try {
+    state = await api('/api/answer', { choice, typed: true })
+    render()
+    schedulePoll()
+  } catch (err) {
+    ai.disabled = false
+    toast(err.message)
+  }
+})
+
 // the action moment's input: what happened, in your words, scoped
 document.addEventListener('keydown', async (e) => {
   const ai = e.target.closest?.('.act-input')
@@ -974,6 +1441,44 @@ document.addEventListener('keydown', async (e) => {
     toast(err.message)
   }
 })
+// what you can say, once, when you want it
+const CAN_DO = [
+  ['just write it', 'paid rent 2300 · ran 3 miles · call the landlord thursday'],
+  ['ask for a shape', "I'd like a progress bar for rent this year"],
+  ['ask a question', 'how much have I spent on the car?'],
+  ['correct it', 'groceries go under Food, not Housing — it remembers'],
+  ['dump everything', 'paste many lines at once; each finds its own home'],
+  ['talk to one space', 'open a card and write inside it'],
+]
+/** Shown once, to a brand new empty page, and never again. */
+function showIntro() {
+  const wrap = $('#focus')
+  wrap.dataset.help = '1'
+  wrap.innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card" role="dialog" aria-modal="true" aria-label="What December can do">
+        <h2 class="space-name">What you can say</h2>
+        ${CAN_DO.map(([k, v]) => `<div class="can-row"><div class="can-k">${esc(k)}</div><div class="can-v">${esc(v)}</div></div>`).join('')}
+        <div class="can-keys">? for this · / to find · ⌘Z to undo · esc to close</div>
+      </article>
+    </div>`
+}
+
+// the page opens quiet; chips answer only once you reach for the field
+let reachedFor = false
+for (const ev of ['pointerdown', 'keydown']) {
+  document.addEventListener(ev, (e) => {
+    if (reachedFor) return
+    if (e.type === 'pointerdown' && !e.target.closest?.('.capture')) return
+    reachedFor = true
+    setTimeout(renderSuggestions, 0)
+  })
+}
+field.addEventListener('focus', renderSuggestions)
+// let a chip click land before the row goes
+field.addEventListener('blur', () => setTimeout(renderSuggestions, 160))
+
 const enterHint = $('#enter-hint')
 const hintEligible = () => Number(localStorage.getItem('dec-files') || 0) < 5
 
@@ -982,7 +1487,11 @@ field.addEventListener('input', () => {
   field.style.height = `${Math.min(field.scrollHeight, Math.round(innerHeight * 0.4))}px`
   enterHint.classList.toggle('on', !!field.value.trim() && hintEligible())
   $('#shell').classList.toggle('composing', !!field.value.trim())
+  renderSuggestions()
   // a dump is an object, not a floating wall: contain it past two lines
+  // on a phone the field is fixed to the bottom edge: the page must always
+  // be able to scroll clear of whatever height it grows to
+  document.documentElement.style.setProperty('--capture-h', `${field.offsetHeight}px`)
   const cwrap = field.closest('.cwrap')
   const big = field.scrollHeight > 64
   cwrap.classList.toggle('big', big)
@@ -1022,6 +1531,90 @@ document.addEventListener('click', async (e) => {
     return
   }
 
+  if (e.target.closest('[data-answer-close]')) {
+    $('#answer').innerHTML = ''
+    return
+  }
+  const confirmFin = e.target.closest('[data-confirm-finish]')
+  if (confirmFin) {
+    const id = confirmFin.dataset.confirmFinish
+    $('#focus').dataset.confirm = ''
+    $('#focus').innerHTML = ''
+    const btn = document.querySelector(`.space[data-sid="${id}"] [data-finish]`)
+    if (btn) {
+      btn.dataset.confirmed = '1'
+      btn.click()
+      btn.dataset.confirmed = ''
+    }
+    return
+  }
+
+  const pinBtn = e.target.closest('[data-pin]')
+  if (pinBtn) {
+    const sp = state.spaces.find((x) => x.id === pinBtn.dataset.pin)
+    try {
+      const out = await api('/api/pin', { spaceId: pinBtn.dataset.pin, pinned: !sp?.pinned })
+      state = out.state
+      withFlip(() => render())
+      if (focusId) buildFocus()
+      toast(out.pinned ? `${out.name} pinned` : `${out.name} unpinned`)
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
+  const finBtn = e.target.closest('[data-finish]')
+  if (finBtn) {
+    const sp = state.spaces.find((x) => x.id === finBtn.dataset.finish)
+    // done work closes instantly; unfinished work has to be looked at first
+    if (!sp?.finished && !sp?.complete && !finBtn.dataset.confirmed) {
+      askToFinish(sp)
+      return
+    }
+    const el = document.querySelector(`.space[data-sid="${finBtn.dataset.finish}"]`)
+    if (!sp?.finished && el && !reduced) celebrate(el.querySelector('.space-name'))
+    try {
+      const out = await api('/api/finish', { spaceId: finBtn.dataset.finish, finished: !sp?.finished })
+      state = out.state
+      if (out.finished) {
+        const leaving = spaceEls.get(finBtn.dataset.finish)?.el
+        spaceEls.delete(finBtn.dataset.finish)
+        closeFocus()
+        if (leaving && !reduced) {
+          // it settles downward and out; the grid closes the gap behind it
+          leaving.style.height = `${leaving.offsetHeight}px`
+          void leaving.offsetHeight
+          leaving.classList.add('leaving')
+          setTimeout(() => {
+            leaving.remove()
+            withFlip(() => render())
+          }, 420)
+        } else {
+          leaving?.remove()
+          render()
+        }
+        return
+      }
+      render()
+      toast(out.finished ? `${out.name} finished` : `${out.name} reopened`)
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
+  const reopen = e.target.closest('[data-reopen]')
+  if (reopen) {
+    try {
+      const out = await api('/api/finish', { spaceId: reopen.dataset.reopen, finished: false })
+      state = out.state
+      withFlip(() => render())
+      toast(`${out.name} reopened`)
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
+
   // retire a space (one gentle confirm), restore a retired one
   const ret = e.target.closest('[data-retire]')
   if (ret) {
@@ -1052,7 +1645,7 @@ document.addEventListener('click', async (e) => {
     try {
       const out = await api('/api/restore', { spaceId: rest.dataset.restore })
       state = out.state
-      render()
+      withFlip(() => render())
       toast(`${out.name} is back`)
     } catch (err) {
       toast(err.message)
@@ -1127,10 +1720,64 @@ document.addEventListener('click', async (e) => {
     return
   }
 
+  const yj = e.target.closest('.year-jump')
+  if (yj) {
+    const yy = Number(yj.dataset.year)
+    if (yy === state.year.year) {
+      yearShown = null
+      buildYear()
+    } else openPastYear(yy)
+    return
+  }
+
   // the receipt stub unfolds its full story
   const stub = e.target.closest('.act-stub.more')
   if (stub) {
     $('#activity').classList.toggle('open')
+    return
+  }
+
+  // Clean Slate: park it, resume it, look back, navigate, answer, bulk out
+  if (e.target.closest('[data-co-park]')) {
+    coParked = true
+    renderCarryover()
+    renderCarryoverNudge()
+    return
+  }
+  if (e.target.closest('[data-co-resume]')) {
+    coParked = false
+    renderCarryover()
+    renderCarryoverNudge()
+    return
+  }
+  if (e.target.closest('[data-co-look]')) {
+    coParked = true
+    renderCarryover()
+    renderCarryoverNudge()
+    openPastYear(state.carryover.fromYear)
+    return
+  }
+  const goto = e.target.closest('[data-co-goto]')
+  if (goto) {
+    coIndex = Number(goto.dataset.coGoto)
+    renderCarryover()
+    return
+  }
+  if (e.target.closest('[data-co-next]')) {
+    if (!coCount()) return coCommit()
+    coIndex = 1
+    renderCarryover()
+    return
+  }
+  const bulk = e.target.closest('[data-co-all]')
+  if (bulk) {
+    const keep = bulk.dataset.coAll === 'yes'
+    for (const it of state.carryover.items) if (!coAnswered.has(it.id)) coAnswered.set(it.id, keep)
+    coCommit()
+    return
+  }
+  if (e.target.closest('[data-co-yes]') || e.target.closest('[data-co-no]')) {
+    coAnswer(!!e.target.closest('[data-co-yes]'), e.target.closest('.chip-btn'))
     return
   }
 
@@ -1202,6 +1849,7 @@ document.addEventListener('click', async (e) => {
     for (const twin of twins) {
       twin.classList.remove('no-anim')
       twin.classList.toggle('done', done)
+      twin.setAttribute('aria-checked', String(done))
     }
     if (done) {
       pop(row.querySelector('.tick'))
@@ -1305,8 +1953,51 @@ document.addEventListener('click', async (e) => {
   }
 })
 
+// a focused card or the dateline opens with Enter or Space
 document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return
+  const card = e.target.closest?.('#spaces .space')
+  if (card?.dataset.sid) {
+    e.preventDefault()
+    focusId = card.dataset.sid
+    buildFocus()
+    return
+  }
+  if (e.target === $('#dateline')) {
+    e.preventDefault()
+    yearOpen ? closeFocus() : buildYear()
+  }
+})
+
+document.addEventListener('keydown', async (e) => {
+  // the receipt is gone; undo lives on the keyboard
+  if ((e.metaKey || e.ctrlKey) && e.key === 'z' && (state?.canUndoManual || state?.canUndo) && !e.target.closest?.('textarea, input, [contenteditable="true"]')) {
+    e.preventDefault()
+    try {
+      // your own last action first; the agent's batch only when you have none
+      const out = await api(state.canUndoManual ? '/api/undo-mine' : '/api/undo', {})
+      state = out.state || out
+      spaceEls.forEach(({ el }) => el.remove())
+      spaceEls.clear()
+      render()
+      toast('undone')
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
   if (e.key === 'Escape' && focusId && !document.querySelector('[contenteditable="true"]')) closeFocus()
+  // the ceremony answers to the keyboard, and never traps you
+  if (state?.carryover && !coParked && document.querySelector('.co-card')) {
+    if (e.key === 'Escape') {
+      coParked = true
+      renderCarryover()
+      renderCarryoverNudge()
+    }
+    if (coIndex > 0 && (e.key === 'y' || e.key === 'n')) {
+      coAnswer(e.key === 'y', document.querySelector(e.key === 'y' ? '[data-co-yes]' : '[data-co-no]'))
+    }
+  }
 })
 
 // ---------------------------------------------------- fix it yourself
@@ -1347,11 +2038,11 @@ document.addEventListener('dblclick', (e) => {
     }
     try {
       state = await api('/api/edit', { ...payload, text })
+      markEdited(el)
       const sid = card?.dataset.sid
       const known = sid && spaceEls.get(sid)
       if (known) known.updatedAt = state.spaces.find((s) => s.id === sid)?.updatedAt || known.updatedAt
       prev = state
-      toast('changed')
     } catch (err) {
       el.textContent = original
       toast(err.message)
@@ -1425,6 +2116,7 @@ function closeSearch() {
 searchEl.addEventListener('input', () => {
   const q = searchEl.value.trim()
   if (q.length < 2) return closeSearch()
+  if (resultsEl.querySelector('.search-answer')) resultsEl.innerHTML = ''
   const hits = searchEverything(q)
   resultsEl.innerHTML = hits.length
     ? hits
@@ -1441,6 +2133,13 @@ searchEl.addEventListener('keydown', (e) => {
     searchEl.blur()
   }
   if (e.key === 'Enter') {
+    const q = searchEl.value.trim()
+    // a question is asked; a word is looked up
+    if (looksLikeQuestion(q) && q.length > 6) {
+      askThePage(q)
+      searchEl.value = ''
+      return
+    }
     const first = resultsEl.querySelector('.search-hit')
     if (first) {
       jumpToSpace(first.dataset.shit)
@@ -1655,7 +2354,8 @@ $('#onboarding-close').addEventListener('click', () => {
 // hands you the pen. Any key or click skips it.
 
 async function firstRunDemo() {
-  if (shouldOnboard || reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length) return
+  // neither an onboarding run nor a year with carryover waiting gets the demo
+  if (shouldOnboard || reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length || state.carryover) return
   let alive = true
   const stop = () => {
     alive = false
@@ -1695,6 +2395,11 @@ async function firstRunDemo() {
   toast('now you')
 }
 
+// the day moves even when nothing happens: re-read the clock each minute
+setInterval(() => {
+  if (state && !document.hidden) render()
+}, 60000)
+
 // coming back to the tab: refresh immediately (the date may have rolled,
 // the agent may have worked) instead of waiting out a throttled poll
 document.addEventListener('visibilitychange', () => {
@@ -1714,7 +2419,13 @@ async function boot() {
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
-    firstRunDemo()
+    // a brand new page gets told what it can do, once, ever
+    if (!state.spaces.length && !state.captures.length && !state.carryover && !localStorage.getItem('dec-intro')) {
+      localStorage.setItem('dec-intro', '1')
+      setTimeout(showIntro, 600)
+    } else {
+      firstRunDemo()
+    }
   } catch (e) {
     document.body.innerHTML = `<pre style="padding:40px;font-family:monospace">could not load: ${e.message}</pre>`
   }

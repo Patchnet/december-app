@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, clearAsk, hasInbox, editText, retireSpace, restoreSpace } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, listYears } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
@@ -34,6 +34,8 @@ const MIME = {
 }
 
 await settle.writeMcpConfig()
+await rolloverIfNeeded() // the turn of the year happens before anything else
+watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
 let surfacingScheduled = false
 const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
@@ -197,9 +199,13 @@ const server = createServer(async (req, res) => {
     // Answer (or dismiss) the ask. A chosen option files as if typed.
     if (path === '/api/answer' && req.method === 'POST') {
       const body = await readBody(req)
+      const asked = project().ask?.question || ''
       await clearAsk()
       if (body.choice) {
-        await addCapture(String(body.choice))
+        // a tapped option is a whole sentence already; a typed one is a
+        // fragment, so it files with the question that gives it meaning
+        const text = body.typed && asked ? `${asked} ${body.choice}` : String(body.choice)
+        await addCapture(text)
         scheduleSettle()
       }
       return json(res, 200, project(settleStatus()))
@@ -209,6 +215,47 @@ const server = createServer(async (req, res) => {
     if (path === '/api/settle' && req.method === 'POST') {
       scheduleSettle(0)
       return json(res, 202, { scheduled: selectedEngineAvailable(), captureOnly: !selectedEngineAvailable() })
+    }
+
+    // Ask the page a question and get an answer, not a filed note.
+    if (path === '/api/query' && req.method === 'POST') {
+      const { question } = await readBody(req)
+      try {
+        const answer = await settle.answerQuestion(String(question || ''))
+        return json(res, 200, { answer })
+      } catch (e) {
+        return json(res, 502, { error: e.message })
+      }
+    }
+
+    // What matters this year, and what is finished.
+    if (path === '/api/pin' && req.method === 'POST') {
+      const { spaceId, pinned } = await readBody(req)
+      try {
+        const out = await setPinned(spaceId, pinned)
+        return json(res, 200, { ...out, state: project(settleStatus()) })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if (path === '/api/finish' && req.method === 'POST') {
+      const { spaceId, finished } = await readBody(req)
+      try {
+        const out = await setFinished(spaceId, finished)
+        return json(res, 200, { ...out, state: project(settleStatus()) })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+
+    // Undo your own last action (agent batches use /api/undo).
+    if (path === '/api/undo-mine' && req.method === 'POST') {
+      try {
+        const out = await undoManual()
+        return json(res, 200, { ...out, state: project(settleStatus()) })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
     }
 
     // Small fixes by hand: rename, reword, retire, restore.
@@ -234,6 +281,30 @@ const server = createServer(async (req, res) => {
         return json(res, 200, { ...out, state: project(settleStatus()) })
       } catch (e) {
         return json(res, 400, { error: e.message })
+      }
+    }
+
+    // The January moment: bring chosen threads in, or let the year rest.
+    if (path === '/api/carryover' && req.method === 'POST') {
+      const body = await readBody(req)
+      try {
+        if (body.dismiss) await dismissCarryover()
+        else await applyCarryover(body.ids || [])
+        return json(res, 200, project(settleStatus()))
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+
+    // Past years, read-only.
+    if (path === '/api/years' && req.method === 'GET') {
+      return json(res, 200, { years: listYears() })
+    }
+    if (path.startsWith('/api/year/') && req.method === 'GET') {
+      try {
+        return json(res, 200, readYear(path.slice('/api/year/'.length)))
+      } catch (e) {
+        return json(res, 404, { error: e.message })
       }
     }
 
@@ -313,8 +384,10 @@ const server = createServer(async (req, res) => {
       const { name, arguments: args } = await readBody(req)
       try {
         const result = await callTool(name, args || {}, settleStatus())
+        if (process.env.DECEMBER_DEBUG) console.log('  tool', name)
         return json(res, 200, { result })
       } catch (e) {
+        if (process.env.DECEMBER_DEBUG) console.log('  tool', name, 'FAILED:', e.message)
         return json(res, 400, { error: e.message })
       }
     }

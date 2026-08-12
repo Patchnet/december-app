@@ -10,26 +10,6 @@
 </head>
 <body>
   <div class="shell" id="shell">
-    <div class="corner">
-      <div class="search-wrap">
-        <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
-        <div class="search-results" id="search-results"></div>
-      </div>
-      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false">
-        <svg class="gear" viewBox="0 0 14 14" aria-hidden="true">
-          <circle cx="7" cy="7" r="2.1" />
-          <path d="M7 1.2v1.9 M7 10.9v1.9 M1.2 7h1.9 M10.9 7h1.9 M2.9 2.9l1.35 1.35 M9.75 9.75l1.35 1.35 M11.1 2.9 9.75 4.25 M4.25 9.75 2.9 11.1" />
-        </svg>
-      </button>
-      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
-        <svg class="moon" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.6 8.7 A5.1 5.1 0 1 1 5.3 2.4 A4.1 4.1 0 0 0 11.6 8.7 Z" /></svg>
-        <svg class="sun" viewBox="0 0 14 14" aria-hidden="true">
-          <circle cx="7" cy="7" r="2.7" />
-          <path d="M7 1v1.4 M7 11.6V13 M1 7h1.4 M11.6 7H13 M2.8 2.8l1 1 M10.2 10.2l1 1 M11.2 2.8l-1 1 M3.8 10.2l-1 1" />
-        </svg>
-      </button>
-    </div>
-
     <div class="settings-pop" id="settings-pop" hidden>
       <div class="set-row">
         <span class="set-label">Engine</span>
@@ -58,7 +38,7 @@
       <div class="onboarding-note" id="onboarding-note"></div>
     </section>
 
-    <h1 class="dateline" id="dateline"></h1>
+    <h1 class="dateline" id="dateline" tabindex="0" role="button" aria-label="Open the year"></h1>
 
     <div class="cwrap">
       <textarea class="capture" id="capture" rows="1"
@@ -66,11 +46,33 @@
       <span class="enter-hint" id="enter-hint" aria-hidden="true">&#8629;</span>
     </div>
 
-    <div class="today" id="today"></div>
+    <header class="corner">
+      <div class="search-wrap">
+        <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
+        <div class="search-results" id="search-results"></div>
+      </div>
+      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false">
+        <svg class="gear" viewBox="0 0 14 14" aria-hidden="true">
+          <circle cx="7" cy="7" r="2.1" />
+          <path d="M7 1.2v1.9 M7 10.9v1.9 M1.2 7h1.9 M10.9 7h1.9 M2.9 2.9l1.35 1.35 M9.75 9.75l1.35 1.35 M11.1 2.9 9.75 4.25 M4.25 9.75 2.9 11.1" />
+        </svg>
+      </button>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+        <svg class="moon" viewBox="0 0 14 14" aria-hidden="true"><path d="M11.6 8.7 A5.1 5.1 0 1 1 5.3 2.4 A4.1 4.1 0 0 0 11.6 8.7 Z" /></svg>
+        <svg class="sun" viewBox="0 0 14 14" aria-hidden="true">
+          <circle cx="7" cy="7" r="2.7" />
+          <path d="M7 1v1.4 M7 11.6V13 M1 7h1.4 M11.6 7H13 M2.8 2.8l1 1 M10.2 10.2l1 1 M11.2 2.8l-1 1 M3.8 10.2l-1 1" />
+        </svg>
+      </button>
+    </header>
+
+    <div id="answer"></div>
+    <div class="co-nudge" id="co-nudge"></div>
+    <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
     <div class="chips" id="suggest"></div>
     <div class="hint" id="hint"></div>
     <div class="inbox" id="inbox"></div>
-    <div class="activity" id="activity"></div>
+    <div class="activity" id="activity" aria-live="polite"></div>
     <div id="ask"></div>
 
     <div class="body-grid">

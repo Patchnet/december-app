@@ -86,6 +86,19 @@
 
 * { box-sizing: border-box; }
 
+/* said aloud, never drawn */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 ::selection { background: var(--accent-edge); }
 
 body {
@@ -205,6 +218,7 @@ body {
 .cwrap { margin-bottom: var(--space-3); }
 .capture { margin-bottom: 0; }
 .capture:focus { outline: none; }
+.capture:focus-visible { outline: none; box-shadow: -10px 0 0 -9px var(--accent); }
 .capture::placeholder { color: var(--text-3); opacity: 0.7; }
 
 /* -------------------------------------------------- chips and the ask
@@ -219,6 +233,7 @@ body {
   margin: 0 0 var(--space-3);
 }
 .chips:empty { margin: 0; }
+#suggest:empty { display: none; }
 
 .chip-btn {
   position: relative;
@@ -362,16 +377,14 @@ body {
   animation: rise var(--m-enter) var(--ease-out) both;
 }
 .activity b { color: var(--text-2); font-weight: 500; }
-.act-stub.more { cursor: pointer; }
-.act-stub.more:hover { color: var(--text-2); }
-.act-list { display: none; }
-.activity.open .act-list { display: block; padding-top: var(--space-2); }
-.act-item { padding: 2px 0; text-wrap: pretty; }
+.activity:empty { display: none; }
 /* transients leave: the receipt fades after its moment */
 .activity { margin-bottom: var(--space-3); transition: opacity 600ms var(--ease); }
-.activity.faded { opacity: 0; pointer-events: none; }
+/* the entrance uses fill:both, which pins opacity:1 above normal
+   declarations — the fade has to cancel the animation to win */
+.activity.faded { animation: none; opacity: 0; pointer-events: none; }
 .chips { transition: opacity 600ms var(--ease); }
-.chips.retired { opacity: 0; pointer-events: none; }
+.chips.retired { animation: none; opacity: 0; pointer-events: none; }
 
 /* while the person is composing or things are settling, everything under
    their line steps back: no gray text competing with their own words.
@@ -415,12 +428,13 @@ body {
   top: var(--space-8);
   display: none;
   flex-direction: column;
-  gap: var(--space-2);
   max-width: 150px;
 }
 .rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
 .rail a {
   display: block;
+  padding: 2px 0;
+  line-height: 1.45;
   color: var(--text-3);
   text-decoration: none;
   font-size: 11.5px;
@@ -432,12 +446,12 @@ body {
 .rail a:hover { color: var(--text-1); }
 .rail a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
 
-.spaces { flex: 1; min-width: 0; columns: 2 300px; column-gap: var(--space-4); }
+.spaces { flex: 1; min-width: 0; display: flex; gap: var(--space-4); align-items: flex-start; }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 
 .space {
   position: relative;
   overflow: hidden;
-  break-inside: avoid;
   margin-bottom: var(--space-4);
   border: 1px solid var(--line-1);
   border-radius: var(--radius-lg);
@@ -449,6 +463,8 @@ body {
 }
 /* a door hints it opens: tone only, never a lift */
 .space:hover:not(.ghost) { border-color: var(--line-2); }
+.space:focus-visible { outline: none; border-color: var(--accent-edge); box-shadow: var(--focus-ring-field); }
+.dateline:focus-visible { outline: none; border-bottom-color: var(--accent); }
 
 /* entrance finished: stop the animation fill so FLIP glides can move it */
 .space.settled { animation: none; }
@@ -477,12 +493,49 @@ body {
 
 /* the identity layer is serif: a journal that keeps itself */
 .space-name {
+  overflow-wrap: anywhere;
   font-family: var(--font-serif);
   font-size: 17px;
   font-weight: 400;
   letter-spacing: 0;
   margin: 0 0 var(--space-4);
 }
+
+/* A space holding one short thing: the thing IS the card. The tick stays
+   out of the way until the card is under the cursor, so at rest this
+   reads as a sentence, not as a form. */
+.solo {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.solo-text {
+  overflow-wrap: anywhere;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  text-wrap: pretty;
+  transition: color var(--m-ui) var(--ease);
+}
+/* done says itself: the line rules through and recedes, no box to tick */
+.solo.done .solo-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-2);
+}
+.solo:hover .solo-text { color: var(--accent-ink, var(--text-1)); }
+.solo-sub {
+  margin-top: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.solo-sub .urgent { color: var(--bad-ink); }
 
 .block { margin-bottom: var(--space-5); }
 .block:last-child { margin-bottom: 0; }
@@ -561,7 +614,7 @@ body {
 
 /* the strike hugs the words it crosses out, and whispers rather than
    scribbles: a hairline in line-2, drawn over dimmed text */
-.row-text { flex: 0 1 auto; min-width: 0; position: relative; display: inline-block; }
+.row-text { flex: 0 1 auto; min-width: 0; position: relative; display: inline-block; overflow-wrap: anywhere; }
 .row-text::after {
   content: "";
   position: absolute;
@@ -630,7 +683,8 @@ body {
   font-variant-numeric: tabular-nums;
   padding: 1px 0;
 }
-.ledger-entry span:last-child { color: var(--text-2); }
+.ledger-entry span:last-child { color: var(--text-2); white-space: nowrap; }
+.ledger-entry span:first-child { min-width: 0; overflow-wrap: anywhere; }
 
 /* streak */
 .streak-line { display: flex; align-items: center; gap: var(--space-3); }
@@ -667,7 +721,7 @@ body {
 .card-link:hover { border-color: var(--accent-ink); }
 
 /* note */
-.note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; }
+.note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; overflow-wrap: anywhere; }
 .note-text.clamp {
   max-height: 132px;
   overflow: hidden;
@@ -772,6 +826,7 @@ body {
 .today-row.plain:hover .row-text { color: var(--text-1); }
 .today-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .today-sub.overdue { color: var(--bad-ink); }
+.today-more { font-size: 11.5px; color: var(--text-3); padding: 3px 0 0 28px; }
 
 /* --------------------------------------------------------- the year view */
 
@@ -1051,8 +1106,283 @@ body {
 .sh-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sh-space { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
 .search-none { padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-3); }
+/* an answer, where finding already lives */
+.search-answer {
+  padding: var(--space-3) var(--space-3);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-1);
+  text-wrap: pretty;
+}
+.search-answer.thinking { color: var(--text-3); }
+.search-answer .a-dots i { display: inline-block; font-style: normal; opacity: 0.25; animation: dot-pulse 900ms var(--ease) infinite; }
+.search-answer .a-dots i:nth-child(2) { animation-delay: 150ms; }
+.search-answer .a-dots i:nth-child(3) { animation-delay: 300ms; }
+.search-results:has(.search-answer) { width: 340px; }
 
-/* the action moment: click a line with a clock, answer it right there */
+/* Clean Slate: one thread, one card, one answer. Cards turn like pages:
+   entrances arrive from the right; kept cards leave forward with you,
+   left ones fall back with the old year. */
+.co-card {
+  position: relative;
+  overflow: hidden;
+  max-width: 460px;
+  min-height: 170px;
+  animation: co-in var(--m-struct) var(--ease-expo) both;
+  transition: transform 260ms var(--ease), opacity 260ms var(--ease);
+}
+@keyframes co-in {
+  from { opacity: 0; transform: translateX(22px); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+.co-card.co-exit-kept { transform: translateX(30px); opacity: 0; }
+.co-card.co-exit-left { transform: translateX(-30px) translateY(6px); opacity: 0; }
+
+.co-item-label { font-family: var(--font-serif); font-size: 21px; margin-bottom: var(--space-2); }
+.co-read b { color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* the deck's dots remember each choice — and take you back to it */
+.co-dots { display: flex; gap: 5px; margin-bottom: var(--space-5); }
+.co-dot {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background var(--m-ui) var(--ease), box-shadow var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
+}
+.co-dot::after { content: ""; position: absolute; inset: -8px; }
+.co-dot:hover { transform: scale(1.3); }
+.co-dot:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.co-dot.now { background: transparent; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.co-dot.kept { background: var(--accent); }
+.co-dot.left { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+
+/* the year's own words, quietly */
+.co-words { margin: 0 0 var(--space-4); }
+.co-word {
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 2px 0 2px var(--space-4);
+  border-left: 1px solid var(--line-1);
+  text-wrap: pretty;
+}
+
+/* the old year, ghosted behind its own ceremony */
+.co-ghost {
+  position: absolute;
+  right: 22px;
+  bottom: 6px;
+  font-family: var(--font-serif);
+  font-size: 92px;
+  line-height: 1;
+  color: var(--text-1);
+  opacity: 0.04;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* quiet inline actions inside the ceremony */
+.co-link {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.co-link:hover { color: var(--text-1); }
+.co-bulk { display: flex; gap: var(--space-3); margin-top: var(--space-4); margin-left: -6px; }
+.chip-btn.chosen { border-color: var(--accent-edge); background: var(--accent-soft); color: var(--accent-ink); }
+
+/* parked: one line holds the moment until you want it */
+.co-nudge { max-width: 640px; }
+.co-nudge:empty { display: none; }
+.co-nudge-btn {
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent-ink);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--accent-edge);
+  padding: 2px 0;
+  margin-bottom: var(--space-3);
+  cursor: pointer;
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+
+/* the January moment + past years */
+.co-read { color: var(--text-2); font-size: 14px; text-wrap: pretty; margin: 0 0 var(--space-4); }
+.co-row .row-text { display: flex; flex-direction: column; gap: 1px; }
+.co-row .when-sub { margin-left: 0; }
+.year-nav { display: flex; gap: var(--space-4); align-items: baseline; margin: -8px 0 var(--space-5); }
+.year-now { font-family: var(--font-serif); font-size: 14px; }
+.year-jump {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.year-jump:hover { color: var(--text-1); }
+
+/* an answer, not a filed note */
+#answer:empty { display: none; }
+.answer {
+  max-width: 640px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--accent-edge);
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+.a-q { font-size: 11.5px; color: var(--text-3); }
+.a-text { font-size: 14px; color: var(--text-1); flex: 1 1 100%; text-wrap: pretty; }
+.a-dots i { display: inline-block; font-style: normal; opacity: 0.25; animation: dot-pulse 900ms var(--ease) infinite; }
+.a-dots i:nth-child(2) { animation-delay: 150ms; }
+.a-dots i:nth-child(3) { animation-delay: 300ms; }
+
+/* what a number just did, said beside it and then gone */
+.delta {
+  margin-left: var(--space-2);
+  font-size: 11.5px;
+  color: var(--good-ink);
+  opacity: 1;
+  transition: opacity var(--m-depth) var(--ease);
+}
+.delta.out { opacity: 0; }
+
+/* reworded text says so, once */
+.edited {
+  animation: edited-glow 1800ms var(--ease);
+  border-radius: var(--radius-sm);
+}
+@keyframes edited-glow {
+  0% { background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
+  60% { background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); }
+  100% { background: transparent; box-shadow: 0 0 0 3px transparent; }
+}
+
+/* what matters this year */
+.pin-mark { display: none; }
+
+/* the card's own tools: absent until you reach for the card */
+.card-tools {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
+  z-index: 2;
+}
+.space:hover .card-tools,
+.space:focus-within .card-tools { opacity: 1; transform: none; }
+.card-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
+}
+.card-tool svg { width: 15px; height: 15px; display: block; }
+.card-tool:hover { background: var(--surface-1); color: var(--text-1); }
+.card-tool:active { transform: scale(0.92); }
+.card-tool:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.card-tool.on { color: var(--text-1); }
+.card-tool.on:hover { color: var(--text-2); }
+.card-tool svg { transition: fill var(--m-ui) var(--ease); }
+/* a pinned card keeps its pin visible; the rest still waits for hover */
+.space.pinned .card-tools { opacity: 1; transform: none; }
+.space.pinned .card-tool:not(.on) { opacity: 0; transition: opacity var(--m-ui) var(--ease); }
+.space.pinned:hover .card-tool:not(.on) { opacity: 1; }
+/* when everything inside is done, the check invites the click */
+.card-tool.ready { color: var(--hue-ok); }
+.space:hover .card-tool.ready { color: var(--good-ink); }
+/* not finishable yet: present, but plainly inert */
+/* what will be left behind, said plainly before you decide */
+.confirm-list { margin: var(--space-3) 0 0; }
+.confirm-item {
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 3px 0 3px var(--space-4);
+  border-left: 1px solid var(--line-1);
+  text-wrap: pretty;
+}
+.confirm-item.more { color: var(--text-3); border-left-color: transparent; }
+
+/* finishing is a departure, not a deletion */
+.space.leaving {
+  overflow: hidden;
+  opacity: 0;
+  height: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+  transform: translateY(10px);
+  transition: opacity var(--m-depth) var(--ease), transform var(--m-struct) var(--ease-expo),
+    height var(--m-struct) var(--ease-expo), margin var(--m-struct) var(--ease-expo),
+    padding var(--m-struct) var(--ease-expo);
+}
+
+/* rows and strips settle rather than snap */
+.rest-row, .today-item { transition: opacity var(--m-depth) var(--ease); }
+.space-verbs { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-5); }
+.space-verbs .retire-link { margin-top: 0; }
+
+/* a finished space says so before it steps aside */
+.wrap-up-unused {
+  display: block;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--good-ink);
+  background: none;
+  border: 0;
+  padding: 0 0 var(--space-3);
+  cursor: pointer;
+  transition: opacity var(--m-ui) var(--ease);
+}
+.wrap-up:hover { opacity: 0.7; }
+
+/* the rail learns headings once there are many spaces */
+.rail-area {
+  font-size: 10.5px;
+  color: var(--text-3);
+  opacity: 0.55;
+  margin: var(--space-3) 0 1px;
+  line-height: 1.4;
+}
+.rail-area:first-child { margin-top: 0; }
+
+/* what December can do */
+.can-row { display: flex; gap: var(--space-4); padding: var(--space-2) 0; border-top: 1px solid var(--line-1); }
+.can-k { flex: 0 0 130px; font-size: 13px; color: var(--text-1); }
+.can-v { flex: 1; font-size: 13px; color: var(--text-3); text-wrap: pretty; }
+.can-keys { margin-top: var(--space-5); font-size: 11.5px; color: var(--text-3); }
+
+/* the action moment: click a line with a clock, answer it right there.
+   [hidden] is a UA style, so an author display rule must yield to it. */
+.act-moment[hidden] { display: none; }
 .act-moment {
   display: flex;
   align-items: center;
@@ -1076,8 +1406,26 @@ body {
 .act-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
 .act-input::placeholder { color: var(--text-3); opacity: 0.7; }
 
+/* an open ask answers by typing: a time, an amount, a date */
+.ask-input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-1);
+  padding: 3px 0;
+  width: 120px;
+  caret-color: var(--accent);
+  transition: border-color var(--m-ui) var(--ease);
+}
+.ask-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
+.ask-input::placeholder { color: var(--text-3); opacity: 0.7; }
+.ask-input:disabled { opacity: 0.5; }
+
 /* reminder dates ride along quietly */
 .when-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; margin-left: var(--space-2); }
+.when-sub.urgent { color: var(--bad-ink); }
 .row.done .when-sub { opacity: 0.6; }
 
 /* fixing your own words in place */
@@ -1105,9 +1453,10 @@ body {
 a.retire-link:hover { color: var(--accent-ink); }
 
 @media (max-width: 720px) {
-  .spaces { columns: 1; }
+  .spaces { display: block; }
   .rail.on { display: none; }
-  .shell { padding: var(--space-5) var(--space-5) 120px; }
+  /* reserve exactly what the fixed capture occupies, plus breathing room */
+  .shell { padding: var(--space-5) var(--space-5) calc(var(--capture-h, 56px) + 72px); }
   .corner { position: static; justify-content: flex-end; margin-bottom: var(--space-3); }
   .enter-hint { display: none; }
   .capture {
