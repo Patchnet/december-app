@@ -237,6 +237,7 @@ body {
   animation-delay: var(--d, 0ms);
 }
 .chip-btn::after { content: ""; position: absolute; left: 0; right: 0; top: -7px; bottom: -7px; }
+.chip-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .chip-btn:hover { color: var(--text-1); background: var(--surface-2); }
 .chip-btn:active { transform: scale(0.96); transition: transform var(--m-press) var(--ease); }
 .chip-btn:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
@@ -773,6 +774,7 @@ body {
   animation: rise var(--m-enter) var(--ease-out) both;
 }
 .today-row .tick { align-self: center; }
+.today.norise .today-row { animation: none; }
 .tick-slot { flex: 0 0 18px; }
 .today-row .row-text { flex: 0 1 auto; min-width: 0; transition: color var(--m-ui) var(--ease); }
 .today-row.plain .row-text { color: var(--text-2); }

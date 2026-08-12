@@ -723,6 +723,9 @@ function renderToday() {
   attentionCount = items.length
   const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
+  // rows animate in only on the strip's first appearance; later reshuffles
+  // must not replay entrances
+  if (box.dataset.key !== undefined) box.classList.add('norise')
   box.dataset.key = key
   // every row shares one left column: tick, or an empty slot the same width
   box.innerHTML = items
@@ -842,6 +845,7 @@ async function submitCapture() {
     schedulePoll()
   } catch (e) {
     field.value = text
+    $('#shell').classList.add('composing') // the draft is back; keep the page quiet
     toast(e.message)
   }
 }
@@ -981,7 +985,13 @@ document.addEventListener('click', async (e) => {
   const jump = e.target.closest('[data-jump]')
   if (jump) {
     e.preventDefault()
-    const el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
+    let el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
+    if (!el) {
+      // a resting space wakes when something points at it
+      awake.add(jump.dataset.jump)
+      render()
+      el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
+    }
     if (el) {
       el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
       el.classList.remove('noted')
@@ -1071,9 +1081,10 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // anywhere quiet on a grid card: open the focused view
+  // anywhere quiet on a grid card: open the focused view — but selecting
+  // text to copy is reading, not clicking
   const card = e.target.closest('#spaces .space')
-  if (card && !e.target.closest('button, a')) {
+  if (card && card.dataset.sid && !e.target.closest('button, a') && !window.getSelection()?.toString()) {
     focusId = card.dataset.sid
     buildFocus()
   }
