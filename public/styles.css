@@ -990,6 +990,105 @@ body {
 /* -------------------------------------------------------- phone-first
    On a phone, December is a message to yourself: capture lives at the
    bottom, under the thumb; the page scrolls above it. */
+/* ------------------------------------------------- quality of life */
+
+/* dump mode: a lot of text becomes one contained object */
+.cwrap.big .capture {
+  font-size: 15px;
+  line-height: 1.55;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--line-2);
+  overflow-y: auto;
+}
+.cwrap::after {
+  content: attr(data-hint);
+  display: block;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--text-3);
+  min-height: 0;
+}
+
+/* header search: one quiet field, everything answers */
+.search-wrap { position: relative; }
+.search {
+  width: 120px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 2px 0;
+  text-align: right;
+  transition: width var(--m-depth) var(--ease), border-color var(--m-ui) var(--ease);
+}
+.search::placeholder { color: var(--text-3); opacity: 0.6; }
+.search:focus { outline: none; width: 200px; border-bottom-color: var(--line-2); }
+.search-results {
+  display: none;
+  position: absolute;
+  top: 28px;
+  right: 0;
+  width: 280px;
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px -8px rgba(15, 12, 8, 0.18);
+  padding: var(--space-1);
+  z-index: 45;
+}
+:root[data-theme="dark"] .search-results { box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5); }
+.search-results.on { display: block; animation: rise var(--m-ui) var(--ease-out) both; }
+.search-hit {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+.search-hit:hover { background: var(--surface-1); }
+.sh-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-space { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.search-none { padding: var(--space-2) var(--space-3); font-size: 13px; color: var(--text-3); }
+
+/* reminder dates ride along quietly */
+.when-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; margin-left: var(--space-2); }
+.row.done .when-sub { opacity: 0.6; }
+
+/* fixing your own words in place */
+.editing {
+  outline: none;
+  box-shadow: var(--focus-ring-field);
+  border-radius: var(--radius-sm);
+}
+
+/* retiring is a whisper at the bottom of the focus view */
+.retire-link {
+  display: inline-block;
+  margin-top: var(--space-5);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color var(--m-ui) var(--ease);
+}
+.retire-link:hover { color: var(--bad-ink); }
+a.retire-link:hover { color: var(--accent-ink); }
+
 @media (max-width: 720px) {
   .spaces { columns: 1; }
   .rail.on { display: none; }

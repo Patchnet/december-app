@@ -191,11 +191,18 @@ const RENDER = {
     ${b.title && !/^notes?$/i.test(b.title.trim()) ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(b.text)}</div>`,
 
-  reminder: (b) => `
+  reminder: (b) => {
+    const when = b.when
+      ? `<span class="when-sub">${new Date(`${b.when}T12:00:00`).toLocaleString('en', { month: 'short', day: 'numeric' }).toLowerCase()}${b.repeat ? ` · ${b.repeat}` : ''}</span>`
+      : b.repeat
+        ? `<span class="when-sub">${b.repeat}</span>`
+        : ''
+    return `
     <button class="row reminder ${b.done ? 'done no-anim' : ''}" data-block="${b.id}">
       <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-      <span class="row-text">${linkify(b.text)}</span>
-    </button>`,
+      <span class="row-text">${linkify(b.text)}</span>${when}
+    </button>`
+  },
 }
 
 // compact one-line variants for a card's secondary instruments
@@ -277,6 +284,7 @@ function buildFocus() {
       <article class="focus-card" data-sid="${space.id}">
         ${spaceInner(space, true)}
         <textarea class="capture focus-capture" rows="1" placeholder="Add to ${esc(space.name)}…" spellcheck="false"></textarea>
+        <button class="retire-link" data-retire="${space.id}">retire this space</button>
       </article>
     </div>`
   wrap.dataset.u = space.updatedAt
@@ -624,10 +632,11 @@ function renderSpaces(delayWash = new Set()) {
 
   // The year accumulates; the page doesn't. Quiet spaces rest below.
   const rest = $('#resting')
-  const key = resting.map((s) => s.id).join()
+  const retired = state.retired || []
+  const key = resting.map((s) => s.id).join() + '|' + retired.map((s) => s.id).join()
   if (rest.dataset.key !== key) {
     rest.dataset.key = key
-    rest.innerHTML = !resting.length
+    const restRows = !resting.length
       ? ''
       : `<div class="rest-head">resting</div>` +
         resting
@@ -636,6 +645,13 @@ function renderSpaces(delayWash = new Set()) {
             return `<button class="rest-row" data-wake="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">quiet since ${mon}</span></button>`
           })
           .join('')
+    const retiredRows = !retired.length
+      ? ''
+      : `<div class="rest-head">retired</div>` +
+        retired
+          .map((s) => `<button class="rest-row" data-restore="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">restore</span></button>`)
+          .join('')
+    rest.innerHTML = restRows + retiredRows
   }
 }
 
@@ -741,6 +757,7 @@ function renderToday() {
     items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
   }
   attentionCount = items.length
+  maybeNotify(items.filter((i) => i.kind === 'reminder' || i.kind === 'surfaced'))
   const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   // rows animate in only on the strip's first appearance; later reshuffles
@@ -795,6 +812,7 @@ function buildYear() {
       <article class="focus-card year-card">
         <h2 class="space-name">${y.year}</h2>
         ${rows}
+        <a class="retire-link" href="/api/export.md" download>download the year</a>
       </article>
     </div>`
   yearOpen = true
@@ -857,7 +875,14 @@ async function submitCapture() {
   field.style.height = 'auto'
   enterHint.classList.remove('on')
   $('#shell').classList.remove('composing')
+  const cw = field.closest('.cwrap')
+  cw.classList.remove('big')
+  cw.dataset.hint = ''
   localStorage.setItem('dec-files', String(Number(localStorage.getItem('dec-files') || 0) + 1))
+  if ('Notification' in window && Notification.permission === 'default' && !localStorage.getItem('dec-notif-asked')) {
+    localStorage.setItem('dec-notif-asked', '1')
+    Notification.requestPermission().catch(() => {})
+  }
   nextPrompt()
   try {
     state = await api('/api/capture', { text })
@@ -920,9 +945,19 @@ const hintEligible = () => Number(localStorage.getItem('dec-files') || 0) < 5
 
 field.addEventListener('input', () => {
   field.style.height = 'auto'
-  field.style.height = `${Math.min(field.scrollHeight, 200)}px`
+  field.style.height = `${Math.min(field.scrollHeight, Math.round(innerHeight * 0.4))}px`
   enterHint.classList.toggle('on', !!field.value.trim() && hintEligible())
   $('#shell').classList.toggle('composing', !!field.value.trim())
+  // a dump is an object, not a floating wall: contain it past two lines
+  const cwrap = field.closest('.cwrap')
+  const big = field.scrollHeight > 64
+  cwrap.classList.toggle('big', big)
+  if (big) {
+    const n = field.value.split('\n').filter((l) => l.trim()).length
+    cwrap.dataset.hint = n > 1 ? `${n} lines · enter files each one` : ''
+  } else {
+    cwrap.dataset.hint = ''
+  }
 })
 
 // The page is the input: start typing anywhere and it lands in the capture.
@@ -933,6 +968,11 @@ document.addEventListener('keydown', (e) => {
   if (tag === 'TEXTAREA' || tag === 'INPUT') return
   if (e.key.length !== 1) return
   if (e.key === ' ') return
+  if (e.key === '/') {
+    e.preventDefault()
+    searchEl.focus()
+    return
+  }
   const target = focusId ? document.querySelector('.focus-capture') : field
   target?.focus()
 })
@@ -945,6 +985,44 @@ document.addEventListener('click', async (e) => {
   const note = e.target.closest('.note-text.clamp')
   if (note) {
     note.classList.toggle('open')
+    return
+  }
+
+  // retire a space (one gentle confirm), restore a retired one
+  const ret = e.target.closest('[data-retire]')
+  if (ret) {
+    if (!ret.dataset.armed) {
+      ret.dataset.armed = '1'
+      ret.textContent = 'retire? this hides the space; it stays restorable below the grid'
+      setTimeout(() => {
+        ret.dataset.armed = ''
+        ret.textContent = 'retire this space'
+      }, 4000)
+      return
+    }
+    try {
+      const out = await api('/api/retire', { spaceId: ret.dataset.retire })
+      state = out.state
+      spaceEls.get(ret.dataset.retire)?.el.remove()
+      spaceEls.delete(ret.dataset.retire)
+      closeFocus()
+      render()
+      toast(`${out.name} retired`)
+    } catch (err) {
+      toast(err.message)
+    }
+    return
+  }
+  const rest = e.target.closest('[data-restore]')
+  if (rest) {
+    try {
+      const out = await api('/api/restore', { spaceId: rest.dataset.restore })
+      state = out.state
+      render()
+      toast(`${out.name} is back`)
+    } catch (err) {
+      toast(err.message)
+    }
     return
   }
 
@@ -1005,20 +1083,7 @@ document.addEventListener('click', async (e) => {
   const jump = e.target.closest('[data-jump]')
   if (jump) {
     e.preventDefault()
-    let el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
-    if (!el) {
-      // a resting space wakes when something points at it
-      awake.add(jump.dataset.jump)
-      render()
-      el = document.querySelector(`.space[data-sid="${jump.dataset.jump}"]`)
-    }
-    if (el) {
-      el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
-      el.classList.remove('noted')
-      void el.offsetWidth
-      el.classList.add('noted')
-      setTimeout(() => el.classList.remove('noted'), 1000)
-    }
+    jumpToSpace(jump.dataset.jump)
     return
   }
 
@@ -1154,8 +1219,185 @@ document.addEventListener('click', async (e) => {
 })
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && focusId) closeFocus()
+  if (e.key === 'Escape' && focusId && !document.querySelector('[contenteditable="true"]')) closeFocus()
 })
+
+// ---------------------------------------------------- fix it yourself
+// Double-click any words you own and change them in place. Enter or a
+// click away saves; Esc walks away.
+
+document.addEventListener('dblclick', (e) => {
+  const el = e.target.closest('.row-text, .note-text, .space-name')
+  if (!el || el.closest('.year-card, .demo-card, .ghost, #today')) return
+  if (el.isContentEditable) return
+  const row = el.closest('.row[data-block]')
+  const card = el.closest('.space, .focus-card')
+  const payload = el.classList.contains('space-name')
+    ? { spaceId: card?.dataset.sid }
+    : el.classList.contains('note-text')
+      ? { blockId: el.closest('[data-bid]')?.dataset.bid }
+      : { blockId: row?.dataset.block, itemId: row?.dataset.item || undefined }
+  if (!payload.spaceId && !payload.blockId) return
+  const original = el.textContent
+  el.contentEditable = 'true'
+  el.classList.add('editing')
+  el.focus()
+  const range = document.createRange()
+  range.selectNodeContents(el)
+  const sel = window.getSelection()
+  sel.removeAllRanges()
+  sel.addRange(range)
+
+  const finish = async (save) => {
+    el.contentEditable = 'false'
+    el.classList.remove('editing')
+    el.removeEventListener('keydown', onKey)
+    el.removeEventListener('blur', onBlur)
+    const text = el.textContent.trim()
+    if (!save || !text || text === original.trim()) {
+      el.textContent = original
+      return
+    }
+    try {
+      state = await api('/api/edit', { ...payload, text })
+      const sid = card?.dataset.sid
+      const known = sid && spaceEls.get(sid)
+      if (known) known.updatedAt = state.spaces.find((s) => s.id === sid)?.updatedAt || known.updatedAt
+      prev = state
+      toast('changed')
+    } catch (err) {
+      el.textContent = original
+      toast(err.message)
+    }
+  }
+  const onKey = (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault()
+      finish(true)
+    }
+    if (ev.key === 'Escape') {
+      ev.stopPropagation()
+      finish(false)
+    }
+  }
+  const onBlur = () => finish(true)
+  el.addEventListener('keydown', onKey)
+  el.addEventListener('blur', onBlur)
+})
+
+function jumpToSpace(sid) {
+  let el = document.querySelector(`.space[data-sid="${sid}"]`)
+  if (!el) {
+    // a resting space wakes when something points at it
+    awake.add(sid)
+    render()
+    el = document.querySelector(`.space[data-sid="${sid}"]`)
+  }
+  if (el) {
+    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    el.classList.remove('noted')
+    void el.offsetWidth
+    el.classList.add('noted')
+    setTimeout(() => el.classList.remove('noted'), 1000)
+  }
+}
+
+// ------------------------------------------------------------- the search
+// One quiet field in the header: a few letters, everything answers.
+
+const searchEl = $('#search')
+const resultsEl = $('#search-results')
+
+function searchEverything(q) {
+  q = q.toLowerCase()
+  const out = []
+  const add = (label, space, sid) => {
+    if (out.length < 8 && label.toLowerCase().includes(q)) out.push({ label, space, sid })
+  }
+  for (const s of state.spaces) {
+    add(s.name, '', s.id)
+    for (const b of s.blocks) {
+      if (b.title) add(b.title, s.name, s.id)
+      if (b.type === 'list') for (const i of b.items) add(i.text, s.name, s.id)
+      if (b.type === 'reminder') add(b.text, s.name, s.id)
+      if (b.type === 'note') {
+        const at = b.text.toLowerCase().indexOf(q)
+        if (at >= 0 && out.length < 8) out.push({ label: `…${b.text.slice(Math.max(0, at - 12), at + 28)}…`, space: s.name, sid: s.id })
+      }
+      if (b.type === 'ledger') for (const en of b.entries) add(en.label, s.name, s.id)
+    }
+  }
+  return out
+}
+
+function closeSearch() {
+  resultsEl.innerHTML = ''
+  resultsEl.classList.remove('on')
+}
+
+searchEl.addEventListener('input', () => {
+  const q = searchEl.value.trim()
+  if (q.length < 2) return closeSearch()
+  const hits = searchEverything(q)
+  resultsEl.innerHTML = hits.length
+    ? hits
+        .map((h) => `<button class="search-hit" data-shit="${h.sid}"><span class="sh-label">${esc(h.label.slice(0, 44))}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
+        .join('')
+    : '<div class="search-none">nothing found</div>'
+  resultsEl.classList.add('on')
+})
+
+searchEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    searchEl.value = ''
+    closeSearch()
+    searchEl.blur()
+  }
+  if (e.key === 'Enter') {
+    const first = resultsEl.querySelector('.search-hit')
+    if (first) {
+      jumpToSpace(first.dataset.shit)
+      searchEl.value = ''
+      closeSearch()
+      searchEl.blur()
+    }
+  }
+})
+
+document.addEventListener('click', (e) => {
+  const hit = e.target.closest('.search-hit')
+  if (hit) {
+    jumpToSpace(hit.dataset.shit)
+    searchEl.value = ''
+    closeSearch()
+    return
+  }
+  if (!e.target.closest('.search-wrap')) closeSearch()
+})
+
+// --------------------------------------------------------- notifications
+// A due date only matters if it reaches you. Quiet, deduped per day.
+
+function maybeNotify(items) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const today = new Date().toISOString().slice(0, 10)
+  let seen
+  try {
+    seen = JSON.parse(localStorage.getItem('dec-notified') || '{}')
+  } catch {
+    seen = {}
+  }
+  if (seen.date !== today) seen = { date: today, keys: [] }
+  for (const i of items) {
+    const key = `${i.label}|${i.sub}`
+    if (seen.keys.includes(key)) continue
+    seen.keys.push(key)
+    try {
+      new Notification('December', { body: i.sub ? `${i.label} · ${i.sub}` : i.label, silent: true, tag: key })
+    } catch {}
+  }
+  localStorage.setItem('dec-notified', JSON.stringify(seen))
+}
 
 $('#theme-toggle').addEventListener('click', () => {
   const root = document.documentElement

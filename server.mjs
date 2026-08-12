@@ -8,7 +8,8 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, extname, normalize } from 'node:path'
-import { ROOT, project, addCapture, check, undo, clearAsk, hasInbox } from './lib/core.mjs'
+import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
+import { ROOT, project, addCapture, check, undo, clearAsk, hasInbox, editText, retireSpace, restoreSpace } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 
@@ -27,6 +28,53 @@ await settle.writeMcpConfig()
 settle.scheduleSurfacing()
 // captures caught mid-restart must not strand: settle whatever waited
 if (hasInbox()) settle.schedule(5000)
+
+// the year is too precious for one copy: a dated snapshot every day, 30 kept
+function backup() {
+  try {
+    const dir = join(ROOT, 'data', 'backups')
+    mkdirSync(dir, { recursive: true })
+    const src = join(ROOT, 'data', 'state.json')
+    const dest = join(dir, `state-${new Date().toISOString().slice(0, 10)}.json`)
+    if (fsExists(src) && !fsExists(dest)) copyFileSync(src, dest)
+    const all = readdirSync(dir).filter((f) => f.startsWith('state-')).sort()
+    while (all.length > 30) unlinkSync(join(dir, all.shift()))
+  } catch {}
+}
+backup()
+setInterval(backup, 6 * 3600 * 1000)
+
+/** The year as a document you keep. */
+function exportMarkdown() {
+  const p = project()
+  const y = p.year.year
+  const lines = [`# December ${y}`, '', `_Exported ${new Date().toISOString().slice(0, 10)}_`, '']
+  for (const s of p.spaces) {
+    lines.push(`## ${s.name}`, '')
+    for (const b of s.blocks) {
+      if (b.type === 'tracker') lines.push(`**${b.title || 'Progress'}**: ${b.current} of ${b.target}${b.unit ? ` ${b.unit}` : ''}`, '')
+      if (b.type === 'ledger') {
+        lines.push(`**${b.title || 'Ledger'}**: total ${b.unit === '$' ? '$' : ''}${b.total}${b.unit && b.unit !== '$' ? ` ${b.unit}` : ''}`, '')
+        for (const e of b.entries) lines.push(`- ${e.at?.slice(0, 10) || ''} ${e.label}: ${b.unit === '$' ? '$' : ''}${e.amount}`)
+        lines.push('')
+      }
+      if (b.type === 'list') {
+        if (b.title) lines.push(`**${b.title}**`, '')
+        for (const i of b.items) lines.push(`- [${i.done ? 'x' : ' '}] ${i.text}${i.doneAt ? ` _(${i.doneAt.slice(0, 10)})_` : ''}`)
+        lines.push('')
+      }
+      if (b.type === 'streak') lines.push(`**${b.title}**: ${b.dates.length} days`, '')
+      if (b.type === 'note') lines.push(...(b.title ? [`**${b.title}**`, ''] : []), b.text, '')
+      if (b.type === 'reminder') lines.push(`- [${b.done ? 'x' : ' '}] ${b.text}${b.when ? ` _(${b.when}${b.repeat ? `, ${b.repeat}` : ''})_` : ''}`, '')
+    }
+  }
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  lines.push('## The year, month by month', '')
+  p.year.months.forEach((m, i) => {
+    if (m.events || m.highlights.length) lines.push(`- **${names[i]}**: ${m.events} moments${m.highlights.length ? ` — ${m.highlights.join('; ')}` : ''}`)
+  })
+  return lines.join('\n')
+}
 
 const json = (res, code, body) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
@@ -121,6 +169,42 @@ const server = createServer(async (req, res) => {
     if (path === '/api/settle' && req.method === 'POST') {
       settle.schedule(0)
       return json(res, 202, { scheduled: true })
+    }
+
+    // Small fixes by hand: rename, reword, retire, restore.
+    if (path === '/api/edit' && req.method === 'POST') {
+      try {
+        await editText(await readBody(req))
+        return json(res, 200, project(settle.status()))
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if (path === '/api/retire' && req.method === 'POST') {
+      try {
+        const out = await retireSpace((await readBody(req)).spaceId)
+        return json(res, 200, { ...out, state: project(settle.status()) })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if (path === '/api/restore' && req.method === 'POST') {
+      try {
+        const out = await restoreSpace((await readBody(req)).spaceId)
+        return json(res, 200, { ...out, state: project(settle.status()) })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+
+    // The year as a markdown document.
+    if (path === '/api/export.md' && req.method === 'GET') {
+      const md = exportMarkdown()
+      res.writeHead(200, {
+        'content-type': 'text/markdown; charset=utf-8',
+        'content-disposition': `attachment; filename="december-${new Date().getFullYear()}.md"`,
+      })
+      return res.end(md)
     }
 
     // Run the surfacing sense on demand.
