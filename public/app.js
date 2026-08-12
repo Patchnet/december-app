@@ -15,6 +15,11 @@ let booting = true // the first paint stages itself; every one after is live
 document.documentElement.classList.add('booting')
 const spaceEls = new Map() // id -> {el, updatedAt}
 let pollTimer = null
+// Captures still waiting, held here rather than as a row each on screen.
+// The stage used to read your own sentence back to you for the whole pass;
+// what you wrote is the one thing you already know.
+const pending = new Set()
+let flying = 0 // motes in the air — the stage waits for them to land
 
 // ------------------------------------------------------------- utilities
 
@@ -616,9 +621,36 @@ function closeFocus() {
 
 // ---------------------------------------------------------------- render
 
+/** The date, and how far the year still has to go. The page is named for
+    where it is heading and never said so on the page itself — the count
+    only existed inside the year view, on the December row. */
 function renderYearline() {
   const now = new Date()
-  $('#dateline').textContent = `${now.toLocaleString('en', { month: 'long' })} ${now.getDate()}`
+  const days = (to) => Math.ceil((to - now) / 86400000)
+  const plural = (n) => `${n} day${n === 1 ? '' : 's'}`
+  const til =
+    now.getMonth() === 11
+      ? (() => {
+          const left = days(new Date(now.getFullYear() + 1, 0, 1))
+          return left <= 1 ? 'last day' : `${plural(left)} left`
+        })()
+      : `${plural(days(new Date(now.getFullYear(), 11, 1)))} to December`
+  const el = $('#dateline')
+  const date = `${now.toLocaleString('en', { month: 'long' })} ${now.getDate()}`
+  const key = `${date}|${til}`
+  // only rebuilt when the day or the count actually turns, so the greeting
+  // below fires once on load and not on every ten-second poll
+  if (el.dataset.key === key) return
+  const first = !el.dataset.key
+  el.dataset.key = key
+  el.innerHTML = `${esc(date)}<span class="til">${esc(til)}</span>`
+  if (first) {
+    // it says how far the year has to go once, when you arrive, and then
+    // gets out of the way — it is there to be glanced at, not read
+    const t = el.querySelector('.til')
+    t.classList.add('greet')
+    t.addEventListener('animationend', () => t.classList.remove('greet'), { once: true })
+  }
 }
 
 /** The filing moment: a mote of light leaves your sentence and dissolves
@@ -765,11 +797,8 @@ function drawMeters(root) {
 function travelTargets() {
   const targets = new Map()
   const ids = new Set(state.captures.map((c) => c.id))
-  const inDom = new Set(
-    [...document.querySelectorAll('.inbox-row:not(.out)')].map((r) => r.dataset.cid)
-  )
   for (const a of state.activity) {
-    if (!inDom.has(a.captureId) || ids.has(a.captureId)) continue
+    if (!pending.has(a.captureId) || ids.has(a.captureId)) continue
     const space = state.spaces.find((s) => s.name === a.space)
     if (space) targets.set(a.captureId, space.id)
   }
@@ -823,69 +852,50 @@ function releaseHeld(targets) {
   }
 }
 
+/** While the agent works the stage says one word, not your own sentence.
+    The words you just wrote were echoed back for the whole pass — thirty
+    to sixty seconds of reading what you already knew — and everything then
+    resolved in about a second. The one line stays put while each settled
+    capture flies out of it into its card, so the filing motion still reads
+    as your sentence travelling somewhere. */
 function renderInbox(targets = new Map()) {
   const box = $('#inbox')
   const failed = !state.settle.running && state.settle.lastError
   const captureOnly = state.settle.captureOnly
   const ids = new Set(state.captures.map((c) => c.id))
 
-  // captures that settled: the dot leaves the line, lands on its space,
-  // the card washes — and only then does the line fold, so the page holds
-  // still for the whole flight. A batch launches as a stream, not a swarm.
+  // anything that left the inbox since the last pass flies to its card;
+  // a batch launches as a stream, not a swarm
+  const origin = box.querySelector('.working')?.getBoundingClientRect()
   let launch = 0
-  for (const row of box.querySelectorAll('.inbox-row')) {
-    if (!ids.has(row.dataset.cid) && !row.classList.contains('done-wait')) {
-      row.classList.add('done-wait')
-      const text = row.querySelector('.inbox-text')
-      text.classList.remove('reading')
-      row.querySelector('.inbox-state').innerHTML = ''
-      const rect = text.getBoundingClientRect()
-      const targetId = targets.get(row.dataset.cid)
-      const targetEl = targetId ? spaceEls.get(targetId)?.el : null
-      const fold = () => {
-        row.classList.add('out')
-        setTimeout(() => row.remove(), 420)
-      }
-      if (targetEl) {
-        setTimeout(() => {
-          travelDot(rect, targetEl, () => {
-            unbuild(targetEl)
-            washCard(targetEl)
-            fold()
-          })
-        }, launch++ * 160)
-      } else {
-        fold()
-      }
-    }
+  for (const cid of [...pending]) {
+    if (ids.has(cid)) continue
+    pending.delete(cid)
+    const targetEl = spaceEls.get(targets.get(cid))?.el
+    if (!targetEl || !origin) continue
+    flying++
+    setTimeout(() => {
+      travelDot(origin, targetEl, () => {
+        unbuild(targetEl)
+        washCard(targetEl)
+        flying = Math.max(0, flying - 1)
+        renderStage() // the stage was holding open for this
+      })
+    }, launch++ * 160)
   }
-  // add rows for new captures; the words themselves carry the working state
-  for (const c of state.captures) {
-    let row = box.querySelector(`.inbox-row[data-cid="${c.id}"]`)
-    if (!row) {
-      row = document.createElement('div')
-      row.className = 'inbox-row'
-      row.dataset.cid = c.id
-      row.innerHTML = `<div><span class="inbox-text">${esc(c.text)}</span><span class="inbox-state"></span></div>`
-      box.appendChild(row)
-    }
-    const text = row.querySelector('.inbox-text')
-    const chip = row.querySelector('.inbox-state')
-    if (captureOnly) {
-      text.classList.remove('reading')
-      chip.className = 'inbox-state capture-only'
-      chip.textContent = 'saved · capture only'
-    } else if (failed) {
-      text.classList.remove('reading')
-      chip.className = 'inbox-state failed'
-      chip.innerHTML = `<i class="warn-dot"></i><button class="retry">retry</button>`
-    } else {
-      // the words carrying the light ARE the status; nothing else needed
-      text.classList.add('reading')
-      chip.className = 'inbox-state'
-      chip.innerHTML = ''
-    }
-  }
+  for (const c of state.captures) pending.add(c.id)
+
+  const word = captureOnly ? 'saved · capture only' : failed ? "couldn't settle" : 'working'
+  const kind = captureOnly ? 'capture-only' : failed ? 'failed' : ''
+  const show = pending.size > 0 || state.settle.running || flying > 0
+  const key = show ? `${kind}|${word}` : ''
+  if (box.dataset.key === key) return
+  box.dataset.key = key
+  box.innerHTML = show
+    ? `<div class="working ${kind}"><span class="working-word">${esc(word)}</span>${
+        failed ? '<button class="retry">retry</button>' : ''
+      }</div>`
+    : ''
 }
 
 /** The card's own sheen already said what happened. All the top keeps is
@@ -1146,38 +1156,92 @@ function renderSpaces(delayWash = new Set()) {
   // ordering is a placement decision, made once, for all columns
   placeCards(box, active.map((s) => spaceEls.get(s.id)?.el).filter(Boolean))
 
-  // The year accumulates; the page doesn't. Quiet spaces rest below.
-  const rest = $('#resting')
-  const retired = state.retired || []
-  const key = resting.map((s) => s.id).join() + '|' + retired.map((s) => s.id).join() + '|' + finished.map((s) => s.id).join()
-  if (rest.dataset.key !== key) {
-    rest.dataset.key = key
-    const restRows = !resting.length
-      ? ''
-      : `<div class="rest-head">resting</div>` +
-        resting
-          .map((s) => {
-            const mon = new Date(s.updatedAt).toLocaleString('en', { month: 'long' }).toLowerCase()
-            return `<button class="rest-row" data-wake="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">quiet since ${mon}</span></button>`
-          })
-          .join('')
-    const finishedRows = !finished.length
-      ? ''
-      : `<div class="rest-head">finished</div>` +
-        finished
-          .map((s, i) => {
-            const mon = s.finishedAt ? new Date(s.finishedAt).toLocaleString('en', { month: 'long' }).toLowerCase() : ''
-            return `<button class="rest-row" data-reopen="${s.id}" style="--d:${Math.min(i * 26, 160)}ms"><span>${esc(s.name)}</span><span class="rest-when">${mon ? `done in ${mon}` : 'done'}</span></button>`
-          })
-          .join('')
-    const retiredRows = !retired.length
-      ? ''
-      : `<div class="rest-head">retired</div>` +
-        retired
-          .map((s) => `<button class="rest-row" data-restore="${s.id}"><span>${esc(s.name)}</span><span class="rest-when">restore</span></button>`)
-          .join('')
-    rest.innerHTML = finishedRows + restRows + retiredRows
+  renderResting(finished, resting)
+}
+
+// ------------------------------------------------- the foot of the page
+// Everything you are done with used to sit here as one full-width row per
+// space, at the same weight as live work: twenty rows and 809px on a page
+// of 3587, printing "done in june" three times because the month was a
+// grouping signal rendered once per row. It only ever grew. It is a count
+// now, and opening one gives the month grouping the rows were spelling out.
+
+let restOpen = '' // which group is unfolded, if any
+
+const GROUPS = {
+  finished: { verb: 'data-reopen', dateOf: (s) => s.finishedAt || s.updatedAt },
+  resting: { verb: 'data-wake', dateOf: (s) => s.updatedAt },
+  retired: { verb: 'data-restore', dateOf: () => '' },
+}
+
+/** Newest month first, each month naming its spaces once. */
+function byMonth(list, dateOf) {
+  const out = new Map()
+  for (const s of [...list].sort((a, b) => String(dateOf(b)).localeCompare(String(dateOf(a))))) {
+    const at = dateOf(s)
+    const label = at ? new Date(at).toLocaleString('en', { month: 'long' }).toLowerCase() : ''
+    if (!out.has(label)) out.set(label, [])
+    out.get(label).push(s)
   }
+  return [...out.entries()]
+}
+
+function renderResting(finished, resting) {
+  const rest = $('#resting')
+  const sets = { finished, resting, retired: state.retired || [] }
+  if (!sets[restOpen]?.length) restOpen = '' // the group emptied under us
+  const counts = Object.entries(sets).filter(([, v]) => v.length)
+  if (!counts.length) {
+    rest.innerHTML = ''
+    return
+  }
+  // The shell is built once and kept. Replacing the whole section on every
+  // render would hand the panel its content and its open state in the same
+  // frame, and a transition with no starting state does not run — it snaps.
+  if (!rest.querySelector('.rest-open')) {
+    rest.innerHTML = '<div class="rest-fold"></div><div class="rest-open"><div></div></div>'
+  }
+  const fold = rest.querySelector('.rest-fold')
+  const panel = rest.querySelector('.rest-open')
+  const inner = panel.firstElementChild
+
+  const lineKey = counts.map(([k, v]) => `${k}${v.length}`).join('|') + `|${restOpen}`
+  if (fold.dataset.key !== lineKey) {
+    fold.dataset.key = lineKey
+    fold.innerHTML = counts
+      .map(
+        ([name, v]) =>
+          `<button class="rest-grp ${restOpen === name ? 'on' : ''}" data-grp="${name}" aria-expanded="${restOpen === name}">${name} <span class="rest-n">${v.length}</span></button>`
+      )
+      .join('')
+  }
+
+  const contentKey = restOpen ? restOpen + sets[restOpen].map((s) => s.id).join() : ''
+  if (panel.dataset.key === contentKey) return
+  panel.dataset.key = contentKey
+  if (!restOpen) {
+    // let it close before it empties, so it collapses rather than vanishes
+    panel.classList.remove('on')
+    setTimeout(() => {
+      if (!panel.dataset.key) inner.innerHTML = ''
+    }, 420)
+    return
+  }
+  const { verb, dateOf } = GROUPS[restOpen]
+  inner.innerHTML = byMonth(sets[restOpen], dateOf)
+    .map(
+      ([month, list]) => `
+      <div class="rest-month">
+        <span class="rest-mlabel">${esc(month)}</span>
+        <span class="rest-names">${list
+          .map((s) => `<button class="rest-name" ${verb}="${s.id}">${esc(s.name)}</button>`)
+          .join('')}</span>
+      </div>`
+    )
+    .join('')
+  // a frame between the content arriving and the row opening, so there is a
+  // height to grow from
+  requestAnimationFrame(() => panel.classList.add('on'))
 }
 
 /** A rotation should become the new layout immediately, not after the next
@@ -1351,24 +1415,45 @@ function renderAsk() {
 /** The page faces the day: what has become relevant rises to the top —
     due and tomorrow's reminders, evening-open streaks, and whatever the
     surfacing sense pinned, each with its reason. */
+/** A day the way you would say it inside a week: "fri 14". */
+function weekdayOf(iso) {
+  const dt = new Date(`${iso}T12:00:00`)
+  return `${dt.toLocaleString('en', { weekday: 'short' }).toLowerCase()} ${dt.getDate()}`
+}
+
+/** What needs you, in two bands: what is due now, and what is coming.
+    The horizon used to stop at tomorrow, so a page holding eight dated
+    things could tell you about none of them — everything you had written
+    down stayed invisible until the night before, and the only reason
+    anything further out ever appeared was that the agent happened to
+    guess it was worth surfacing. Dates the page already holds are not a
+    matter of judgment. */
 function renderToday() {
   const box = $('#today')
   const today = localDay()
-  const tomorrow = localDay(new Date(Date.now() + 86400000))
-  const items = []
+  const horizon = localDay(new Date(Date.now() + 7 * 86400000))
+  const now = [] // due today, or already past
+  const week = [] // dated, ahead of today, inside the next seven days
   const seen = new Set()
-  // the strip carries ONLY things with a clock on them: act or it lapses
   for (const s of state.spaces) {
     for (const b of s.blocks) {
-      if (b.type === 'reminder' && !b.done && b.when && b.when <= tomorrow) {
-        const w = whenPhrase(b)
-        // under a header that already says today, a bare "today" says nothing
-        const sub = w && w.text !== 'today' ? w.text : ''
-        items.push({ kind: 'reminder', bid: b.id, sid: s.id, label: b.text, sub, urgent: !!w?.urgent, when: `${b.when} ${b.at || '99:99'}` })
-        seen.add(`${s.id}|${b.text.toLowerCase()}`)
+      if (b.type !== 'reminder' || b.done || !b.when || b.when > horizon) continue
+      const w = whenPhrase(b)
+      const base = { bid: b.id, sid: s.id, label: b.text, when: `${b.when} ${b.at || '99:99'}` }
+      if (b.when <= today) {
+        // under a band that already says today, a bare "today" says nothing
+        now.push({ ...base, kind: 'reminder', sub: w && w.text !== 'today' ? w.text : '', urgent: !!w?.urgent })
+      } else {
+        // the day rides where every card row already puts its date — on the
+        // right. Putting it in a left column of its own knocked the week's
+        // text out of line with today's, which reads as two lists rather
+        // than two bands of one.
+        week.push({ ...base, kind: 'ahead', sub: b.at ? `${weekdayOf(b.when)}, ${clockOf(b.at)}` : weekdayOf(b.when) })
       }
+      seen.add(`${s.id}|${b.text.toLowerCase()}`)
     }
   }
+  const items = now
   // the page must not say the same thing twice: an open ask already puts
   // this question on screen, so surfacing it again reads as a flicker where
   // one replaces the other
@@ -1386,34 +1471,82 @@ function renderToday() {
     if (echoesAsk(su.label)) continue
     items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
   }
-  // soonest first, so the strip reads like a morning
-  items.sort((a, x) => (a.when || '').localeCompare(x.when || ''))
-  attentionCount = items.length
-  maybeNotify(items.filter((i) => i.kind === 'reminder' || i.kind === 'surfaced'))
-  const key = items.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
+  // soonest first, so each band reads like a morning
+  const bySoonest = (a, x) => (a.when || '').localeCompare(x.when || '')
+  now.sort(bySoonest)
+  week.sort(bySoonest)
+  attentionCount = now.length + week.length
+  maybeNotify(now)
+  const all = [...now, ...week]
+  const key = all.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   // rows animate in only on the strip's first appearance; later reshuffles
   // must not replay entrances
   if (box.dataset.key !== undefined) box.classList.add('norise')
   box.dataset.key = key
-  // every row shares one left column, and every row opens into a moment:
-  // answer it right here — done, not yet, or say what happened
-  const shown = items.slice(0, 3)
-  const rest = items.length - shown.length
-  box.innerHTML = shown
-    .map((i) => {
-      const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
-      const row =
-        i.kind === 'reminder'
-          ? `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}">
-              <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-              <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-          : `<button class="today-row plain">
-              <span class="tick-slot"></span>
-              <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-      return `<div class="today-item" data-sid="${i.sid || ''}">${row}</div>`
-    })
-    .join('') + (rest > 0 ? `<div class="today-more">+${rest} more</div>` : '')
+
+  // Today is where you act: it keeps the tick. The week ahead is a look
+  // forward, so a row there carries its day instead and opens the card.
+  const rowFor = (i) => {
+    const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
+    if (i.kind === 'ahead') {
+      return `<button class="today-row ahead" aria-label="${esc(i.label)}, ${esc(i.sub)}">
+          <span class="tick-slot"></span>
+          <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+    }
+    if (i.kind === 'surfaced') {
+      return `<button class="today-row plain">
+          <span class="tick-slot"></span>
+          <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+    }
+    return `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}">
+        <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
+        <span class="row-text">${esc(i.label)}</span>${sub}</button>`
+  }
+  // The overflow count rides on the right of the last row rather than
+  // taking a line to itself. A line of its own cost 24px in a region that
+  // has none spare, and pushed everything else down for six characters.
+  const band = (label, rows, tail) =>
+    rows.length
+      ? `<div class="band"><span class="band-label">${label}</span><div class="band-body">${rows
+          .map(
+            (i, n) =>
+              `<div class="today-item" data-sid="${i.sid || ''}">${rowFor(i)}${
+                tail && n === rows.length - 1 ? `<span class="today-more">${tail}</span>` : ''
+              }</div>`
+          )
+          .join('')}</div></div>`
+      : ''
+
+  // How much fits is a question about pixels, and pixels are something the
+  // page can measure. Three times now this was a hand-picked number that
+  // was right until a font or a margin moved and then quietly clipped the
+  // last line. Paint what there is, then drop from the end until it truly
+  // fits, counting whatever came off. The stage cannot scroll, so nothing
+  // may be left hanging past its edge.
+  const paint = (nCount, wCount) => {
+    const a = now.slice(0, nCount)
+    const b = week.slice(0, wCount)
+    const left = now.length - a.length + (week.length - b.length)
+    const tail = left > 0 ? `+${left} more` : ''
+    box.innerHTML =
+      band('today', a, b.length ? '' : tail) + band('this week', b, tail)
+  }
+  const floor = () => document.querySelector('.moment')?.getBoundingClientRect().bottom ?? 0
+  const overflows = () => {
+    const edge = floor()
+    if (!edge) return false // nothing laid out yet; nothing to measure against
+    return [...box.children].some((el) => el.getBoundingClientRect().bottom > edge + 1)
+  }
+
+  let nCount = now.length
+  let wCount = week.length
+  paint(nCount, wCount)
+  while (overflows() && nCount + wCount > 0) {
+    if (wCount) wCount--
+    else nCount--
+    paint(nCount, wCount)
+  }
 }
 
 // ------------------------------------------------------------- year view
@@ -1435,23 +1568,49 @@ function buildYear() {
   if (!y) return
   const wrap = $('#focus')
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const rows = names
-    .map((name, m) => {
-      const data = y.months[m]
-      const future = !yearShown && m > state.year.month
-      const dots = Array.from({ length: Math.min(data.events, 28) }, () => '<i></i>').join('')
-      const hl = data.highlights.map((h) => `<div class="ym-hl">${esc(h)}</div>`).join('')
-      return `
-      <div class="ym ${future ? 'future' : ''} ${m === y.month ? 'now' : ''}">
+  // Seven rows each reading "quiet" is not information, it is the same
+  // word seven times. Empty months that sit together collapse into one
+  // band, so the months that actually held something are the page.
+  const peak = Math.max(1, ...y.months.map((d) => d.events))
+  const openable = !yearShown // an archived year is a reading, not a place
+  const rows = []
+  let run = []
+  const flushQuiet = () => {
+    if (!run.length) return
+    // a band of several months uses short names so it stays on one line
+    const short = (i) => names[i].slice(0, 3)
+    const span = run.length === 1 ? names[run[0]] : `${short(run[0])} – ${short(run[run.length - 1])}`
+    rows.push(`<div class="ym quiet-band"><div class="ym-name">${span}</div><div class="ym-body"><span class="ym-quiet">quiet</span></div></div>`)
+    run = []
+  }
+  names.forEach((name, m) => {
+    const data = y.months[m]
+    const future = !yearShown && m > state.year.month
+    if (!data.events) {
+      if (!future) run.push(m)
+      else {
+        flushQuiet()
+        const last = m === 11 ? `<span class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</span>` : ''
+        rows.push(`<div class="ym future"><div class="ym-name">${name}</div><div class="ym-body">${last}</div></div>`)
+      }
+      return
+    }
+    flushQuiet()
+    // one honest magnitude instead of up to 28 identical dots
+    const pct = Math.max(6, Math.round((data.events / peak) * 100))
+    const hl = data.highlights[0] ? `<div class="ym-hl">${esc(trim(data.highlights[0], 74))}</div>` : ''
+    rows.push(`
+      <${openable ? 'button' : 'div'} class="ym has ${m === y.month ? 'now' : ''}"${openable ? ` data-month="${y.year}-${String(m + 1).padStart(2, '0')}"` : ''}>
         <div class="ym-name">${name}</div>
         <div class="ym-body">
-          ${data.events ? `<div class="ym-dots">${dots}</div>` : future ? '' : '<div class="ym-quiet">quiet</div>'}
+          <div class="ym-bar"><span style="width:${pct}%"></span></div>
+          <div class="ym-count">${data.events} moment${data.events === 1 ? '' : 's'}</div>
           ${hl}
-          ${m === 11 && future ? `<div class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</div>` : ''}
         </div>
-      </div>`
-    })
-    .join('')
+      </${openable ? 'button' : 'div'}>`)
+  })
+  flushQuiet()
+  const rowsHtml = rows.join('')
   const past = !!yearShown
   const years = state.archivedYears || []
   const nav = [...years, state.year.year]
@@ -1471,9 +1630,71 @@ function buildYear() {
       <article class="focus-card year-card">
         <h2 class="space-name">${y.year}</h2>
         ${years.length ? `<div class="year-nav">${nav}</div>` : ''}
-        ${rows}
+        ${rowsHtml}
         ${held}
         ${past ? '' : `<a class="retire-link" href="/api/export.md" download>download the year</a>`}
+      </article>
+    </div>`
+  yearOpen = true
+}
+
+/** Cut a line at a word, not mid-syllable. The year view was slicing
+    summaries at 90 characters and leaving "(trucking pi" on screen. */
+function trim(s, n) {
+  const t = String(s)
+  if (t.length <= n) return t
+  const cut = t.slice(0, n)
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n - 14)).trimEnd()}…`
+}
+
+/** A month, opened: what it actually held, grouped by the space it
+    happened in, with the shape of its weeks above. The year row used to
+    be a dead end — a count and a truncated sentence with nothing behind
+    it. This is the same state, read properly. */
+async function openMonth(ym) {
+  let m
+  try {
+    m = await api(`/api/month/${ym}`)
+  } catch (err) {
+    return toast(err.message)
+  }
+  const peak = Math.max(1, ...m.weeks.map((w) => w.count))
+  const bars = m.weeks
+    .map((w) => `<i style="--h:${Math.max(8, Math.round((w.count / peak) * 100))}%" title="${w.from}–${w.to}: ${w.count}"></i>`)
+    .join('')
+  const day = (d) => Number(d.slice(8, 10))
+  const body = m.spaces.length
+    ? m.spaces
+        .map(
+          (s, i) => `
+        <div class="mo-space" style="--d:${Math.min(i * 40, 200)}ms">
+          <div class="mo-head">
+            <span class="mo-name">${esc(s.name)}</span>
+            <span class="mo-sum">${esc(
+              [s.total != null ? fmtAmount(s.total, s.unit) : '', s.headline].filter(Boolean).join(' · ')
+            )}</span>
+          </div>
+          ${s.lines
+            .map(
+              (l) =>
+                `<div class="mo-line"><span class="mo-day">${day(l.day)}</span><span class="mo-text">${esc(l.text)}</span>${
+                  l.amount != null ? `<span class="mo-amt">${esc(fmtAmount(l.amount, l.unit))}</span>` : ''
+                }</div>`
+            )
+            .join('')}
+        </div>`
+        )
+        .join('')
+    : '<div class="ym-quiet">nothing was written down this month</div>'
+  $('#focus').innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card month-card">
+        <button class="mo-back" data-back-to-year>‹ ${esc(m.month.slice(0, 4))}</button>
+        <h2 class="space-name">${esc(m.label)}</h2>
+        <div class="mo-weeks" aria-hidden="true">${bars}</div>
+        <div class="mo-total">${m.total} moment${m.total === 1 ? '' : 's'}</div>
+        ${body}
       </article>
     </div>`
   yearOpen = true
@@ -1624,12 +1845,10 @@ function renderCarryoverNudge() {
     : ''
 }
 
-function renderHint() {
-  const empty = !state.spaces.length && !state.captures.length && !(state.suggestions || []).length
-  // the placeholder already asks the question; this only has to promise
-  // the one thing a new page cannot show yet
-  $('#hint').textContent = empty ? 'Write anything. It organizes itself.' : ''
-}
+// The empty page used to carry a line reading "Write anything. It organizes
+// itself." It sat 48px under the writing line and 52px above the cards,
+// aligned to neither — a sentence marooned in the gap. The first-run moment
+// demonstrates the same claim without spending a word on it.
 
 /** The stage has one job at a time, in this order: what you are writing
     beats a question, a question beats what is settling, and what is
@@ -1643,7 +1862,9 @@ function renderStage() {
     ? 'composing'
     : state.ask
       ? 'asking'
-      : state.captures.length || state.settle.running
+      : // a mote still in the air keeps the stage open: it flies out of the
+        // working line, so the line has to outlive the last capture
+        state.captures.length || state.settle.running || flying > 0
         ? 'settling'
         : 'idle'
   if (stage.dataset.mode !== mode) stage.dataset.mode = mode
@@ -1670,7 +1891,6 @@ function render() {
     renderCarryoverNudge()
     renderSuggestions()
     renderAsk()
-    renderHint()
     renderRail()
   })
   releaseHeld(targets)
@@ -1829,7 +2049,11 @@ const CAN_DO = [
   ['dump everything', 'paste many lines at once; each finds its own home'],
   ['talk to one space', 'open a card and write inside it'],
 ]
-/** Shown once, to a brand new empty page, and never again. */
+/** The reference, reachable from the gear whenever you want it — rather
+    than thrown at a brand new page once and then gone forever. The old
+    footer promised "? for this", which was never wired: the writing line
+    holds the caret from the moment the page opens, so a bare ? has nowhere
+    to land. It lists the keys that actually work now. */
 function showIntro() {
   const wrap = $('#focus')
   wrap.dataset.help = '1'
@@ -1839,7 +2063,7 @@ function showIntro() {
       <article class="focus-card" role="dialog" aria-modal="true" aria-label="What December can do">
         <h2 class="space-name">What you can say</h2>
         ${CAN_DO.map(([k, v]) => `<div class="can-row"><div class="can-k">${esc(k)}</div><div class="can-v">${esc(v)}</div></div>`).join('')}
-        <div class="can-keys">? for this · / to find · ⌘Z to undo · esc to close</div>
+        <div class="can-keys">/ to find · ⌘Z to undo · esc to close</div>
       </article>
     </div>`
 }
@@ -2058,6 +2282,14 @@ document.addEventListener('click', async (e) => {
     return
   }
 
+  // the foot of the page: open one group, which closes any other
+  const grp = e.target.closest('[data-grp]')
+  if (grp) {
+    restOpen = restOpen === grp.dataset.grp ? '' : grp.dataset.grp
+    render()
+    return
+  }
+
   // wake a resting space
   const wake = e.target.closest('[data-wake]')
   if (wake) {
@@ -2122,6 +2354,18 @@ document.addEventListener('click', async (e) => {
   // closing the focus view: backdrop or wrapper, never the card itself
   if (e.target.dataset?.close !== undefined) {
     closeFocus()
+    return
+  }
+
+  // a month on the year opens; the month walks back to it
+  const mo = e.target.closest('[data-month]')
+  if (mo) {
+    openMonth(mo.dataset.month)
+    return
+  }
+  if (e.target.closest('[data-back-to-year]')) {
+    yearShown = null
+    buildYear()
     return
   }
 
@@ -2472,7 +2716,20 @@ function jumpToSpace(sid) {
     el = document.querySelector(`.space[data-sid="${sid}"]`)
   }
   if (el) {
-    el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    // Smooth scrolling is not guaranteed to do anything. In some browsers
+    // and embeddings it is simply a no-op, and then the card lights up
+    // while the page never moves — the jump reads as broken. Ask for it,
+    // then check, and land it plainly if nothing happened.
+    const from = window.scrollY
+    const want = Math.max(0, from + el.getBoundingClientRect().top - 24)
+    window.scrollTo({ top: want, behavior: reduced ? 'auto' : 'smooth' })
+    if (!reduced) {
+      setTimeout(() => {
+        if (Math.abs(window.scrollY - from) < 4 && Math.abs(want - from) > 8) {
+          window.scrollTo({ top: want, behavior: 'auto' })
+        }
+      }, 260)
+    }
     el.classList.remove('noted')
     void el.offsetWidth
     el.classList.add('noted')
@@ -2658,6 +2915,13 @@ $('#gear-toggle').addEventListener('click', async () => {
   first?.focus()
 })
 
+// the reference has a permanent home now, instead of one appearance on a
+// page you had not written anything on yet
+$('#open-can').addEventListener('click', () => {
+  closeSettings(false)
+  showIntro()
+})
+
 $('#model-input').addEventListener('change', (e) => saveSettings({ model: e.target.value }))
 $('#model-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') e.target.blur()
@@ -2801,29 +3065,41 @@ $('#onboarding-close').addEventListener('click', () => {
 
 async function firstRunDemo() {
   // neither an onboarding run nor a year with carryover waiting gets the demo
-  if (shouldOnboard || reduced || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length || state.carryover) return
+  if (shouldOnboard || localStorage.getItem('dec-demo') || state.spaces.length || state.captures.length || state.carryover) return
+  localStorage.setItem('dec-demo', '1') // once, ever — even if it is cut short
   let alive = true
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+  // the field is driven the way a person drives it, so the stage clears
+  // itself while the sentence is being written, exactly as it will for you
+  const put = (v) => {
+    field.value = v
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
   const stop = () => {
+    if (!alive) return
     alive = false
-    localStorage.setItem('dec-demo', '1')
-    field.value = ''
+    put('')
     document.querySelector('.demo-card')?.remove()
+    field.focus()
   }
   window.addEventListener('keydown', stop, { once: true })
   window.addEventListener('mousedown', stop, { once: true })
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-  const line = 'paid rent this month, $2300'
-  await wait(1200)
-  for (const ch of line) {
-    if (!alive) return
-    field.value += ch
-    await wait(55)
-  }
-  await wait(700)
+
+  await wait(600)
   if (!alive) return
-  field.value = ''
+  for (const ch of 'paid rent this month, $2300') {
+    if (!alive) return
+    put(field.value + ch)
+    await wait(38)
+  }
+  await wait(480)
+  if (!alive) return
+
+  // the sentence becomes the card: it lands in the column a real one would,
+  // and rises with the same entrance every real card uses
+  put('')
   const card = document.createElement('article')
-  card.className = 'space demo-card'
+  card.className = 'space fresh demo-card'
   card.innerHTML = `
     <h2 class="space-name">Housing</h2>
     <div class="block hero">
@@ -2831,14 +3107,14 @@ async function firstRunDemo() {
       <div class="ledger-total">$2,300</div>
       <div class="ledger-entry"><span>This month's rent</span><span>$2,300</span></div>
     </div>`
-  $('#spaces').prepend(card)
-  await wait(2600)
+  ;($('#spaces .col') || $('#spaces')).appendChild(card)
+  await wait(2100)
   if (!alive) return
   card.classList.add('ghost-out')
-  await wait(320)
+  await wait(380)
   card.remove()
-  localStorage.setItem('dec-demo', '1')
-  toast('now you')
+  alive = false
+  field.focus()
 }
 
 // the day moves even when nothing happens: re-read the clock each minute
@@ -2865,12 +3141,18 @@ async function boot() {
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
-    // a brand new page gets told what it can do, once, ever
-    if (!state.spaces.length && !state.captures.length && !state.carryover && !localStorage.getItem('dec-intro')) {
-      localStorage.setItem('dec-intro', '1')
-      setTimeout(showIntro, 600)
-    } else {
-      firstRunDemo()
+    // A brand new page is not told what this is — it is shown, once. The
+    // page writes a real sentence, the sentence becomes a card, both clear,
+    // and the pen is yours. It used to open with a modal listing six things
+    // you could say, then perform the demo on the NEXT visit: two first
+    // impressions, the wordier one first. Motion is the whole argument
+    // here, so a reader who has asked for none gets the list instead.
+    if (!state.spaces.length && !state.captures.length && !state.carryover) {
+      if (!reduced) firstRunDemo()
+      else if (!localStorage.getItem('dec-intro')) {
+        localStorage.setItem('dec-intro', '1')
+        setTimeout(showIntro, 400)
+      }
     }
   } catch (e) {
     document.body.innerHTML = `<pre style="padding:40px;font-family:monospace">could not load: ${e.message}</pre>`

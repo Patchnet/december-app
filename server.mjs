@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, listYears } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
@@ -327,6 +327,17 @@ const server = createServer(async (req, res) => {
         return json(res, 200, project(settleStatus()))
       } catch (e) {
         return json(res, 400, { error: e.message })
+      }
+    }
+
+    // One month, in full: what happened, grouped by the space it happened
+    // in. Kept off /api/state on purpose — that payload is fetched every
+    // ten seconds and this is only wanted when a month is opened.
+    if (path.startsWith('/api/month/') && req.method === 'GET') {
+      try {
+        return json(res, 200, readMonth(path.slice('/api/month/'.length)))
+      } catch (e) {
+        return json(res, 404, { error: e.message })
       }
     }
 

@@ -40,7 +40,12 @@
 
   --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-pill: 999px;
 
-  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  /* The platform's own UI face. This slot named IBM Plex for a long time
+     and never shipped it, so the app always drew in system-ui anyway and
+     looked like whatever the machine had. Naming it honestly costs nothing,
+     ships nothing, and renders native on every platform rather than
+     identical on none. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;
   --fs-h3: 36px; --fs-lede: 28px; --fs-body: 18px; --fs-small: 14px;
   --lh-h3: 1.1; --lh-body: 1.5; --ls-h3: -0.015em;
@@ -177,16 +182,62 @@ body {
 /* The page's only header: today, like a journal entry. It is also the
    one door to the year. */
 .dateline {
+  position: relative;
   font-family: var(--font-serif);
+  text-wrap: balance;
   font-size: 21px;
   font-weight: 400;
   margin: 0 0 var(--space-3);
   cursor: pointer;
   display: inline-block;
-  border-bottom: 1px solid transparent;
-  transition: border-color var(--m-ui) var(--ease);
+  /* the rule used to be a transparent border fading to grey, which reads as
+     the line appearing everywhere at once. It draws itself instead, left to
+     right, under the date and the count together. The padding holds the
+     same 1px the border used to occupy, so nothing shifts. */
+  padding-bottom: 1px;
 }
-.dateline:hover { border-color: var(--line-2); }
+.dateline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--line-2);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--m-depth) var(--ease-out), background var(--m-ui) var(--ease);
+}
+.dateline:hover::after { transform: scaleX(1); }
+
+/* how far the year still has to go, beside the day. Small figures, so the
+   UI face rather than the serif the date itself is set in. */
+.til {
+  /* an annotation, not a second heading: on the date's own baseline,
+     tracked a little so it stays legible this faint, and far enough away
+     to read as a note. At rest it is not there at all — it says its piece
+     once when you arrive, then waits for you to look for it. */
+  margin-left: var(--space-5);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.035em;
+  color: var(--text-3);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--m-depth) var(--ease);
+}
+.dateline:hover .til,
+.dateline:focus-visible .til { opacity: 0.55; }
+
+/* the greeting: in, held, gone — one animation so nothing has to time it */
+.til.greet { animation: til-greet 4200ms var(--ease) both; }
+@keyframes til-greet {
+  0%   { opacity: 0 }
+  10%  { opacity: 0.55 }
+  74%  { opacity: 0.55 }
+  100% { opacity: 0 }
+}
 
 /* -------------------------------------------------------- the capture
    The page is the input: no box, no chrome, just the caret, top left. */
@@ -256,16 +307,17 @@ body {
 }
 .chips:empty { margin: 0; }
 
-/* The suggestion row keeps its place whether or not it holds anything.
-   Chips answer a focus and leave again constantly — letting that resize
-   the page kicks every card below it. One row, always, never wrapping. */
+/* This used to hold 26px open whether or not it had chips in it, so that
+   chips arriving could not kick the cards below. The stage does that job
+   now — it is a fixed height with the cards anchored beneath it, so
+   nothing in here can move them. Holding the row open anyway cost the
+   attention strip 46px of a 106px region and clipped its last line. */
 #suggest {
-  min-height: 26px;
   flex-wrap: nowrap;
   /* it answers the field it sits under, so it rides close to it */
   margin: var(--space-2) 0 var(--space-3);
 }
-#suggest:empty { margin: var(--space-2) 0 var(--space-3); }
+#suggest:empty { margin: 0; }
 
 .chip-btn {
   position: relative;
@@ -361,39 +413,19 @@ body {
 
 .inbox, .activity { max-width: 640px; width: 100%; }
 
-.inbox-row {
-  display: grid;
-  grid-template-rows: 1fr;
-  transition: grid-template-rows var(--m-struct) var(--ease-expo), opacity var(--m-struct) var(--ease);
-}
-.inbox-row.out { grid-template-rows: 0fr; opacity: 0; }
-.inbox-row > div {
-  min-height: 0;
-  overflow: hidden;
+/* The agent at work: one word, not your sentence read back to you. It is
+   also the point every filed capture flies out of, so it holds its place
+   until the last mote has landed. */
+.working {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-}
-.inbox-row .inbox-text {
+  gap: var(--space-3);
   padding: 3px 0;
-  color: var(--text-3);
   font-size: 13px;
-  flex: 0 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.inbox-state {
-  font-size: 12px;
   color: var(--text-3);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  animation: rise var(--m-enter) var(--ease-out) both;
 }
-.inbox-state.failed { color: var(--bad-ink); }
-.inbox-state .retry {
+.working .retry {
   color: inherit;
   background: none;
   border: 0;
@@ -404,9 +436,10 @@ body {
   margin: -4px -6px;
   border-radius: var(--radius-sm);
 }
+.working.failed { color: var(--bad-ink); }
 
-/* The agent reading your line: a light sweeps across the words. */
-.inbox-text.reading {
+/* the light sweeping across it is the only sign it is alive */
+.working:not(.failed):not(.capture-only) .working-word {
   color: transparent;
   background: linear-gradient(90deg, var(--text-3) 38%, var(--text-1) 50%, var(--text-3) 62%);
   background-size: 220% 100%;
@@ -480,33 +513,21 @@ body {
 /* while the person is composing or things are settling, everything under
    their line steps back: no gray text competing with their own words.
    IDs only: the ask's own chips must never be caught by this fade. */
-.today, .hint { transition: opacity var(--m-depth) var(--ease); }
-.shell.composing :is(#today, #suggest, #activity, #hint),
-.shell.settling :is(#today, #suggest, #activity, #hint) {
-  opacity: 0;
-  pointer-events: none;
+/* ------------------------------------------------- numbers and dates
+   Georgia is a text-figures face: its digits sit on three different
+   baselines by design. Large, that reads as character — "$4,302" at 28px
+   and the 412 in "412 of 600" at 19px. Small, it reads as broken, which is
+   why "aug 16, 5pm" and "93 days" looked wrong at 11 and 14. So the rule is
+   size, not meaning: the serif takes the display numerals and the labels
+   that are WORDS (today, this week, august), and every small figure on the
+   page stays in the UI face where the digits line up. */
+.ledger-total,
+.tracker-count b,
+.rest-mlabel,
+.lm-name,
+.hm-months {
+  font-family: var(--font-serif);
 }
-.activity .undo {
-  color: var(--accent-ink);
-  background: none;
-  border: 0;
-  font: inherit;
-  cursor: pointer;
-  padding: 4px 6px;
-  margin: -4px -2px;
-  border-radius: var(--radius-sm);
-}
-.activity .undo:hover { text-decoration: underline; }
-
-/* the first-open whisper */
-.hint {
-  max-width: 640px;
-  font-size: 13px;
-  color: var(--text-3);
-  animation: rise var(--m-enter) var(--ease-out) both;
-  animation-delay: 180ms;
-}
-.hint:empty { display: none; }
 
 /* ---------------------------------------------------------- the spaces */
 
@@ -517,6 +538,12 @@ body {
   flex: 0 0 auto;
   position: sticky;
   top: var(--space-8);
+  /* A sticky column taller than the window strands whatever is past the
+     fold: scrolling the page moves the page, not the rail. At thirty-one
+     spaces it is already 811px, so it carries its own scroll. */
+  max-height: calc(100vh - var(--space-8) * 2);
+  overflow-y: auto;
+  scrollbar-width: none;
   display: none;
   flex-direction: column;
   max-width: 150px;
@@ -555,7 +582,8 @@ body {
 /* a door hints it opens: tone only, never a lift */
 .space:hover:not(.ghost) { border-color: var(--line-2); }
 .space:focus-visible { outline: none; border-color: var(--accent-edge); box-shadow: var(--focus-ring-field); }
-.dateline:focus-visible { outline: none; border-bottom-color: var(--accent); }
+.dateline:focus-visible { outline: none; }
+.dateline:focus-visible::after { transform: scaleX(1); background: var(--accent); }
 
 /* entrance finished: stop the animation fill so FLIP glides can move it */
 .space.settled { animation: none; }
@@ -585,6 +613,9 @@ body {
 /* the identity layer is serif: a journal that keeps itself */
 .space-name {
   overflow-wrap: anywhere;
+  /* a card name that wraps breaks into even lines rather than leaving one
+     word stranded: "Move to Tallahassee", "Old apartment" */
+  text-wrap: balance;
   font-family: var(--font-serif);
   font-size: 17px;
   font-weight: 400;
@@ -677,7 +708,7 @@ body {
 }
 .row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 .row:hover .tick { border-color: var(--accent-edge); }
-.row:active .tick { transform: scale(0.92); }
+.row:active .tick { transform: scale(0.96); }
 
 .tick {
   flex: 0 0 auto;
@@ -905,14 +936,20 @@ body {
 
 /* ------------------------------------------------------- the today strip */
 
-.today { max-width: 640px; margin: 0 0 var(--space-3); }
+.today { max-width: 640px; margin: 0 0 var(--space-3); transition: opacity var(--m-depth) var(--ease); }
 .today:empty { margin: 0; }
+
+/* One thing at a time — the rule the whole stage is built on, which has to
+   hold INSIDE the idle pane too. Chips answer a reach for the writing
+   line; while they are up the attention strip steps aside, rather than
+   being shoved down and clipped out of a region that cannot grow. */
+#suggest:not(:empty) ~ .today { opacity: 0; pointer-events: none; }
 .today-row {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
   width: 100%;
-  padding: 3px 0;
+  padding: 2px 0;
   background: none;
   border: 0;
   font: inherit;
@@ -925,12 +962,51 @@ body {
 .today-row .tick { align-self: center; }
 .today.norise .today-row { animation: none; }
 .tick-slot { flex: 0 0 18px; }
-.today-row .row-text { flex: 0 1 auto; min-width: 0; transition: color var(--m-ui) var(--ease); }
+/* The thing itself always keeps room to be read. It inherits
+   overflow-wrap:anywhere from .row-text, so any layout that squeezes this
+   column does not merely crop the line — it stacks it one letter per row.
+   The reason gives way instead, since it is the smaller of the two. */
+.today-row .row-text { flex: 0 1 auto; min-width: 12ch; transition: color var(--m-ui) var(--ease); }
 .today-row.plain .row-text { color: var(--text-2); }
 .today-row.plain:hover .row-text { color: var(--text-1); }
-.today-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.today-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .today-sub.overdue { color: var(--bad-ink); }
-.today-more { font-size: 11.5px; color: var(--text-3); padding: 3px 0 0 28px; }
+/* the overflow count sits at the right of the last row it belongs to */
+.today-item { display: flex; align-items: baseline; gap: var(--space-3); }
+.today-item > .today-row { flex: 1 1 auto; min-width: 0; }
+.today-more {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Two bands: what is due now, and what is coming. The label sits in a left
+   column beside the band's first row rather than on a line of its own, so
+   naming the two costs no height in a stage that has none to give. */
+.band { display: flex; gap: var(--space-3); }
+.band + .band { margin-top: var(--space-1); }
+.band-label {
+  flex: 0 0 76px;
+  padding: 3px 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.band-body { flex: 1 1 auto; min-width: 0; }
+
+/* the week ahead reads a shade quieter than what is due now */
+.today-row.ahead .row-text { color: var(--text-2); }
+.today-row.ahead:hover .row-text { color: var(--text-1); }
 
 /* --------------------------------------------------------- the year view */
 
@@ -952,16 +1028,106 @@ body {
 .ym.future .ym-name { color: var(--text-3); }
 .ym.now .ym-name::after { content: "·"; color: var(--accent); margin-left: 6px; }
 .ym-body { flex: 1; min-width: 0; }
-.ym-dots { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 var(--space-1); }
-.ym-dots i {
-  width: 4px;
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  opacity: 0.65;
-}
 .ym-hl { font-size: 13px; color: var(--text-3); text-wrap: pretty; padding: 1px 0; }
 .ym-quiet { font-size: 12.5px; color: var(--text-3); opacity: 0.6; font-style: italic; }
+
+/* A month you can open. The row used to be a dead end: a count rendered
+   as up to 28 identical dots and a sentence sliced mid-word. */
+button.ym {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  cursor: pointer;
+  transition: background var(--m-ui) var(--ease);
+}
+button.ym:hover { background: var(--surface-2); }
+button.ym:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.ym.quiet-band .ym-name { color: var(--text-3); }
+.ym-bar {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  overflow: hidden;
+  margin: 6px 0 5px;
+  max-width: 260px;
+}
+.ym-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.ym-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------- one month */
+
+.mo-back {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  margin: 0 0 var(--space-2) -8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.mo-back:hover { color: var(--text-1); }
+.mo-back:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+/* the month's rhythm: which of its weeks carried anything */
+.mo-weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 26px;
+  margin: var(--space-3) 0 var(--space-2);
+}
+.mo-weeks i {
+  flex: 0 0 22px;
+  height: var(--h);
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.28;
+  animation: week-rise var(--m-enter) var(--ease-out) both;
+}
+@keyframes week-rise { from { transform: scaleY(0.2); opacity: 0 } to { transform: scaleY(1) } }
+.mo-weeks i { transform-origin: bottom; }
+.mo-total { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; margin-bottom: var(--space-5); }
+
+.mo-space {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-1);
+  animation: rise var(--m-enter) var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+.mo-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.mo-name { font-family: var(--font-serif); font-size: 15px; color: var(--text-1); }
+.mo-sum { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mo-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.mo-day {
+  flex: 0 0 20px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mo-text { flex: 1; min-width: 0; text-wrap: pretty; }
+.mo-amt { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 
 /* ---------------------------------------------------- talking to a space */
 
@@ -979,32 +1145,63 @@ body {
 
 .resting { max-width: 640px; margin-top: var(--space-9); }
 .resting:empty { margin: 0; }
-.rest-head {
-  font-size: 11.5px;
-  color: var(--text-3);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line-1);
-}
-.rest-row {
+/* ------------------------------------------------- the foot of the page
+   A count, not a ledger. Search already finds any of these by name, so what
+   is left for this section to do is reassure you nothing was thrown away —
+   and reassurance needs a number. Opening one gives the month grouping the
+   old rows were spelling out one row at a time. */
+.rest-fold {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
-  width: 100%;
-  padding: var(--space-2) 0;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+}
+.rest-grp {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-3);
   background: none;
   border: 0;
-  border-bottom: 1px solid var(--line-1);
-  font: inherit;
-  font-size: 13px;
-  color: var(--text-3);
-  text-align: left;
+  padding: 4px 0;
   cursor: pointer;
   transition: color var(--m-ui) var(--ease);
 }
-.rest-row:hover { color: var(--text-1); }
-.rest-row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
-.rest-when { font-size: 11.5px; white-space: nowrap; }
+.rest-grp:hover, .rest-grp.on { color: var(--text-1); }
+.rest-grp:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.rest-grp { position: relative; }
+.rest-grp::after { content: ""; position: absolute; inset: -7px -8px; }
+.rest-n { font-variant-numeric: tabular-nums; color: var(--text-3); }
+.rest-grp.on .rest-n { color: var(--accent-ink); }
+
+/* it grows open rather than appearing: 0fr to 1fr animates, height does not */
+.rest-open {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--m-struct) var(--ease-expo);
+}
+.rest-open > div { min-height: 0; overflow: hidden; }
+.rest-open.on { grid-template-rows: 1fr; }
+
+.rest-month { display: flex; gap: var(--space-4); align-items: baseline; padding: 5px 0; }
+.rest-month:first-child { padding-top: var(--space-3); }
+.rest-mlabel { flex: 0 0 66px; font-size: 11.5px; color: var(--text-3); }
+.rest-names { flex: 1 1 auto; min-width: 0; text-wrap: pretty; }
+.rest-name {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.rest-name:hover { color: var(--text-1); }
+.rest-name:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.rest-name::after { content: " \00b7 "; color: var(--line-2); }
+.rest-name:last-child::after { content: ""; }
 
 /* ------------------------------------------------------- the focus view */
 
@@ -1426,7 +1623,9 @@ body {
   top: var(--space-3);
   right: var(--space-3);
   display: flex;
-  gap: 2px;
+  /* 2px apart, neither of these could grow a hit area without the two
+     overlapping — so they sit further apart and each claims the room */
+  gap: var(--space-2);
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
@@ -1445,6 +1644,7 @@ body {
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
+  position: relative;
   transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
 }
 .card-tool svg { width: 15px; height: 15px; display: block; }
@@ -1461,7 +1661,9 @@ body {
 .focus-card .card-tool { width: 30px; height: 30px; }
 .focus-card .card-tool svg { width: 17px; height: 17px; }
 .card-tool:hover { background: var(--surface-1); color: var(--text-1); }
-.card-tool:active { transform: scale(0.92); }
+.card-tool:active { transform: scale(0.96); }
+/* a 26px icon is a small thing to point at: the target reaches past it */
+.card-tool::after { content: ""; position: absolute; inset: -7px -4px; }
 .card-tool:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 .card-tool.on { color: var(--text-1); }
 .card-tool.on:hover { color: var(--text-2); }
@@ -1499,7 +1701,7 @@ body {
 }
 
 /* rows and strips settle rather than snap */
-.rest-row, .today-item { transition: opacity var(--m-depth) var(--ease); }
+.today-item { transition: opacity var(--m-depth) var(--ease); }
 
 /* a finished space says so before it steps aside */
 .wrap-up-unused {
@@ -1638,7 +1840,6 @@ a.retire-link:hover { color: var(--accent-ink); }
   }
   .space { padding: var(--space-4); }
   .resting { max-width: none; }
-  .rest-row { align-items: flex-start; }
   .focus-capture {
     position: static;
     border-top: 1px solid var(--line-1);
@@ -1678,7 +1879,7 @@ a.retire-link:hover { color: var(--accent-ink); }
   .row.done .tick path { stroke-dashoffset: 0 !important; animation: none !important; }
   .spark, .mote, .landing { display: none !important; }
   /* keep the words readable when the sweep can't play */
-  .inbox-text.reading { color: var(--text-2); background: none; animation: none; }
+  .working .working-word { color: var(--text-2); background: none; animation: none; }
 }
 
 /* ------------------------------------------------- the gear + its panel */
@@ -1925,7 +2126,7 @@ a.retire-link:hover { color: var(--accent-ink); }
 .onboarding-engine small { color: var(--text-3); font-size: 12px; font-weight: 400; }
 .onboarding-guidance { margin: 0 var(--space-4) var(--space-2); color: var(--text-3); font-size: 12px; }
 .onboarding-note { margin-top: var(--space-4); color: var(--text-2); font-size: 13px; }
-.inbox-state.capture-only { color: var(--text-3); font-size: 11.5px; }
+.working.capture-only { font-size: 11.5px; }
 
 /* --------------------------------------------------------- the dropzone */
 
@@ -2099,15 +2300,10 @@ a.retire-link:hover { color: var(--accent-ink); }
    appear. These are the moments the audit found still popping in. */
 
 /* the line you just wrote, taking its place while it settles */
-.inbox-row > div { animation: rise var(--m-enter) var(--ease-out) both; }
-.inbox-row.out > div { animation: none; }
 
-/* a space closing out, arriving in the list below the grid */
+/* a space closing out, arriving at the foot of the page */
 .rest-head { animation: rise var(--m-enter) var(--ease-out) both; }
-.rest-row {
-  animation: rise var(--m-enter) var(--ease-out) both;
-  animation-delay: var(--d, 0ms);
-}
+.rest-month { animation: rise var(--m-enter) var(--ease-out) both; }
 
 /* the way back, offered rather than posted */
 .activity .undo { animation: rise var(--m-enter) var(--ease-out) 120ms both; }
@@ -2126,7 +2322,7 @@ a.retire-link:hover { color: var(--accent-ink); }
 .rail-area { animation: rise var(--m-enter) var(--ease-out) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .inbox-row > div, .rest-head, .rest-row, .activity .undo,
+  .rest-head, .rest-month, .activity .undo,
   .co-nudge-btn, .search-hit, .search-none, .rail-area { animation: none; }
 }
 
@@ -2156,7 +2352,12 @@ a.retire-link:hover { color: var(--accent-ink); }
   /* every pane occupies the same ground; only one is lit at a time */
   .moment {
     position: absolute;
-    top: calc(17px * 1.5 + var(--space-1));
+    /* clear of the writing line, not tucked under it. At 4px the strip read
+       as part of the line above it; the room it takes here comes back out
+       of the dead space that was sitting under the last row, so the cards
+       do not move down. A question is unaffected — asking mode pulls the
+       moment to top: 0 and gets the whole stage. */
+    top: calc(17px * 1.5 + var(--space-5));
     left: 0;
     right: 0;
     bottom: 0;
@@ -2168,8 +2369,11 @@ a.retire-link:hover { color: var(--accent-ink); }
     align-self: start;
     min-width: 0;
     max-height: 100%;
-    overflow-y: auto;
-    scrollbar-width: none;
+    /* The stage does not scroll. It used to be overflow-y:auto with the
+       scrollbar hidden, which is not "no scrolling" — it is a scroll region
+       you cannot see, so anything too tall became findable only by dragging
+       inside a fixed panel. Whatever does not fit is counted, not hidden. */
+    overflow: hidden;
     transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
   }
   .pane[hidden] { display: none; }
@@ -2242,14 +2446,14 @@ a.retire-link:hover { color: var(--accent-ink); }
   color: var(--bg);
 }
 .btn-solid:hover { background: var(--text-2); border-color: var(--text-2); }
-.btn-solid:active { transform: scale(0.975); }
+.btn-solid:active { transform: scale(0.96); }
 .btn-quiet {
   border: 1px solid var(--line-1);
   background: transparent;
   color: var(--text-2);
 }
 .btn-quiet:hover { border-color: var(--line-2); color: var(--text-1); }
-.btn-quiet:active { transform: scale(0.975); }
+.btn-quiet:active { transform: scale(0.96); }
 .btn-solid:focus-visible,
 .btn-quiet:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 
