@@ -558,19 +558,23 @@ body {
 .row.done .tick path { animation: check-draw 260ms var(--ease-out) 40ms forwards; }
 .row.done.no-anim .tick path { stroke-dashoffset: 0; animation: none; }
 
-.row-text { flex: 1; min-width: 0; position: relative; display: inline-block; }
+/* the strike hugs the words it crosses out, and whispers rather than
+   scribbles: a hairline in line-2, drawn over dimmed text */
+.row-text { flex: 0 1 auto; min-width: 0; position: relative; display: inline-block; }
 .row-text::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 52%;
+  left: -1px;
+  right: auto;
+  top: 54%;
   height: 1px;
   width: 0;
-  background: var(--text-3);
+  border-radius: var(--radius-pill);
+  background: var(--line-2);
   transition: width var(--m-depth) var(--ease-out);
 }
-.row.done .row-text { color: var(--text-3); }
-.row.done .row-text::after { width: 100%; }
+.row.done .row-text { color: var(--text-3); opacity: 0.75; }
+.row.done .row-text::after { width: calc(100% + 3px); }
 .row.done.no-anim .row-text::after { transition: none; }
 
 @keyframes check-draw { to { stroke-dashoffset: 0; } }
@@ -634,6 +638,7 @@ body {
   font-variant-numeric: tabular-nums;
   padding: 1px 0;
 }
+.ledger-entry span:last-child { color: var(--text-2); }
 
 /* streak */
 .streak-line { display: flex; align-items: center; gap: var(--space-3); }
