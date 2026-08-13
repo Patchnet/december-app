@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/icon.png" width="96" alt="December" /></p>
+
 # December
 
 > "The computer is the most remarkable tool that we've ever come up with. It's
@@ -141,6 +143,27 @@ a local-only server has nothing it can reach; that arrives with sync.
 The server must be running while an assistant works. The desktop app owns
 `http://localhost:3008` (falling back to `:3009`); `DECEMBER_URL` pins a
 connection anywhere else.
+
+## The desktop app
+
+The same page, resident: a tray icon that keeps December running, a window
+over the local server, and `Ctrl+Alt+D` from anywhere to capture. Closing the
+window hides it; Quit lives in the tray. Desktop state keeps to your user
+profile, so the repo stays clean and reinstalls never touch your year.
+
 ```bash
-node --test test/*.test.mjs
+npm install && npm run app        # run the shell in place
+npm run dist:win                  # build the Windows installer (unsigned yet)
+```
+
+First run shows the connection cards — choose a signed-in CLI and the page
+organizes itself from then on; skip it and December waits, capture-only,
+until you connect one.
+
+## Tests
+
+The suite runs on Node alone — no test dependencies:
+
+```bash
+node --test
 ```
