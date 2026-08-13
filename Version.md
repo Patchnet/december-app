@@ -1,11 +1,24 @@
 ---
 enabled: true
-current: 0.7.0
+current: 0.7.1
 dev_flow: formal
 test_gate: local
 ---
 
 # December — Version History
+
+## 0.7.1 — 2026-08-12
+
+The polish round, from an afternoon of the operator actually living in the
+app. The rail is a flat list of pointers again, and clicking one lands with
+a quiet accent ring on the card it names. What you type queues visibly under
+the input the instant you press Enter — the stage never goes blank — and the
+working line breathes. The undo button wears the house's clothes instead of
+the browser's. Visiting assistants and the settle pass alike now refuse to
+file connective clauses as items. The README carries the mark, the desktop
+app's documentation, and a proper tests heading. And the packaged app can
+finally read its own version, so the About chip tells the truth in the
+builds people actually install.
 
 ## 0.7.0 — 2026-08-12
 
