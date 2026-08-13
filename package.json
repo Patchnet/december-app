@@ -22,7 +22,8 @@
       "server.mjs",
       "mcp-server.mjs",
       "lib/**/*",
-      "public/**/*"
+      "public/**/*",
+      "package.json"
     ],
     "directories": {
       "output": "release"
