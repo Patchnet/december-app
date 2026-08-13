@@ -592,7 +592,8 @@ body {
 .space.washed { animation: border-glow 900ms var(--ease); }
 
 /* navigation's lighter touch: border only, no sheen */
-.space.noted { animation: border-glow 900ms var(--ease); }
+/* the rail's landing light: a quiet accent ring that draws the eye, then lets go */
+.space.noted { animation: border-glow 1400ms var(--ease); }
 .space.washed::after {
   content: "";
   position: absolute;
@@ -606,8 +607,8 @@ body {
 }
 @keyframes sheen { to { transform: translateX(270%); } }
 @keyframes border-glow {
-  0%, 25% { border-color: var(--accent-edge); }
-  100% { border-color: var(--line-1); }
+  0%, 35% { border-color: var(--accent-edge); box-shadow: 0 0 0 3px var(--accent-soft), var(--card-shadow); }
+  100% { border-color: var(--line-1); box-shadow: var(--card-shadow); }
 }
 
 /* the identity layer is serif: a journal that keeps itself */
@@ -1717,16 +1718,6 @@ button.ym:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 }
 .wrap-up:hover { opacity: 0.7; }
 
-/* the rail learns headings once there are many spaces */
-.rail-area {
-  font-size: 10.5px;
-  color: var(--text-3);
-  opacity: 0.55;
-  margin: var(--space-3) 0 1px;
-  line-height: 1.4;
-}
-.rail-area:first-child { margin-top: 0; }
-
 /* what December can do */
 .can-row { display: flex; gap: var(--space-4); padding: var(--space-2) 0; border-top: 1px solid var(--line-1); }
 .can-k { flex: 0 0 130px; font-size: 13px; color: var(--text-1); }
@@ -2557,3 +2548,54 @@ a.retire-link:hover { color: var(--accent-ink); }
 
 /* the release, quietly, beside the about title */
 .about-version { font-weight: 400; font-size: 12px; color: var(--text-3); margin-left: var(--space-1); }
+
+/* ------------------------------------------- the queue under the input */
+
+.queue-row {
+  max-width: 640px;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-3);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+
+/* the working line breathes: three quiet accent motes */
+.working-dots { display: inline-flex; gap: 3px; margin-left: 1px; }
+.working-dots i {
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.25;
+  animation: dot-breathe 1200ms var(--ease) infinite;
+}
+.working-dots i:nth-child(2) { animation-delay: 200ms; }
+.working-dots i:nth-child(3) { animation-delay: 400ms; }
+@keyframes dot-breathe {
+  0%, 100% { opacity: 0.25; transform: none; }
+  50% { opacity: 0.9; transform: translateY(-1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-dots i { animation: none; opacity: 0.5; }
+  .queue-row { animation: none; }
+}
+
+/* undo, dressed like the rest of the house */
+.activity .undo {
+  height: 24px;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--surface-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), border-color var(--m-ui) var(--ease);
+}
+.activity .undo:hover { color: var(--text-1); background: var(--surface-2); }
+.activity .undo:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }

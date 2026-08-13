@@ -10,6 +10,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// the canonical skill's own version — tests follow it instead of pinning a literal
+const skillVersion = (await readFile(join(ROOT, 'skills', 'december', 'SKILL.md'), 'utf8')).match(/^version: (.+)$/m)[1].trim()
+const skillVersionPattern = new RegExp('version: ' + skillVersion.replace(/[.]/g, '\.'))
 
 async function freePort() {
   const server = createServer()
@@ -109,7 +112,7 @@ test('scratch server GET is read-only and POST writes only the injected home', a
   const cursor = JSON.parse(await readFile(cursorConfig, 'utf8'))
   assert.equal(cursor.fixture, true)
   assert.equal(cursor.mcpServers.december.env.DECEMBER_URL, url)
-  assert.match(await readFile(join(home, '.cursor', 'skills', 'december', 'SKILL.md'), 'utf8'), /version: 0\.7\.0/)
+  assert.match(await readFile(join(home, '.cursor', 'skills', 'december', 'SKILL.md'), 'utf8'), skillVersionPattern)
 })
 
 test('node connect.mjs --yes completes against an injected home', async (t) => {
@@ -156,5 +159,5 @@ test('node connect.mjs --yes completes against an injected home', async (t) => {
   const config = await readFile(codexConfig, 'utf8')
   assert.match(config, /\[mcp_servers\.december\]/)
   assert.match(config, /DECEMBER_URL/)
-  assert.match(await readFile(join(home, '.codex', 'skills', 'december', 'SKILL.md'), 'utf8'), /version: 0\.7\.0/)
+  assert.match(await readFile(join(home, '.codex', 'skills', 'december', 'SKILL.md'), 'utf8'), skillVersionPattern)
 })

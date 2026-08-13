@@ -887,12 +887,16 @@ function renderInbox(targets = new Map()) {
 
   const word = captureOnly ? 'saved · capture only' : failed ? "couldn't settle" : 'working'
   const kind = captureOnly ? 'capture-only' : failed ? 'failed' : ''
-  const show = pending.size > 0 || state.settle.running || flying > 0
-  const key = show ? `${kind}|${word}` : ''
+  // the queue: what you said, greyed, in order, until it lands on a card
+  const queue = [...queuedTexts, ...state.captures.map((c) => c.text)]
+  const show = queue.length > 0 || pending.size > 0 || state.settle.running || flying > 0
+  const key = show ? `${kind}|${word}|${queue.join('¦')}` : ''
   if (box.dataset.key === key) return
   box.dataset.key = key
+  const dots = kind === '' ? '<span class="working-dots" aria-hidden="true"><i></i><i></i><i></i></span>' : ''
   box.innerHTML = show
-    ? `<div class="working ${kind}"><span class="working-word">${esc(word)}</span>${
+    ? queue.map((t) => `<div class="queue-row">${esc(t)}</div>`).join('') +
+      `<div class="working ${kind}"><span class="working-word">${esc(word)}</span>${dots}${
         failed ? '<button class="retry">retry</button>' : ''
       }</div>`
     : ''
@@ -1315,27 +1319,13 @@ function renderRail() {
   const on = state.spaces.filter((s) => !s.finished).length >= 6
   rail.classList.toggle('on', on)
   if (!on) return
-  const key = state.spaces.map((s) => s.id + s.name + s.area + s.finished).join()
+  const key = state.spaces.map((s) => s.id + s.name + s.finished).join()
   if (rail.dataset.key === key) return
   rail.dataset.key = key
+  // A flat list of pointers, nothing more. Areas still exist on the cards;
+  // the rail's one job is taking your eye to a card.
   const live = state.spaces.filter((s) => !s.finished)
-  const byArea = new Map()
-  for (const s of live) {
-    const a = s.area || 'other'
-    if (!byArea.has(a)) byArea.set(a, [])
-    byArea.get(a).push(s)
-  }
-  // group only once the page has enough spaces to need it
-  const grouped = live.length >= 8 && byArea.size > 1 && [...byArea.keys()].some((k) => k !== 'other')
-  rail.innerHTML = grouped
-    ? [...byArea.entries()]
-        .map(
-          ([area, list]) =>
-            `<div class="rail-area">${esc(area)}</div>` +
-            list.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
-        )
-        .join('')
-    : live.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
+  rail.innerHTML = live.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
 }
 
 let attentionCount = 0
@@ -1863,8 +1853,9 @@ function renderStage() {
     : state.ask
       ? 'asking'
       : // a mote still in the air keeps the stage open: it flies out of the
-        // working line, so the line has to outlive the last capture
-        state.captures.length || state.settle.running || flying > 0
+        // working line, so the line has to outlive the last capture — and a
+        // queued line not yet acknowledged holds it open the same way
+        state.captures.length || queuedTexts.length || state.settle.running || flying > 0
         ? 'settling'
         : 'idle'
   if (stage.dataset.mode !== mode) stage.dataset.mode = mode
@@ -1948,10 +1939,16 @@ async function askThePage(question) {
   }
 }
 
+// Lines the server has not acknowledged yet. They render immediately as
+// greyed queue rows, so the beat between Enter and the response never
+// shows an empty stage.
+const queuedTexts = []
+
 async function submitCapture() {
   const field = $('#capture')
   const text = field.value.trim()
   if (!text) return
+  queuedTexts.push(text)
   field.value = ''
   field.style.height = 'auto'
   document.documentElement.style.setProperty('--capture-h', `${field.offsetHeight}px`)
@@ -1966,14 +1963,18 @@ async function submitCapture() {
     Notification.requestPermission().catch(() => {})
   }
   nextPrompt()
+  render() // the queued line appears the same instant the field clears
   try {
     state = await api('/api/capture', { text })
+    queuedTexts.splice(queuedTexts.indexOf(text), 1)
     render()
     schedulePoll()
   } catch (e) {
+    queuedTexts.splice(queuedTexts.indexOf(text), 1)
     field.value = text
     $('#shell').classList.add('composing') // the draft is back; keep the page quiet
     toast(e.message)
+    render()
   }
 }
 
@@ -2733,7 +2734,7 @@ function jumpToSpace(sid) {
     el.classList.remove('noted')
     void el.offsetWidth
     el.classList.add('noted')
-    setTimeout(() => el.classList.remove('noted'), 1000)
+    setTimeout(() => el.classList.remove('noted'), 1400)
   }
 }
 
