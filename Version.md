@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.8.0
+current: 0.9.0
 dev_flow: formal
 test_gate: local
 ---
 
-# December — Version History
+# Version History
+
+## 0.9.0 - 2026-08-14
+
+Add the local Pocket pairing experience, assisted Windows installer, and fresh-boot regression protection.
 
 ## 0.8.0 — 2026-08-14
 
