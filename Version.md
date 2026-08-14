@@ -1,11 +1,23 @@
 ---
 enabled: true
-current: 0.7.1
+current: 0.8.0
 dev_flow: formal
 test_gate: local
 ---
 
 # December — Version History
+
+## 0.8.0 — 2026-08-14
+
+The page leaves the desk. Pocket synchronization lands its desktop half:
+every durable page write queues an encrypted revision for the relay (the
+relay never sees the content key), pending uploads survive restarts without
+ever blocking local-first writes, and phone captures import idempotently
+before their cursors acknowledge. Pair, status, sync, and disconnect wait
+under `/api/pocket` for the settings surface. Underneath, the page itself
+became modules: a 48-line boot file over native ES modules and split
+stylesheets, with an integrity test keeping the boot small and the imports
+acyclic. The pocket credential file is gitignored the day it is born.
 
 ## 0.7.1 — 2026-08-12
 
