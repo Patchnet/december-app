@@ -61,6 +61,15 @@ test('session names are not double-qualified', () => {
   }
 })
 
+test('layout keeps render state on the page context', () => {
+  const src = read(join(jsDir, 'layout.js'))
+  const renderInbox = src.match(/function renderInbox\b[\s\S]*?(?=\nfunction renderActivity\b)/)?.[0]
+  assert.ok(renderInbox, 'renderInbox is present')
+  assert.doesNotMatch(renderInbox, /(^|[^.\w])pending\b/m)
+  assert.doesNotMatch(renderInbox, /(^|[^.\w])queuedTexts\b/m)
+  assert.doesNotMatch(renderInbox, /(^|[^.\w])state\./m)
+})
+
 test('page modules have no import cycles', () => {
   const graph = new Map()
   const add = (file, src, fromDir) => {

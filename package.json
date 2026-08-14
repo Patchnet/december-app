@@ -44,9 +44,19 @@
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowElevation": true
+      "selectPerMachineByDefault": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "December",
+      "runAfterFinish": true,
+      "removeDefaultUninstallWelcomePage": false,
+      "uninstallDisplayName": "December",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     }
   }
 }

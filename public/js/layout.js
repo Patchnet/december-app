@@ -163,7 +163,7 @@ function renderInbox(targets = new Map()) {
   // a batch launches as a stream, not a swarm
   const origin = box.querySelector('.working')?.getBoundingClientRect()
   let launch = 0
-  for (const cid of [...pending]) {
+  for (const cid of [...page.pending]) {
     if (ids.has(cid)) continue
     page.pending.delete(cid)
     const targetEl = page.spaceEls.get(targets.get(cid))?.el
@@ -183,7 +183,7 @@ function renderInbox(targets = new Map()) {
   const word = captureOnly ? 'saved · capture only' : failed ? "couldn't settle" : 'working'
   const kind = captureOnly ? 'capture-only' : failed ? 'failed' : ''
   // the queue: what you said, greyed, in order, until it lands on a card
-  const queue = [...queuedTexts, ...state.captures.map((c) => c.text)]
+  const queue = [...page.queuedTexts, ...page.state.captures.map((c) => c.text)]
   const show = queue.length > 0 || page.pending.size > 0 || page.state.settle.running || page.flying > 0
   const key = show ? `${kind}|${word}|${queue.join('¦')}` : ''
   if (box.dataset.key === key) return

@@ -178,6 +178,119 @@
 .connection-row button:disabled { border-color: transparent; color: var(--text-3); cursor: default; }
 .connection-state { width: 28px; color: var(--hue-ok); text-align: center; }
 
+/* Pocket is a connection, but a quieter one: one short status and only the
+   actions that make sense in its current state. */
+.pocket-settings {
+  margin-top: var(--space-4);
+  padding: var(--space-4) var(--space-2);
+  border-top: 1px solid var(--line-1);
+}
+.pocket-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.pocket-heading h3 { margin: 0; font-size: 13px; font-weight: 500; }
+.pocket-heading p { margin: var(--space-1) 0 0; color: var(--text-3); font-size: 11.5px; }
+.pocket-state-mark {
+  width: 8px;
+  height: 8px;
+  margin: 5px 2px 0 0;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 3px var(--surface-1);
+}
+.pocket-settings[data-state="connected"] .pocket-state-mark { background: var(--hue-ok); }
+.pocket-settings[data-state="pairing"] .pocket-state-mark,
+.pocket-settings[data-state="syncing"] .pocket-state-mark { background: var(--accent-ink); animation: pocket-breathe 1.25s ease-in-out infinite; }
+.pocket-settings[data-state="offline"] .pocket-state-mark,
+.pocket-settings[data-state="error"] .pocket-state-mark { background: var(--hue-warn, #a36c22); }
+@keyframes pocket-breathe { 50% { opacity: 0.4; transform: scale(0.8); } }
+
+.pocket-status { display: flex; flex-direction: column; gap: 2px; margin-top: var(--space-3); line-height: 1.4; }
+.pocket-status strong { color: var(--text-1); font-size: 12.5px; font-weight: 500; }
+.pocket-status span { color: var(--text-3); font-size: 11.5px; overflow-wrap: anywhere; }
+.pocket-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.pocket-actions button,
+.pocket-confirm button {
+  min-height: 32px;
+  padding: 3px 11px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.pocket-actions button:hover:not(:disabled),
+.pocket-confirm button:hover:not(:disabled) { border-color: var(--accent-edge); color: var(--accent-ink); }
+.pocket-actions button:focus-visible,
+.pocket-confirm button:focus-visible,
+.pocket-pairing-close:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.pocket-actions button:disabled { opacity: 0.5; cursor: default; }
+.pocket-actions .pocket-primary { border-color: var(--accent-edge); background: var(--accent-soft); color: var(--accent-ink); }
+.pocket-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.pocket-confirm[hidden] { display: none; }
+.pocket-confirm span { flex: 1 0 100%; }
+#pocket-disconnect-confirm { color: var(--hue-bad, #9b453d); }
+
+.pocket-pairing[hidden] { display: none; }
+.pocket-pairing {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 73;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  padding: var(--space-6);
+  border: 0;
+  border-radius: 18px;
+  background: var(--elevated);
+  box-shadow: 0 0 0 100vmax rgba(26, 24, 21, 0.46), 0 20px 48px -14px rgba(26, 24, 21, 0.38);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  animation: settings-in var(--m-struct) var(--ease-expo) both;
+}
+:root[data-theme="dark"] .pocket-pairing { box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.58), 0 20px 48px -14px rgba(0, 0, 0, 0.7); }
+.pocket-pairing:focus { outline: none; }
+.pocket-pairing h2 { margin: 0; font-family: var(--font-serif); font-size: 21px; font-weight: 400; }
+.pocket-pairing > p { margin: var(--space-2) auto 0; max-width: 29ch; color: var(--text-2); font-size: 12.5px; line-height: 1.5; }
+.pocket-pairing-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 21px;
+  cursor: pointer;
+}
+.pocket-qr {
+  width: min(236px, 70vw);
+  margin: var(--space-5) auto var(--space-3);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.pocket-qr svg { display: block; width: 100%; height: auto; }
+.pocket-pairing .pocket-pairing-note { color: var(--text-3); font-size: 11px; }
+
 .settings-about {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -233,6 +346,15 @@
   .set-input { width: min(160px, 46vw); }
   .set-paths { grid-template-columns: 1fr; }
   .set-paths .set-input { width: 100%; }
+}
+
+@media (max-width: 390px) {
+  .settings-pop { width: calc(100vw - 16px); padding: var(--space-4); }
+  .set-row { gap: var(--space-2); }
+  .connection-row { grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-2); padding-inline: var(--space-1); }
+  .connection-name small { white-space: normal; }
+  .pocket-pairing { width: calc(100vw - 24px); padding: var(--space-5); }
+  .pocket-qr { width: min(232px, 72vw); }
 }
 
 /* ----------------------------------------------------- first-run setup */

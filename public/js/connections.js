@@ -1,5 +1,6 @@
 import { $, esc, toast, api, page } from './session.js'
 import { showIntro } from './layout.js'
+import { closePocketPairing, isPocketPairingOpen, refreshPocket, trapPocketFocus } from './pocket.js'
 
 export const launchParams = new URLSearchParams(location.search)
 export const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
@@ -81,8 +82,10 @@ async function connectClient(client, button) {
 
 const settingsFocusables = () =>
   [...settingsPop.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')]
+    .filter((element) => !element.closest('[hidden]'))
 
 function closeSettings(restoreFocus = true) {
+  closePocketPairing(false)
   if (settingsPop.hidden) return
   settingsPop.hidden = true
   settingsBackdrop.hidden = true
@@ -138,7 +141,7 @@ $('#gear-toggle').addEventListener('click', async () => {
   $('#gear-toggle').setAttribute('aria-expanded', 'true')
   try {
     renderSettings(await api('/api/settings'))
-    await loadConnections()
+    await Promise.all([loadConnections(), refreshPocket()])
   } catch (e) {
     toast(e.message)
   }
@@ -177,6 +180,11 @@ document.addEventListener('mousedown', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (settingsPop.hidden) return
+  if (isPocketPairingOpen()) {
+    if (e.key === 'Escape') closePocketPairing()
+    else trapPocketFocus(e)
+    return
+  }
   if (e.key === 'Escape') return closeSettings()
   if (e.key !== 'Tab') return
   const items = settingsFocusables()
