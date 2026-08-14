@@ -1,0 +1,119 @@
+/* --------------------------------------------------------- the year view */
+
+.yearline { cursor: pointer; transition: color var(--m-ui) var(--ease), opacity var(--m-ui) var(--ease); }
+.yearline:hover { color: var(--text-1); opacity: 1; }
+
+.year-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
+.ym {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-1);
+}
+.ym-name {
+  font-family: var(--font-serif);
+  flex: 0 0 88px;
+  font-size: 14px;
+}
+.ym.future .ym-name { color: var(--text-3); }
+.ym.now .ym-name::after { content: "·"; color: var(--accent); margin-left: 6px; }
+.ym-body { flex: 1; min-width: 0; }
+.ym-hl { font-size: 13px; color: var(--text-3); text-wrap: pretty; padding: 1px 0; }
+.ym-quiet { font-size: 12.5px; color: var(--text-3); opacity: 0.6; font-style: italic; }
+
+/* A month you can open. The row used to be a dead end: a count rendered
+   as up to 28 identical dots and a sentence sliced mid-word. */
+button.ym {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  cursor: pointer;
+  transition: background var(--m-ui) var(--ease);
+}
+button.ym:hover { background: var(--surface-2); }
+button.ym:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.ym.quiet-band .ym-name { color: var(--text-3); }
+.ym-bar {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  overflow: hidden;
+  margin: 6px 0 5px;
+  max-width: 260px;
+}
+.ym-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.ym-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------- one month */
+
+.mo-back {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  margin: 0 0 var(--space-2) -8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.mo-back:hover { color: var(--text-1); }
+.mo-back:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+/* the month's rhythm: which of its weeks carried anything */
+.mo-weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 26px;
+  margin: var(--space-3) 0 var(--space-2);
+}
+.mo-weeks i {
+  flex: 0 0 22px;
+  height: var(--h);
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.28;
+  animation: week-rise var(--m-enter) var(--ease-out) both;
+}
+@keyframes week-rise { from { transform: scaleY(0.2); opacity: 0 } to { transform: scaleY(1) } }
+.mo-weeks i { transform-origin: bottom; }
+.mo-total { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; margin-bottom: var(--space-5); }
+
+.mo-space {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line-1);
+  animation: rise var(--m-enter) var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+.mo-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.mo-name { font-family: var(--font-serif); font-size: 15px; color: var(--text-1); }
+.mo-sum { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mo-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.mo-day {
+  flex: 0 0 20px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mo-text { flex: 1; min-width: 0; text-wrap: pretty; }
+.mo-amt { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }

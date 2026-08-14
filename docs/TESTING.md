@@ -30,6 +30,10 @@ runner and `node:assert`. No package.json, no runner install.
 
 - `test/desktop-runtime.test.mjs` — data-directory resolution, CLI path
   resolution for GUI launches, and the desktop fixed-port decision.
+- `test/page-modules.test.mjs` — the page is native ES modules under
+  `public/js/` (no bundler). Boot file stays small, styles.css only
+  `@import`s sheets, modules parse, stay under the landing cap, and
+  do not import each other in a cycle.
 
 ## Desktop smoke checklist
 

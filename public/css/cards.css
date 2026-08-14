@@ -1,0 +1,727 @@
+/* ---------------------------------------------------------- the spaces */
+
+.body-grid { display: flex; gap: var(--space-8); margin-top: var(--space-5); align-items: flex-start; }
+
+/* The rail: text only, appears once the page has grown enough to need it. */
+.rail {
+  flex: 0 0 auto;
+  position: sticky;
+  top: var(--space-8);
+  /* A sticky column taller than the window strands whatever is past the
+     fold: scrolling the page moves the page, not the rail. At thirty-one
+     spaces it is already 811px, so it carries its own scroll. */
+  max-height: calc(100vh - var(--space-8) * 2);
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: none;
+  flex-direction: column;
+  max-width: 150px;
+}
+.rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
+.rail a {
+  display: block;
+  padding: 2px 0;
+  line-height: 1.45;
+  color: var(--text-3);
+  text-decoration: none;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--m-ui) var(--ease);
+}
+.rail a:hover { color: var(--text-1); }
+.rail a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+
+.spaces { flex: 1; min-width: 0; display: flex; gap: var(--space-4); align-items: flex-start; }
+.col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+
+.space {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg);
+  background: var(--elevated);
+  box-shadow: var(--card-shadow);
+  padding: var(--space-5);
+  animation: materialize var(--m-enter) var(--ease-out) both;
+  transition: border-color var(--m-ui) var(--ease);
+}
+/* a door hints it opens: tone only, never a lift */
+.space:hover:not(.ghost) { border-color: var(--line-2); }
+.space:focus-visible { outline: none; border-color: var(--accent-edge); box-shadow: var(--focus-ring-field); }
+.dateline:focus-visible { outline: none; }
+.dateline:focus-visible::after { transform: scaleX(1); background: var(--accent); }
+
+/* entrance finished: stop the animation fill so FLIP glides can move it */
+.space.settled { animation: none; }
+
+/* The agent's touch is light: a sheen sweeps the card, the border warms. */
+.space.washed { animation: border-glow 900ms var(--ease); }
+
+/* navigation's lighter touch: border only, no sheen */
+/* the rail's landing light: a quiet accent ring that draws the eye, then lets go */
+.space.noted { animation: border-glow 1400ms var(--ease); }
+.space.washed::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 60%;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent, var(--accent-soft) 45%, rgba(61, 168, 220, 0.18) 50%, var(--accent-soft) 55%, transparent);
+  animation: sheen 900ms var(--ease-out) forwards;
+}
+@keyframes sheen { to { transform: translateX(270%); } }
+@keyframes border-glow {
+  0%, 35% { border-color: var(--accent-edge); box-shadow: 0 0 0 3px var(--accent-soft), var(--card-shadow); }
+  100% { border-color: var(--line-1); box-shadow: var(--card-shadow); }
+}
+
+/* the identity layer is serif: a journal that keeps itself */
+.space-name {
+  overflow-wrap: anywhere;
+  /* a card name that wraps breaks into even lines rather than leaving one
+     word stranded: "Move to Tallahassee", "Old apartment" */
+  text-wrap: balance;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin: 0 0 var(--space-4);
+}
+
+/* A space holding one short thing: the thing IS the card. The tick stays
+   out of the way until the card is under the cursor, so at rest this
+   reads as a sentence, not as a form. */
+.solo {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.solo-text {
+  overflow-wrap: anywhere;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  text-wrap: pretty;
+  transition: color var(--m-ui) var(--ease);
+}
+/* done says itself: the line rules through and recedes, no box to tick */
+.solo.done .solo-text {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 0.06em;
+  text-decoration-skip-ink: none;
+}
+.solo:hover .solo-text { color: var(--accent-ink, var(--text-1)); }
+.solo-sub {
+  margin-top: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.solo-sub .urgent { color: var(--bad-ink); }
+
+.block { margin-bottom: var(--space-5); }
+.block:last-child { margin-bottom: 0; }
+.block.arrive {
+  animation: materialize var(--m-struct) var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+
+/* things the agent makes condense into existence */
+@keyframes materialize {
+  from { opacity: 0; transform: translateY(5px); filter: blur(6px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+/* a ledger's newest line arrives with its total */
+.ledger-entry.entry-in { animation: materialize var(--m-enter) var(--ease-out) both; }
+
+/* the day you just marked ripples once */
+.streak-dots i.just-marked { animation: dot-mark 560ms var(--ease-pop); }
+@keyframes dot-mark {
+  0%   { transform: scale(0.3); box-shadow: 0 0 0 0 var(--accent-edge); }
+  55%  { transform: scale(1.35); box-shadow: 0 0 0 5px rgba(61, 168, 220, 0); }
+  100% { transform: none; box-shadow: 0 0 0 6px rgba(61, 168, 220, 0); }
+}
+
+.block-title {
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-bottom: var(--space-2);
+}
+
+/* list + reminder rows share the tick */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-1) 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.row:hover .tick { border-color: var(--accent-edge); }
+.row:active .tick { transform: scale(0.96); }
+
+.tick {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--elevated);
+  display: grid;
+  place-items: center;
+  transition: border-color var(--m-ui) var(--ease), background var(--m-ui) var(--ease), transform var(--m-press) var(--ease);
+}
+.tick svg { width: 11px; height: 11px; display: block; overflow: visible; }
+.tick path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+}
+.row.done .tick { background: var(--accent); border-color: var(--accent); }
+.row.done .tick path { animation: check-draw 260ms var(--ease-out) 40ms forwards; }
+.row.done.no-anim .tick path { stroke-dashoffset: 0; animation: none; }
+
+/* Native decoration follows every wrapped line and the active font metrics.
+   A positioned rule only knew the box's midpoint, so zoomed or wrapped text
+   could leave the strike floating between lines. */
+.row-text { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.row.done .row-text {
+  color: var(--text-3);
+  opacity: 0.75;
+  text-decoration-line: line-through;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 0.06em;
+  text-decoration-skip-ink: none;
+}
+
+@keyframes check-draw { to { stroke-dashoffset: 0; } }
+
+/* tracker */
+.tracker-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.tracker-count { font-variant-numeric: tabular-nums; }
+.tracker-count b { font-weight: 500; }
+.tracker-count.full b { color: var(--good-ink); }
+.tracker-unit { color: var(--text-3); font-size: 11.5px; }
+.meter {
+  position: relative;
+  height: 4px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width var(--m-struct) var(--ease-out);
+}
+.meter.full span { background: var(--hue-ok); }
+
+/* the quiet tail of a long list */
+.done-more {
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: var(--space-1) 0 0 calc(18px + var(--space-3));
+}
+
+/* ledger */
+.ledger-total {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--space-2);
+}
+.ledger-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 0;
+}
+.ledger-entry span:last-child { color: var(--text-2); white-space: nowrap; }
+.ledger-entry span:first-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* streak */
+.streak-line { display: flex; align-items: center; gap: var(--space-3); }
+.streak-count { font-variant-numeric: tabular-nums; }
+.streak-dots { display: flex; gap: 4px; }
+.streak-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+.streak-dots i.on { background: var(--accent); }
+/* today, still open: a quiet ring waiting to be filled */
+.streak-dots i.today { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
+/* dots pop in one by one when their card or block first arrives */
+.space.fresh .streak-dots i,
+.block.arrive .streak-dots i {
+  animation: dot-in 220ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+@keyframes dot-in {
+  from { opacity: 0; transform: scale(0.3); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* links inside cards: quiet, labeled by their host, never a raw url */
+.card-link {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-edge);
+  transition: border-color var(--m-ui) var(--ease);
+  word-break: break-all;
+}
+.card-link:hover { border-color: var(--accent-ink); }
+
+/* note */
+.note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; overflow-wrap: anywhere; }
+.note-text.clamp {
+  max-height: 132px;
+  overflow: hidden;
+  cursor: pointer;
+  -webkit-mask-image: linear-gradient(#000 55%, transparent);
+  mask-image: linear-gradient(#000 55%, transparent);
+}
+.note-text.clamp.open { max-height: none; -webkit-mask-image: none; mask-image: none; }
+
+/* ledger month line */
+.ledger-month { font-size: 11.5px; color: var(--text-2); margin-bottom: var(--space-2); font-variant-numeric: tabular-nums; }
+
+/* reminder emphasis */
+.row.reminder .row-text { color: var(--text-1); }
+.row.reminder.done .row-text { color: var(--text-3); }
+
+/* ----------------------------------------------------- hero + compact
+   Every space leads with its heartbeat; secondaries fold to one line. */
+
+.block.hero .ledger-total { font-size: 28px; }
+.block.hero .tracker-count b { font-size: 19px; }
+.block.hero .meter { height: 6px; }
+
+.c-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  font-size: 13px;
+}
+.c-title { color: var(--text-3); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mini-meter {
+  flex: 0 0 44px;
+  height: 3px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.mini-meter i { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-pill); }
+.streak-dots.mini { gap: 3px; }
+.streak-dots.mini i { width: 5px; height: 5px; }
+
+/* --------------------------------------------------------- the building
+   The dashed hollow frame is reserved for the moment a card is actually
+   being built. Content forms inside it, blurred and faint; when the dot
+   lands the frame inks in: dashes fade, content sharpens, bars draw. */
+
+.space::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--m-struct) var(--ease);
+}
+.space > * {
+  transition: opacity var(--m-struct) var(--ease-out), filter var(--m-struct) var(--ease-out);
+}
+.space.building {
+  border-color: transparent;
+  box-shadow: none;
+  /* it holds its place and waits — the entrance belongs to the landing */
+  animation: none;
+}
+.space.building::before { opacity: 1; }
+.space.building > * { opacity: 0.22; filter: blur(5px); }
+
+/* the mote lands and the card condenses out of that light */
+.space.forming { animation: form-in 620ms var(--ease-expo) both; }
+@keyframes form-in {
+  0%   { transform: scale(0.97); filter: blur(6px); }
+  100% { transform: none; filter: blur(0); }
+}
+.space.forming > * { animation: form-content 480ms var(--ease-out) 80ms both; }
+@keyframes form-content {
+  from { opacity: 0.22; filter: blur(5px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+
+.ghost-out {
+  opacity: 0 !important;
+  height: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+  overflow: hidden;
+  transition: opacity var(--m-depth) var(--ease), height var(--m-struct) var(--ease-expo),
+    margin-bottom var(--m-struct) var(--ease-expo), padding var(--m-struct) var(--ease-expo);
+}
+
+/* ---------------------------------------------------- talking to a space */
+
+.focus-capture {
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+  font-size: 14px;
+  max-width: none;
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------ resting spaces
+   The year accumulates; the page doesn't. Quiet spaces rest down here. */
+
+.resting { max-width: 640px; margin-top: var(--space-9); }
+.resting:empty { margin: 0; }
+/* ------------------------------------------------- the foot of the page
+   A count, not a ledger. Search already finds any of these by name, so what
+   is left for this section to do is reassure you nothing was thrown away —
+   and reassurance needs a number. Opening one gives the month grouping the
+   old rows were spelling out one row at a time. */
+.rest-fold {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-1);
+}
+.rest-grp {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.rest-grp:hover, .rest-grp.on { color: var(--text-1); }
+.rest-grp:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.rest-grp { position: relative; }
+.rest-grp::after { content: ""; position: absolute; inset: -7px -8px; }
+.rest-n { font-variant-numeric: tabular-nums; color: var(--text-3); }
+.rest-grp.on .rest-n { color: var(--accent-ink); }
+
+/* it grows open rather than appearing: 0fr to 1fr animates, height does not */
+.rest-open {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--m-struct) var(--ease-expo);
+}
+.rest-open > div { min-height: 0; overflow: hidden; }
+.rest-open.on { grid-template-rows: 1fr; }
+
+.rest-month { display: flex; gap: var(--space-4); align-items: baseline; padding: 5px 0; }
+.rest-month:first-child { padding-top: var(--space-3); }
+.rest-mlabel { flex: 0 0 66px; font-size: 11.5px; color: var(--text-3); }
+.rest-names { flex: 1 1 auto; min-width: 0; text-wrap: pretty; }
+.rest-name {
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.rest-name:hover { color: var(--text-1); }
+.rest-name:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.rest-name::after { content: " \00b7 "; color: var(--line-2); }
+.rest-name:last-child::after { content: ""; }
+
+/* ------------------------------------------------------- the focus view */
+
+.focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(26, 24, 21, 0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in var(--m-depth) var(--ease) both;
+}
+:root[data-theme="dark"] .focus-backdrop { background: rgba(0, 0, 0, 0.5); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.focus-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 71;
+  display: grid;
+  place-items: center;
+  padding: 5vh 20px;
+  /* only the card scrolls: a scrolling wrap would carry the card past its
+     own frame and show a second scrollbar */
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.focus-card {
+  cursor: auto;
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* the page behind must not take over once this reaches its end */
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-xl, 20px);
+  box-shadow: 0 18px 50px -12px rgba(15, 12, 8, 0.25), 0 4px 12px -4px rgba(15, 12, 8, 0.1);
+  padding: var(--space-8);
+  animation: focus-in var(--m-struct) var(--ease-expo) both;
+}
+:root[data-theme="dark"] .focus-card {
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.6), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+}
+/* a quiet scrollbar, in the page's own ink rather than the browser's */
+.focus-card::-webkit-scrollbar { width: 10px; }
+.focus-card::-webkit-scrollbar-track { background: transparent; }
+.focus-card::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.focus-card::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
+
+/* while a card is open the page beneath holds still */
+:root.modal-open, :root.modal-open body { overflow: hidden; }
+
+.focus-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
+@keyframes focus-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+.space { cursor: pointer; }
+.focus-card .block { margin-bottom: var(--space-6); }
+
+/* ------------------------------------------------------- the celebration */
+
+.spark { position: fixed; pointer-events: none; z-index: 50; }
+.spark .ring {
+  position: absolute;
+  left: -22px;
+  top: -22px;
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-pill);
+  opacity: 0;
+  animation: ring-out 520ms var(--ease-out) forwards;
+}
+@keyframes ring-out {
+  0%   { opacity: 0.9; transform: scale(0.35); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.spark i {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  opacity: 0;
+  animation: spark-out 620ms var(--ease-out) forwards;
+}
+@keyframes spark-out {
+  0%   { opacity: 1; transform: translate(0, 0) scale(0.6); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1); }
+}
+
+.tick.pop, .meter.pop { animation: send-pop 520ms var(--ease-expo); }
+@keyframes send-pop {
+  0%   { transform: scale(1); }
+  16%  { transform: scale(0.84); }
+  44%  { transform: scale(1.09); }
+  68%  { transform: scale(0.97); }
+  100% { transform: none; }
+}
+
+@keyframes wash {
+  0%   { background-color: var(--accent-soft); }
+  100% { background-color: var(--elevated); }
+}
+
+/* ------------------------------------------------------ the opened card */
+/* A focused space gains resolution, not just room. */
+
+.focus-meta {
+  margin: calc(var(--space-3) * -1) 0 var(--space-5);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* a year of days: keeping-it-up made visible */
+.heatmap {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+.hm-week { display: flex; flex-direction: column; gap: 3px; }
+.hm-week i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--line-1);
+  transition: background var(--m-ui) var(--ease);
+}
+.hm-week i.on { background: var(--accent); }
+.hm-week i.future { background: transparent; }
+.hm-week i.pad { background: transparent; }
+.hm-months {
+  position: relative;
+  height: 13px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.hm-months span { position: absolute; left: calc(var(--w) * 12px); }
+.hm-legend {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.hm-legend b { color: var(--text-1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* money by month, so the shape of a year is readable */
+.lm { margin-top: var(--space-5); }
+.lm:first-of-type { margin-top: var(--space-4); }
+.lm-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+.lm-name { color: var(--text-2); letter-spacing: 0.01em; }
+.lm-sum { color: var(--text-1); font-variant-numeric: tabular-nums; }
+.lm-bar {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  margin: 6px 0 var(--space-3);
+  overflow: hidden;
+}
+.lm .ledger-entry { color: var(--text-2); }
+.lm-bar span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0.55;
+  transition: width var(--m-enter) var(--ease-out);
+}
+
+/* am I ahead or behind, in words */
+.pace {
+  margin-top: var(--space-2);
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.pace.behind { color: var(--bad-ink); }
+
+/* the done pile folds away so open work is the page */
+.done-fold { margin-top: var(--space-3); }
+.done-fold summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-3);
+  list-style: none;
+  padding: 2px 0;
+  transition: color var(--m-ui) var(--ease);
+}
+.done-fold summary::-webkit-details-marker { display: none; }
+.done-fold summary:hover { color: var(--text-2); }
+.done-fold[open] summary { margin-bottom: var(--space-2); }
+
+/* prose wants a measure, not a card width */
+.focus-card .note-text {
+  max-width: 62ch;
+  line-height: 1.62;
+  text-wrap: pretty;
+}
+
+/* A small whole target counts rather than fills: one dot per unit, filled
+   as it is met. Reads as "none yet" at zero, where a bar reads as broken. */
+.pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: var(--space-2);
+}
+.pips i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--line-1);
+  transition: background var(--m-ui) var(--ease);
+}
+.pips i.on { background: var(--accent); }
+.pips.full i.on { background: var(--good-ink, var(--accent)); }
+/* they fill in sequence when the card first arrives */
+.space.fresh .pips i.on,
+.block.arrive .pips i.on,
+.space.forming .pips i.on {
+  animation: pip-in 260ms var(--ease-out) both;
+  animation-delay: calc(var(--i) * 26ms);
+}
+@keyframes pip-in {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
