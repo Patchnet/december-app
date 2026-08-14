@@ -9,12 +9,13 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
 import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
+import { createPocketSync } from './lib/pocket-sync.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const PORT = Number(process.env.PORT || 3008)
@@ -46,6 +47,8 @@ const MIME = {
 
 await settle.writeMcpConfig()
 await rolloverIfNeeded() // the turn of the year happens before anything else
+const pocket = await createPocketSync({ dataDir: DATA_DIR })
+observePersists(() => pocket.queuePage(project()))
 watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
 let surfacingScheduled = false
@@ -67,6 +70,16 @@ const scheduleSurfacing = () => {
 scheduleSurfacing()
 // captures caught mid-restart must not strand: settle whatever waited
 if (hasInbox()) scheduleSettle(5000)
+
+async function pullPocketCaptures() {
+  const result = await pocket.pullCaptures(({ id, text, at }) => addCapture(text, undefined, { id, at }))
+  if (result.imported) scheduleSettle()
+  return result
+}
+
+if (pocket.status().paired) void pocket.queuePage(project())
+void pullPocketCaptures()
+const pocketTimer = setInterval(() => void pullPocketCaptures(), 10_000)
 
 // the year is too precious for one copy: a dated snapshot every day, 30 kept
 function backup() {
@@ -189,6 +202,24 @@ const server = createServer(async (req, res) => {
   try {
     if (path === '/api/state' && req.method === 'GET') {
       return json(res, 200, project(settleStatus()))
+    }
+
+    if (path === '/api/pocket' && req.method === 'GET') {
+      return json(res, 200, pocket.status())
+    }
+    if (path === '/api/pocket/pair' && req.method === 'POST') {
+      const paired = await pocket.pair()
+      await pocket.queuePage(project(settleStatus()))
+      await pocket.flush()
+      return json(res, 201, { ...paired, ...pocket.status() })
+    }
+    if (path === '/api/pocket/sync' && req.method === 'POST') {
+      await pocket.queuePage(project(settleStatus()))
+      const [status, captures] = await Promise.all([pocket.flush(), pullPocketCaptures()])
+      return json(res, 200, { ...status, imported: captures?.imported || 0 })
+    }
+    if (path === '/api/pocket/disconnect' && req.method === 'POST') {
+      return json(res, 200, await pocket.disconnect())
     }
 
     // Capture lands instantly; the settle pass runs behind you.
@@ -475,6 +506,7 @@ function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
   clearInterval(backupTimer)
+  clearInterval(pocketTimer)
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }
