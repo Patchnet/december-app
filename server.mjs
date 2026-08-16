@@ -11,6 +11,7 @@ import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
 import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
+import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
@@ -489,6 +490,11 @@ const server = createServer(async (req, res) => {
     // The assistant seam: MCP adapters (and anything else) call tools here.
     if (path === '/api/tools' && req.method === 'GET') {
       return json(res, 200, { tools: TOOLS })
+    }
+    // The manners that govern those tools, read live so a connected assistant
+    // is never held to a copy older than the server it is writing to.
+    if (path === '/api/manners' && req.method === 'GET') {
+      return json(res, 200, await manners())
     }
     if (path === '/api/tool' && req.method === 'POST') {
       const { name, arguments: args } = await readBody(req)

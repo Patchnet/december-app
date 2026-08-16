@@ -20,6 +20,22 @@ async function fetchTools() {
   return toolsCache
 }
 
+// House manners travel with the connection. A client that knows nothing about
+// skills still learns how to behave in someone's December, and it learns it
+// from the running server rather than from a file copied months ago. December
+// being down is not a handshake failure: connect without them and the tools,
+// which carry their own guidance, still work.
+async function fetchInstructions() {
+  try {
+    const res = await fetch(`${BASE}/api/manners`)
+    if (!res.ok) return undefined
+    const { manners } = await res.json()
+    return manners || undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function forwardTool(name, args) {
   let res
   try {
@@ -53,6 +69,7 @@ rl.on('line', async (line) => {
   const { id, method, params } = req
   try {
     if (method === 'initialize') {
+      const instructions = await fetchInstructions()
       send({
         jsonrpc: '2.0',
         id,
@@ -60,6 +77,7 @@ rl.on('line', async (line) => {
           protocolVersion: params?.protocolVersion || '2025-06-18',
           capabilities: { tools: {} },
           serverInfo: SERVER_INFO,
+          ...(instructions ? { instructions } : {}),
         },
       })
     } else if (method === 'notifications/initialized' || method === 'notifications/cancelled') {
