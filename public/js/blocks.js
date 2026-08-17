@@ -65,7 +65,7 @@ function linkify(raw) {
 
 // provenance: a change can show the words it came from
 const srcTitle = (src) => {
-  const t = src && state.sources?.[src]
+  const t = src && page.state.sources?.[src]
   return t ? ` title="from: ${esc(t)}"` : ''
 }
 

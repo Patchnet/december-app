@@ -91,3 +91,18 @@ test('page modules have no import cycles', () => {
   }
   for (const node of graph.keys()) visit(node, [])
 })
+
+test('no page module references a bare `state.` (use page.state)', () => {
+  // The refactor moved shared state onto `page`. A leftover bare `state.foo`
+  // is a ReferenceError that only fires once real content renders — invisible
+  // on an empty page, fatal on a populated one. Guard the whole family.
+  const files = readdirSync(jsDir).filter((f) => f.endsWith('.js'))
+  for (const f of files) {
+    const src = read(join(jsDir, f))
+    for (const [i, line] of src.split(/\r?\n/).entries()) {
+      const code = line.replace(/\/\/.*$/, '')
+      const bad = /(^|[^.\w])state\.(sources|spaces|captures|settle|activity|year|ask|suggestions|surfaced|lessons|canUndo|carryover|pocket)\b/.exec(code)
+      assert.ok(!bad, `${f}:${i + 1} references bare \`state.\` — use \`page.state.\``)
+    }
+  }
+})
