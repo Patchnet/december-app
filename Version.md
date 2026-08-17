@@ -1,11 +1,19 @@
 ---
 enabled: true
-current: 0.9.0
+current: 0.9.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.9.1 - 2026-08-14
+
+Fix a fatal boot crash. The page modularization left one bare `state`
+reference in the block renderer, so every page with real content died with
+"could not load: state is not defined" — invisible on an empty page, which
+is why it shipped. One line, plus a static guard that fails on any bare
+`state.` across the page modules.
 
 ## 0.9.0 - 2026-08-14
 
