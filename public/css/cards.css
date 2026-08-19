@@ -18,6 +18,10 @@
   max-width: 150px;
 }
 .rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
+/* Portrait tablets and phones have no room beside the cards. This hide used
+   to live in page.css, which loads BEFORE this sheet — so the rule above
+   won and the rail squeezed every card to two-thirds width on a phone. */
+@media (max-width: 900px) { .rail.on { display: none; } }
 .rail a {
   display: block;
   padding: 2px 0;
