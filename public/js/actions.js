@@ -198,16 +198,6 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // the dateline's stepper: straight from today into a neighbouring month
-  const ms = e.target.closest('[data-month-step]')
-  if (ms) {
-    const shown = page.monthShown && document.querySelector('.month-card') ? page.monthShown : null
-    const [yy, mm] = (shown || `${page.state.year.year}-${String(page.state.year.month + 1).padStart(2, '0')}`).split('-').map(Number)
-    const to = mm + Number(ms.dataset.monthStep)
-    if (to >= 1 && to <= 12) openMonth(`${yy}-${String(to).padStart(2, '0')}`)
-    return
-  }
-
   // a month on the year opens; the month walks back to it
   const mo = e.target.closest('[data-month]')
   if (mo) {
