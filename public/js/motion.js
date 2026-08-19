@@ -107,10 +107,13 @@ function travelDot(fromRect, toEl, then, hue) {
     el.style.left = `${x0}px`
     el.style.top = `${y0}px`
     document.body.appendChild(el)
+    // the settle curve, not expo: tokens.css says it itself — expo "whips
+    // out of the gate and reads as a snap". Filing should leave the sentence
+    // gently and arrive gently; the blur already carries the speed.
     const anim = el.animate(arc(p.blur), {
-      duration: 840,
+      duration: 880,
       delay: p.delay,
-      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      easing: 'cubic-bezier(0.32, 0.72, 0, 1)',
       fill: 'forwards',
     })
     anim.addEventListener('finish', () => el.remove())
@@ -154,6 +157,14 @@ function withFlip(fn) {
   for (const el of document.querySelectorAll('#spaces .space, #rail, #resting')) {
     before.set(el, el.getBoundingClientRect())
   }
+  // And the rows inside a card. A render rebuilds a card's HTML, so the row
+  // you just ticked is a new element by the time it reaches the done tail —
+  // measured by element it would never match, and it snapped there while
+  // the card around it glided. Keyed by item id, it glides with the rest.
+  const rowsBefore = new Map()
+  for (const row of document.querySelectorAll('#spaces .row[data-item]')) {
+    rowsBefore.set(`${row.dataset.block}/${row.dataset.item}`, row.getBoundingClientRect())
+  }
   fn()
   const moves = []
   for (const [el, a] of before) {
@@ -164,6 +175,14 @@ function withFlip(fn) {
     const dx = a.left - b.left
     const dy = a.top - b.top
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([el, dx, dy])
+  }
+  for (const row of document.querySelectorAll('#spaces .row[data-item]')) {
+    const a = rowsBefore.get(`${row.dataset.block}/${row.dataset.item}`)
+    if (!a) continue // a new row arrives on its own entrance
+    const b = row.getBoundingClientRect()
+    const dx = a.left - b.left
+    const dy = a.top - b.top
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([row, dx, dy])
   }
   if (!moves.length) return
   // Settling reads as a settling, not a snap: the page resolves from the
