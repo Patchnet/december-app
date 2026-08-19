@@ -1091,6 +1091,76 @@ a.retire-link:hover { color: var(--accent-ink); }
   .co-nudge-btn, .search-hit, .search-none, .rail-area { animation: none; }
 }
 
+/* ========================================================== the goals
+   What you said you would reach this year, over the day's cards. Counts,
+   not bars: the card already has the bar. Each goal is its number in the
+   page's serif, the name above, and one quiet line saying whether the year
+   is ahead of you. It wraps; there is no cap. Absent until there is one. */
+.goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-8);
+  margin: var(--space-2) 0 0;
+  padding: 0 0 var(--space-4);
+  border-bottom: 1px solid var(--line-1);
+}
+.goal {
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  max-width: 220px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.goal:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.goal-name {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--m-ui) var(--ease);
+}
+.goal:hover .goal-name { color: var(--text-1); }
+.goal-count {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.goal-count small {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-left: 5px;
+  letter-spacing: 0;
+}
+.goal.met .goal-count { color: var(--good-ink); }
+.goal-pace {
+  font-size: 10.5px;
+  letter-spacing: 0.035em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.goal.behind .goal-pace { color: var(--bad-ink); }
+.goal.met .goal-pace { color: var(--good-ink); }
+/* the delta floats off the number, as it does on a card */
+.goal-count .delta { font-family: var(--font-sans); letter-spacing: 0; }
+:root.booting .goals { animation: rise var(--m-enter) var(--ease-out) 200ms both; }
+@media (prefers-reduced-motion: reduce) { :root.booting .goals { animation: none; } }
+@media (max-width: 720px) {
+  .goals { gap: var(--space-3) var(--space-6); }
+  .goal { min-width: 80px; }
+}
+
 /* ==========================================================  the stage
    The top of the page is one region with a fixed height, not a stack that
    grows. It holds whichever moment is current — a question, what is

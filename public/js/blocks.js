@@ -453,4 +453,4 @@ function spaceInner(space, full = false) {
       })
       .join('')}`
 }
-export { clockOf, whenPhrase, words, spaceInner }
+export { clockOf, whenPhrase, words, spaceInner, heroId }

@@ -12,6 +12,10 @@ const streak = (count, span) => {
   return out
 }
 
+// a goal is a target laid over a block; the page shows these over the cards
+const y = new Date().getFullYear()
+const goal = (target, unit, moved = 0) => ({ target, unit, from: `${y}-01-01`, by: `${y}-12-31`, base: 0, setAt: day(230), movedAt: d(moved) })
+
 const state = {
   captures: [],
   lessons: ['groceries go under Food, not Housing', 'reading counts audiobooks'],
@@ -22,7 +26,7 @@ const state = {
   updatedAt: d(0),
   spaces: [
     { id: id(), name: 'Running', createdAt: d(280), updatedAt: d(0), blocks: [
-      { id: id(), type: 'tracker', title: 'Miles by December', current: 132, target: 200, unit: 'miles', period: 'year' },
+      { id: id(), type: 'tracker', title: 'Miles by December', current: 132, target: 200, unit: 'miles', period: 'year', goal: goal(200, 'miles') },
       { id: id(), type: 'streak', title: 'Ran today', dates: streak(84, 220) },
     ]},
     { id: id(), name: 'Housing expenses', createdAt: d(300), updatedAt: d(1), blocks: [
@@ -34,7 +38,7 @@ const state = {
       ].map(([l, a, ago]) => ({ id: id(), label: l, amount: a, at: d(ago) })) },
     ]},
     { id: id(), name: 'Reading', createdAt: d(290), updatedAt: d(2), blocks: [
-      { id: id(), type: 'tracker', title: 'Books this year', current: 9, target: 12, unit: 'books', period: 'year' },
+      { id: id(), type: 'tracker', title: 'Books this year', current: 9, target: 12, unit: 'books', period: 'year', goal: goal(12, 'books', 9) },
       { id: id(), type: 'list', title: 'Up next', items: [
         { id: id(), text: 'The Making of the Atomic Bomb', done: false },
         { id: id(), text: 'Piranesi', done: false },

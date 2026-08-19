@@ -6,6 +6,7 @@ import {
   renderAsk, renderRail, releaseHeld,
 } from './layout.js'
 import { renderCarryover, renderCarryoverNudge } from './year.js'
+import { renderGoals } from './goals.js'
 import { paintLetter } from './about.js'
 
 export function renderStage() {
@@ -33,6 +34,7 @@ export function render() {
   const targets = travelTargets()
   const held = new Set([...targets.values(), ...heldSpaces()])
   withFlip(() => {
+    renderGoals()
     renderSpaces(held)
     renderInbox(targets)
     renderActivity()
