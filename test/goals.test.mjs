@@ -105,3 +105,35 @@ test('a tracker created with goal: true carries the goal from its first line', a
   await core.createBlock(space.id, { type: 'tracker', title: 'Shoes', current: 1, target: 3 })
   assert.equal(core.agentView().goals.length, 1)
 })
+
+test('the conversion motion: a goal moves carriers without changing where it stands', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goals-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Running')
+  await core.createBlock(space.id, { type: 'tracker', title: 'Miles by December', current: 132, target: 200, unit: 'miles', goal: true })
+  const ledger = await core.createBlock(space.id, { type: 'ledger', title: '', unit: 'mi', entries: [{ label: 'Monday', amount: 4 }] })
+
+  const out = await core.moveGoal({ space: 'Running', toBlockId: ledger.blockId })
+  assert.equal(out.absorbed, true, 'the mirroring tracker is absorbed')
+  assert.equal(out.goal.current, 132, 'standing unchanged: 128 carried + 4 already logged')
+  const sp = core.project().spaces[0]
+  assert.equal(sp.blocks.length, 1, 'one counter, not two')
+  assert.equal(sp.blocks[0].title, 'Miles by December', 'the tracker title passes to the new carrier')
+
+  // progress keeps flowing through the new carrier's own verb
+  await core.updateBlock(ledger.blockId, { entry_label: 'Tuesday', entry_amount: 6 }, 'ledger', 'log_amount')
+  const [g] = core.agentView().goals
+  assert.equal(g.current, 138)
+  assert.equal(g.target, 200)
+
+  // a carrier holding the person's words is never absorbed
+  const streak = await core.createBlock(space.id, { type: 'streak', title: 'Ran', dates: ['2026-08-01'] })
+  await core.moveGoal({ space: 'Running', toBlockId: streak.blockId })
+  const after = core.project().spaces[0]
+  assert.equal(after.blocks.length, 2, 'the ledger stays: it holds entries')
+  assert.equal(after.blocks.find((b) => b.type === 'ledger').goal, undefined)
+  // 138 stood; the streak counts 1 day; 137 rides as carried
+  assert.equal(after.blocks.find((b) => b.type === 'streak').goal.current, 138)
+
+  await assert.rejects(core.moveGoal({ space: 'Running', toBlockId: 'nope' }), /unknown toBlockId/)
+})
