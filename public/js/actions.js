@@ -25,6 +25,19 @@ document.addEventListener('click', async (e) => {
       btn.dataset.confirmed = '1'
       btn.click()
       btn.dataset.confirmed = ''
+      return
+    }
+    // a goal-only space has no card to click through: archive it directly,
+    // and the send-off lands on its row in the band — its place on the page
+    if (!reduced) celebrateSpace(document.querySelector(`#goals [data-goal-open="${id}"]`))
+    try {
+      const out = await api('/api/finish', { spaceId: id, finished: true })
+      page.state = out.state
+      page.focusId = null
+      hooks.render()
+      toast(`${out.name} archived`)
+    } catch (err) {
+      toast(err.message)
     }
     return
   }
