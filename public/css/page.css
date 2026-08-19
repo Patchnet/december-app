@@ -378,6 +378,8 @@
 .activity.faded { animation: none; opacity: 0; pointer-events: none; }
 .chips { transition: opacity 600ms var(--ease); }
 .chips.retired { animation: none; opacity: 0; pointer-events: none; }
+/* a chip was picked: the row's job is done, nothing in it may fire again */
+.chips.spent { pointer-events: none; }
 
 /* while the person is composing or things are settling, everything under
    their line steps back: no gray text competing with their own words.

@@ -114,7 +114,12 @@ document.addEventListener('click', async (e) => {
   // suggestion chip: the sentence files as if typed; the set retires with it
   const sug = e.target.closest('[data-suggest]')
   if (sug) {
+    // a picked chip is spent: a second click inside the send window would
+    // file the same sentence twice (and a doubled "went to the gym" would
+    // move a goal by two)
+    if (sug.classList.contains('picked')) return
     sug.classList.add('picked')
+    sug.closest('.chips')?.classList.add('spent')
     const text = sug.dataset.suggest
     setTimeout(async () => {
       try {
