@@ -1,11 +1,36 @@
 ---
 enabled: true
-current: 0.10.0
+current: 0.11.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.11.0 - 2026-08-19
+
+The year gets a voice on the page: goals. A goal is a target laid over a
+block that already exists — a tracker, ledger, streak, or list — never a
+second counter, so logging a run moves the goal by derivation and there
+is no update step for anyone to forget. Goals live in a band inside the
+stage: serif counts over hairline meters whose tick marks where the year
+stands today, so ahead or behind reads before any words. A space that is
+nothing but its goal lives in the band alone; click it for the full
+card. The whole lifecycle is language — set ("my goal this year is 200
+miles"), date ("by October"), convert ("log my runs individually" moves
+the goal onto the ledger without changing where it stands), lift ("drop
+that goal"), and the engine reads goals first in its view with staleness
+counted in quiet days.
+
+Motion joined up: rows glide to the done tail when a list re-sorts, the
+filing mote leaves on the settle curve, the done fold folds instead of
+popping, corner tools exit with a quiet fade, and provenance shows in
+the page's own hand instead of the OS tooltip. And a round of fixes from
+actually living in it: the rail no longer squeezes phone layouts, ticked
+reminders leave the card, reopened-empty spaces say "nothing open",
+provider marks read in both themes, done undated reminders reach the
+month record, and a double-clicked chip files once, not twice.
+
 
 ## 0.10.0 - 2026-08-18
 
