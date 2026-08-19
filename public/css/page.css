@@ -1101,9 +1101,28 @@ a.retire-link:hover { color: var(--accent-ink); }
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3) var(--space-8);
-  margin: var(--space-2) 0 0;
-  padding: 0 0 var(--space-4);
-  border-bottom: 1px solid var(--line-1);
+  transition: opacity var(--m-depth) var(--ease);
+}
+/* Inside the stage the band is anchored to the bottom edge, out of the
+   flow: the stage's height never changes, so the cards below never move
+   when a goal arrives. The cap keeps a very long list of goals from
+   climbing up over the writing line. */
+@media (min-width: 721px) {
+  .stage .goals {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--space-2);
+    z-index: 3;
+    max-height: calc(100% - 44px);
+    overflow: hidden;
+    align-content: flex-end;
+  }
+  /* a question owns the stage outright; the goals wait under it */
+  .stage[data-mode="asking"] .goals { opacity: 0; pointer-events: none; }
+}
+@media (max-width: 720px) {
+  .stage .goals { margin: var(--space-4) 0 0; }
 }
 .goal {
   display: flex;
@@ -1196,7 +1215,8 @@ a.retire-link:hover { color: var(--accent-ink); }
     top: calc(17px * 1.5 + var(--space-5));
     left: 0;
     right: 0;
-    bottom: 0;
+    /* the goals band below claims its own strip of the stage */
+    bottom: var(--goals-h, 0px);
     display: grid;
     overflow: hidden;
   }

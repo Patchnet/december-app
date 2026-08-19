@@ -155,6 +155,16 @@ document.addEventListener('click', async (e) => {
     return
   }
 
+  // a goal opens its space: the row is the space's presence on the page,
+  // so clicking it gives the full card — log, tick, pin, archive
+  const gopen = e.target.closest('[data-goal-open]')
+  if (gopen) {
+    e.preventDefault()
+    page.focusId = gopen.dataset.goalOpen
+    buildFocus()
+    return
+  }
+
   // rail: jump to a space — navigation gets the light touch (border only),
   // never the full agent-touched sheen
   const jump = e.target.closest('[data-jump]')

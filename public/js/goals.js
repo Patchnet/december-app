@@ -27,13 +27,24 @@ function paceWords(g) {
   return `${n} ${g.diff > 0 ? 'ahead' : 'behind'}`
 }
 
+/** A space that is nothing but its goal lives in the band, not the grid:
+    a card saying exactly what the row above it says is the same thing
+    twice. The moment it gains anything else, the card comes back. */
+function goalOnly(space) {
+  return space.blocks.length === 1 && !!space.blocks[0].goal
+}
+
 function renderGoals() {
   const band = $('#goals')
   if (!band) return
   const goals = liveGoals(page.state)
   band.hidden = goals.length === 0
+  // The band is out of the flow: it says how much of the stage's fixed
+  // height it needs, and the attention strip's own measuring does the rest.
+  const claim = () => $('#stage')?.style.setProperty('--goals-h', goals.length ? `${band.offsetHeight + 10}px` : '0px')
   if (!goals.length) {
     band.innerHTML = ''
+    claim()
     return
   }
   const before = new Map(liveGoals(page.prev).map((x) => [x.block.id, x.goal]))
@@ -45,13 +56,14 @@ function renderGoals() {
       // the space's name stands for its heartbeat; any other block says its own
       const label = block.id === heroId(space) || !block.title ? space.name : block.title
       const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
-      return `<a href="#" class="goal ${cls}" data-goal="${block.id}" data-jump="${space.id}" aria-label="${esc(label)}: ${esc(fmtAmount(g.current, g.unit))} of ${esc(fmtAmount(g.target, g.unit))}, ${esc(paceWords(g))}">
+      return `<a href="#" class="goal ${cls}" data-goal="${block.id}" data-goal-open="${space.id}" aria-label="${esc(label)}: ${esc(fmtAmount(g.current, g.unit))} of ${esc(fmtAmount(g.target, g.unit))}, ${esc(paceWords(g))}">
         <span class="goal-name">${esc(label)}</span>
         <span class="goal-count"><b>${esc(g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, ''))}</b><small>of ${esc(fmtAmount(g.target, g.unit))}</small></span>
         <span class="goal-pace">${esc(paceWords(g))}${esc(quiet)}</span>
       </a>`
     })
     .join('')
+  claim()
   // a goal that just moved says so where it moved; one that just landed is a moment
   for (const { block, goal: g } of goals) {
     const was = before.get(block.id)
@@ -68,4 +80,4 @@ function renderGoals() {
   }
 }
 
-export { renderGoals, liveGoals }
+export { renderGoals, liveGoals, goalOnly }
