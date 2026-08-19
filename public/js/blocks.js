@@ -63,10 +63,12 @@ function linkify(raw) {
   return out + esc(raw.slice(last))
 }
 
-// provenance: a change can show the words it came from
+// provenance: a change can show the words it came from. data-src, not
+// title — the OS tooltip is the one piece of chrome the page cannot
+// dress; receipt.js draws this in the page's own hand instead.
 const srcTitle = (src) => {
   const t = src && page.state.sources?.[src]
-  return t ? ` title="from: ${esc(t)}"` : ''
+  return t ? ` data-src="${esc(t)}"` : ''
 }
 
 const rowMarkup = (b, i) => `
@@ -459,4 +461,4 @@ function spaceInner(space, full = false) {
     ${meta ? `<div class="focus-meta">${esc(meta)}</div>` : ''}
     ${body}`
 }
-export { clockOf, whenPhrase, words, spaceInner }
+export { clockOf, whenPhrase, words, spaceInner, heroId }

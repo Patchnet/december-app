@@ -25,6 +25,19 @@ document.addEventListener('click', async (e) => {
       btn.dataset.confirmed = '1'
       btn.click()
       btn.dataset.confirmed = ''
+      return
+    }
+    // a goal-only space has no card to click through: archive it directly,
+    // and the send-off lands on its row in the band — its place on the page
+    if (!reduced) celebrateSpace(document.querySelector(`#goals [data-goal-open="${id}"]`))
+    try {
+      const out = await api('/api/finish', { spaceId: id, finished: true })
+      page.state = out.state
+      page.focusId = null
+      hooks.render()
+      toast(`${out.name} archived`)
+    } catch (err) {
+      toast(err.message)
     }
     return
   }
@@ -114,7 +127,12 @@ document.addEventListener('click', async (e) => {
   // suggestion chip: the sentence files as if typed; the set retires with it
   const sug = e.target.closest('[data-suggest]')
   if (sug) {
+    // a picked chip is spent: a second click inside the send window would
+    // file the same sentence twice (and a doubled "went to the gym" would
+    // move a goal by two)
+    if (sug.classList.contains('picked')) return
     sug.classList.add('picked')
+    sug.closest('.chips')?.classList.add('spent')
     const text = sug.dataset.suggest
     setTimeout(async () => {
       try {
@@ -152,6 +170,16 @@ document.addEventListener('click', async (e) => {
     } catch (err) {
       toast(err.message)
     }
+    return
+  }
+
+  // a goal opens its space: the row is the space's presence on the page,
+  // so clicking it gives the full card — log, tick, pin, archive
+  const gopen = e.target.closest('[data-goal-open]')
+  if (gopen) {
+    e.preventDefault()
+    page.focusId = gopen.dataset.goalOpen
+    buildFocus()
     return
   }
 

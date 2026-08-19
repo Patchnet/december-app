@@ -1,6 +1,7 @@
 import { $, esc, localDay, reduced, fmtAmount, page, hooks } from './session.js'
 import { clockOf, whenPhrase, words, spaceInner } from './blocks.js'
 import { markChange, markEdited, bump, travelDot, washCard, withFlip, drawMeters } from './motion.js'
+import { goalOnly } from './goals.js'
 
 // ------------------------------------------------------------ focus view
 
@@ -171,13 +172,20 @@ function renderInbox(targets = new Map()) {
   for (const cid of [...page.pending]) {
     if (ids.has(cid)) continue
     page.pending.delete(cid)
-    const targetEl = page.spaceEls.get(targets.get(cid))?.el
+    const targetEl =
+      page.spaceEls.get(targets.get(cid))?.el ||
+      // a goal-only space has no card; its row in the band is the place
+      document.querySelector(`#goals [data-goal-open="${targets.get(cid)}"]`)
     if (!targetEl || !origin) continue
     page.flying++
     setTimeout(() => {
       travelDot(origin, targetEl, () => {
-        unbuild(targetEl)
-        washCard(targetEl)
+        if (targetEl.classList.contains('goal')) {
+          bump(targetEl.querySelector('.goal-count'))
+        } else {
+          unbuild(targetEl)
+          washCard(targetEl)
+        }
         page.flying = Math.max(0, page.flying - 1)
         hooks.renderStage() // the stage was holding open for this
       })
@@ -344,7 +352,9 @@ function renderSpaces(delayWash = new Set()) {
   const box = $('#spaces')
   const seen = new Set()
   const now = Date.now()
-  const live = page.state.spaces.filter((s) => !s.finished)
+  // a space that is nothing but its goal is already on the page, in the
+  // band over the cards — a card for it would say the same thing twice
+  const live = page.state.spaces.filter((s) => !s.finished && !goalOnly(s))
   const finished = page.state.spaces.filter((s) => s.finished)
   const active = live.filter((s) => now - new Date(s.updatedAt) < DORMANT_MS || page.awake.has(s.id))
   const resting = live.filter((s) => !active.includes(s))
@@ -563,7 +573,7 @@ window.addEventListener('resize', resizeLayout)
 
 function renderRail() {
   const rail = $('#rail')
-  const on = page.state.spaces.filter((s) => !s.finished).length >= 6
+  const on = page.state.spaces.filter((s) => !s.finished && !goalOnly(s)).length >= 6
   rail.classList.toggle('on', on)
   if (!on) return
   const key = page.state.spaces.map((s) => s.id + s.name + s.finished).join()
@@ -571,7 +581,7 @@ function renderRail() {
   rail.dataset.key = key
   // A flat list of pointers, nothing more. Areas still exist on the cards;
   // the rail's one job is taking your eye to a card.
-  const live = page.state.spaces.filter((s) => !s.finished)
+  const live = page.state.spaces.filter((s) => !s.finished && !goalOnly(s))
   rail.innerHTML = live.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
 }
 

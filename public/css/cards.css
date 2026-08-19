@@ -693,6 +693,17 @@
 .done-fold summary::-webkit-details-marker { display: none; }
 .done-fold summary:hover { color: var(--text-2); }
 .done-fold[open] summary { margin-bottom: var(--space-2); }
+/* opening is a fold, not a pop: the content height glides from 0 to auto.
+   Browsers without ::details-content interpolation keep the instant open. */
+.done-fold {
+  interpolate-size: allow-keywords;
+}
+.done-fold::details-content {
+  height: 0;
+  overflow: clip;
+  transition: height var(--m-struct) var(--ease-settle), content-visibility var(--m-struct) allow-discrete;
+}
+.done-fold[open]::details-content { height: auto; }
 
 /* prose wants a measure, not a card width */
 .focus-card .note-text {

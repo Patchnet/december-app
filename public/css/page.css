@@ -378,6 +378,8 @@
 .activity.faded { animation: none; opacity: 0; pointer-events: none; }
 .chips { transition: opacity 600ms var(--ease); }
 .chips.retired { animation: none; opacity: 0; pointer-events: none; }
+/* a chip was picked: the row's job is done, nothing in it may fire again */
+.chips.spent { pointer-events: none; }
 
 /* while the person is composing or things are settling, everything under
    their line steps back: no gray text competing with their own words.
@@ -754,6 +756,27 @@
 }
 .delta.out { opacity: 0; }
 
+/* provenance, in the page's hand: the words a row came from */
+.receipt {
+  position: fixed;
+  z-index: 90;
+  max-width: 360px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(15, 12, 8, 0.08);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity var(--m-ui) var(--ease), transform var(--m-ui) var(--ease-out);
+}
+.receipt.on { opacity: 1; transform: none; }
+:root[data-theme="dark"] .receipt { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+
 /* reworded text says so, once */
 .edited {
   animation: edited-glow 1800ms var(--ease);
@@ -779,11 +802,25 @@
   gap: var(--space-2);
   opacity: 0;
   transform: translateY(-2px);
-  transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
   z-index: 2;
 }
+/* Leaving is not arriving backwards. The exit used to fall through to the
+   blanket .space > * transition (cards.css, for the mote-landing
+   condensation): opacity faded over 380ms while transform was not in that
+   list at all, so the icons SNAPPED up 2px mid-fade — the jitter. Two
+   classes deep so it outranks the blanket wherever the sheets load: the
+   exit is a quick fade with no travel, the transform snapping back only
+   once the fade has finished, invisibly. */
+.space .card-tools {
+  transition: opacity var(--m-ui) var(--ease), transform 0ms linear var(--m-ui);
+}
 .space:hover .card-tools,
-.space:focus-within .card-tools { opacity: 1; transform: none; }
+.space:focus-within .card-tools {
+  opacity: 1;
+  transform: none;
+  /* arriving keeps the little settle ride */
+  transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
+}
 .card-tool {
   display: grid;
   place-items: center;
@@ -1091,6 +1128,128 @@ a.retire-link:hover { color: var(--accent-ink); }
   .co-nudge-btn, .search-hit, .search-none, .rail-area { animation: none; }
 }
 
+/* ========================================================== the goals
+   What you said you would reach this year, over the day's cards. Counts,
+   not bars: the card already has the bar. Each goal is its number in the
+   page's serif, the name above, and one quiet line saying whether the year
+   is ahead of you. It wraps; there is no cap. Absent until there is one. */
+.goals[hidden] { display: none; }
+.goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-8);
+  transition: opacity var(--m-depth) var(--ease);
+}
+/* Inside the stage the band is anchored to the bottom edge, out of the
+   flow: the stage's height never changes, so the cards below never move
+   when a goal arrives. The cap keeps a very long list of goals from
+   climbing up over the writing line. */
+@media (min-width: 721px) {
+  .stage .goals {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--space-2);
+    z-index: 3;
+    max-height: calc(100% - 44px);
+    overflow: hidden;
+    align-content: flex-end;
+  }
+  /* a question owns the stage outright; the goals wait under it */
+  .stage[data-mode="asking"] .goals { opacity: 0; pointer-events: none; }
+}
+@media (max-width: 720px) {
+  .stage .goals { margin: var(--space-4) 0 0; }
+}
+.goal {
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  max-width: 220px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.goal:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.goal-name {
+  font-size: 11.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color var(--m-ui) var(--ease);
+}
+.goal:hover .goal-name { color: var(--text-1); }
+.goal-count {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 1.15;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.goal-count small {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-left: 5px;
+  letter-spacing: 0;
+}
+.goal.met .goal-count { color: var(--good-ink); }
+/* Where the goal stands, and where the year stands: a hairline meter, its
+   fill the count, its tick today. Fill past the tick reads as ahead and
+   short of it as behind, before any words. One length for every goal, so
+   the ticks keep one rhythm across the band. A met goal rests: green,
+   no tick left to chase. */
+.goal-meter {
+  position: relative;
+  display: block;
+  width: 112px;
+  height: 3px;
+  margin: 7px 0 5px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+.goal-meter b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0.85;
+  transition: width var(--m-struct) var(--ease-out);
+}
+.goal.met .goal-meter b { background: var(--hue-ok); opacity: 1; }
+.goal-meter i {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--line-2);
+}
+.goal-pace {
+  font-size: 10.5px;
+  letter-spacing: 0.035em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.goal.behind .goal-pace { color: var(--bad-ink); }
+.goal.met .goal-pace { color: var(--good-ink); }
+/* the delta floats off the number, as it does on a card */
+.goal-count .delta { font-family: var(--font-sans); letter-spacing: 0; }
+:root.booting .goals { animation: rise var(--m-enter) var(--ease-out) 200ms both; }
+@media (prefers-reduced-motion: reduce) { :root.booting .goals { animation: none; } }
+@media (max-width: 720px) {
+  .goals { gap: var(--space-3) var(--space-6); }
+  .goal { min-width: 80px; }
+}
+
 /* ==========================================================  the stage
    The top of the page is one region with a fixed height, not a stack that
    grows. It holds whichever moment is current — a question, what is
@@ -1102,9 +1261,18 @@ a.retire-link:hover { color: var(--accent-ink); }
   .stage {
     position: relative;
     /* sized to the tallest moment it must hold, not to a third of the
-       screen: everything below it starts this much sooner */
-    height: clamp(112px, 15vh, 150px);
+       screen: everything below it starts this much sooner. The goals band
+       adds its own strip on top of that: the strip belongs to the goals
+       alone, so the moment keeps its full budget and the chips and the
+       attention rows are never squeezed against the band. The height
+       changes only when the band's row count does — once, when the first
+       goal ever lands — and it grows as a glide, not a jump. */
+    height: calc(clamp(112px, 15vh, 150px) + var(--goals-h, 0px));
     margin-bottom: var(--space-2);
+    transition: height var(--m-struct) var(--ease-settle);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stage { transition: none; }
   }
   .stage .cwrap {
     position: absolute;
@@ -1125,7 +1293,8 @@ a.retire-link:hover { color: var(--accent-ink); }
     top: calc(17px * 1.5 + var(--space-5));
     left: 0;
     right: 0;
-    bottom: 0;
+    /* the goals band below claims its own strip of the stage */
+    bottom: var(--goals-h, 0px);
     display: grid;
     overflow: hidden;
   }
