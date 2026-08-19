@@ -152,17 +152,20 @@ async function openMonth(ym) {
     past ? `${past} moment${past === 1 ? '' : 's'}` : '',
     m.ahead ? `${m.ahead} scheduled` : '',
   ].filter(Boolean).join(' · ') || (future ? 'open' : '0 moments')
-  // the month walks: faint doors to its neighbours, January to December
+  // the month walks: one stepper pair, top right, January to December.
+  // Two lone ‹ glyphs — the stepper and the back-to-year link — stacked in
+  // the same corner read as the same control; the pair reads as a stepper.
   const [yy, mm] = m.month.split('-').map(Number)
   const pad = (n) => `${yy}-${String(n).padStart(2, '0')}`
-  const prev = mm > 1 ? pad(mm - 1) : ''
-  const next = mm < 12 ? pad(mm + 1) : ''
+  const step = (n, glyph, label) =>
+    n >= 1 && n <= 12
+      ? `<button class="mo-step" data-month="${pad(n)}" aria-label="${label}">${glyph}</button>`
+      : `<button class="mo-step" disabled aria-hidden="true">${glyph}</button>`
   $('#focus').innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card month-card">
-        ${prev ? `<button class="mo-nav prev" data-month="${prev}" aria-label="previous month">‹</button>` : ''}
-        ${next ? `<button class="mo-nav next" data-month="${next}" aria-label="next month">›</button>` : ''}
+        <div class="mo-steps">${step(mm - 1, '‹', 'previous month')}${step(mm + 1, '›', 'next month')}</div>
         <button class="mo-back" data-back-to-year>‹ ${esc(m.month.slice(0, 4))}</button>
         <h2 class="space-name">${esc(m.label)}</h2>
         <div class="mo-weeks" aria-hidden="true">${bars}</div>

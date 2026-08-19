@@ -127,24 +127,32 @@ button.ym.future .ym-name { color: var(--text-2); }
 .mo-line.ahead .mo-day { color: var(--accent-ink); font-weight: 500; }
 .mo-at { font-size: 11px; color: var(--text-3); white-space: nowrap; }
 
-/* the month walks: faint doors to its neighbours, far corners, up top.
-   They say their piece on hover; at rest they are almost not there. */
-.mo-nav {
+/* the month walks: one quiet stepper pair in the top right corner — a
+   pair reads as a stepper where a lone ‹ read as another back button.
+   At a bound the dead direction stays, disabled, so the pair keeps its
+   shape from January to December. */
+.mo-steps {
   position: absolute;
   top: var(--space-5);
+  right: var(--space-5);
+  display: flex;
+  gap: 2px;
+}
+.mo-step {
   font: inherit;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
-  padding: 2px 10px;
+  width: 28px;
+  height: 26px;
+  padding: 0 0 2px;
   border: 0;
   background: none;
   color: var(--text-3);
-  opacity: 0.4;
+  opacity: 0.55;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: opacity var(--m-ui) var(--ease), color var(--m-ui) var(--ease);
+  transition: opacity var(--m-ui) var(--ease), color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
 }
-.mo-nav.prev { left: var(--space-3); }
-.mo-nav.next { right: var(--space-3); }
-.mo-nav:hover { opacity: 1; color: var(--text-1); }
-.mo-nav:focus-visible { outline: none; box-shadow: var(--focus-ring-field); opacity: 1; }
+.mo-step:hover:not(:disabled) { opacity: 1; color: var(--text-1); background: var(--surface-1); }
+.mo-step:disabled { opacity: 0.18; cursor: default; }
+.mo-step:focus-visible { outline: none; box-shadow: var(--focus-ring-field); opacity: 1; }
