@@ -781,11 +781,25 @@
   gap: var(--space-2);
   opacity: 0;
   transform: translateY(-2px);
-  transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
   z-index: 2;
 }
+/* Leaving is not arriving backwards. The exit used to fall through to the
+   blanket .space > * transition (cards.css, for the mote-landing
+   condensation): opacity faded over 380ms while transform was not in that
+   list at all, so the icons SNAPPED up 2px mid-fade — the jitter. Two
+   classes deep so it outranks the blanket wherever the sheets load: the
+   exit is a quick fade with no travel, the transform snapping back only
+   once the fade has finished, invisibly. */
+.space .card-tools {
+  transition: opacity var(--m-ui) var(--ease), transform 0ms linear var(--m-ui);
+}
 .space:hover .card-tools,
-.space:focus-within .card-tools { opacity: 1; transform: none; }
+.space:focus-within .card-tools {
+  opacity: 1;
+  transform: none;
+  /* arriving keeps the little settle ride */
+  transition: opacity var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out);
+}
 .card-tool {
   display: grid;
   place-items: center;
