@@ -1,11 +1,22 @@
 ---
 enabled: true
-current: 0.9.1
+current: 0.10.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.10.0 - 2026-08-18
+
+Archive finished work without deleting it, and give the page a person.
+Done list items and one-shot reminders leave the dashboard; they stay in
+focus and in the Archive fold. A do-only card falls off when its last
+open task is checked. Spaces that hold notes or ledgers stay, and every
+card can still be archived on purpose. The corner gear is a letter —
+the first letter of About Me, or D — that opens an editable markdown
+profile and Settings. Settle and the visiting skill read that profile
+and may append standing facts.
 
 ## 0.9.1 - 2026-08-14
 
