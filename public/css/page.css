@@ -756,6 +756,27 @@
 }
 .delta.out { opacity: 0; }
 
+/* provenance, in the page's hand: the words a row came from */
+.receipt {
+  position: fixed;
+  z-index: 90;
+  max-width: 360px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-2);
+  background: var(--elevated);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(15, 12, 8, 0.08);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity var(--m-ui) var(--ease), transform var(--m-ui) var(--ease-out);
+}
+.receipt.on { opacity: 1; transform: none; }
+:root[data-theme="dark"] .receipt { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+
 /* reworded text says so, once */
 .edited {
   animation: edited-glow 1800ms var(--ease);
