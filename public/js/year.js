@@ -1,5 +1,6 @@
 import { $, esc, reduced, fmtAmount, toast, api, page, hooks } from './session.js'
 import { pop, bloom } from './motion.js'
+import { clockOf } from './blocks.js'
 
 // ------------------------------------------------------------- year view
 
@@ -40,8 +41,17 @@ function buildYear() {
       if (!future) run.push(m)
       else {
         flushQuiet()
+        const sched = data.scheduled || 0
         const last = m === 11 ? `<span class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</span>` : ''
-        rows.push(`<div class="ym future"><div class="ym-name">${name}</div><div class="ym-body">${last}</div></div>`)
+        // a future month holding something scheduled is a place, not a blank
+        rows.push(
+          sched
+            ? `<button class="ym future has" data-month="${y.year}-${String(m + 1).padStart(2, '0')}">
+                <div class="ym-name">${name}</div>
+                <div class="ym-body"><div class="ym-count">${sched} scheduled</div>${last}</div>
+              </button>`
+            : `<div class="ym future"><div class="ym-name">${name}</div><div class="ym-body">${last}</div></div>`
+        )
       }
       return
     }
@@ -54,7 +64,7 @@ function buildYear() {
         <div class="ym-name">${name}</div>
         <div class="ym-body">
           <div class="ym-bar"><span style="width:${pct}%"></span></div>
-          <div class="ym-count">${data.events} moment${data.events === 1 ? '' : 's'}</div>
+          <div class="ym-count">${data.events} moment${data.events === 1 ? '' : 's'}${data.scheduled ? ` · ${data.scheduled} ahead` : ''}</div>
           ${hl}
         </div>
       </${openable ? 'button' : 'div'}>`)
@@ -108,11 +118,18 @@ async function openMonth(ym) {
   } catch (err) {
     return toast(err.message)
   }
+  const future = ym > `${page.state.year.year}-${String(page.state.year.month + 1).padStart(2, '0')}`
   const peak = Math.max(1, ...m.weeks.map((w) => w.count))
   const bars = m.weeks
     .map((w) => `<i style="--h:${Math.max(8, Math.round((w.count / peak) * 100))}%" title="${w.from}–${w.to}: ${w.count}"></i>`)
     .join('')
   const day = (d) => Number(d.slice(8, 10))
+  const line = (l) =>
+    `<div class="mo-line${l.ahead ? ' ahead' : ''}"><span class="mo-day">${day(l.day)}</span><span class="mo-text">${esc(l.text)}</span>${
+      l.at ? `<span class="mo-at">${esc(clockOf(l.at))}</span>` : ''
+    }${l.repeat ? `<span class="mo-at">${esc(l.repeat)}</span>` : ''}${
+      l.amount != null ? `<span class="mo-amt">${esc(fmtAmount(l.amount, l.unit))}</span>` : ''
+    }</div>`
   const body = m.spaces.length
     ? m.spaces
         .map(
@@ -124,31 +141,51 @@ async function openMonth(ym) {
               [s.total != null ? fmtAmount(s.total, s.unit) : '', s.headline].filter(Boolean).join(' · ')
             )}</span>
           </div>
-          ${s.lines
-            .map(
-              (l) =>
-                `<div class="mo-line"><span class="mo-day">${day(l.day)}</span><span class="mo-text">${esc(l.text)}</span>${
-                  l.amount != null ? `<span class="mo-amt">${esc(fmtAmount(l.amount, l.unit))}</span>` : ''
-                }</div>`
-            )
-            .join('')}
+          ${s.lines.map(line).join('')}
         </div>`
         )
         .join('')
-    : '<div class="ym-quiet">nothing was written down this month</div>'
+    : `<div class="ym-quiet">${future ? 'nothing scheduled yet' : 'nothing was written down this month'}</div>`
+  // one honest count: what happened, what is coming, or both
+  const past = m.total - m.ahead
+  const counts = [
+    past ? `${past} moment${past === 1 ? '' : 's'}` : '',
+    m.ahead ? `${m.ahead} scheduled` : '',
+  ].filter(Boolean).join(' · ') || (future ? 'open' : '0 moments')
+  // the month walks: faint doors to its neighbours, January to December
+  const [yy, mm] = m.month.split('-').map(Number)
+  const pad = (n) => `${yy}-${String(n).padStart(2, '0')}`
+  const prev = mm > 1 ? pad(mm - 1) : ''
+  const next = mm < 12 ? pad(mm + 1) : ''
   $('#focus').innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card month-card">
+        ${prev ? `<button class="mo-nav prev" data-month="${prev}" aria-label="previous month">‹</button>` : ''}
+        ${next ? `<button class="mo-nav next" data-month="${next}" aria-label="next month">›</button>` : ''}
         <button class="mo-back" data-back-to-year>‹ ${esc(m.month.slice(0, 4))}</button>
         <h2 class="space-name">${esc(m.label)}</h2>
         <div class="mo-weeks" aria-hidden="true">${bars}</div>
-        <div class="mo-total">${m.total} moment${m.total === 1 ? '' : 's'}</div>
+        <div class="mo-total">${counts}</div>
         ${body}
       </article>
     </div>`
   page.yearOpen = true
+  page.monthShown = m.month
 }
+
+// with a month open, the year walks under the arrow keys
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  if (!document.querySelector('.month-card') || !page.monthShown) return
+  const tag = document.activeElement?.tagName
+  if (tag === 'TEXTAREA' || tag === 'INPUT') return
+  const [yy, mm] = page.monthShown.split('-').map(Number)
+  const to = e.key === 'ArrowLeft' ? mm - 1 : mm + 1
+  if (to < 1 || to > 12) return
+  e.preventDefault()
+  openMonth(`${yy}-${String(to).padStart(2, '0')}`)
+})
 
 // Clean Slate: every year is a new page. The old one is read aloud,
 // then each open thread gets its own card and its own yes or no.
