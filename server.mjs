@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import * as settle from './lib/settle.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
@@ -101,6 +101,7 @@ function exportMarkdown() {
   const p = project()
   const y = p.year.year
   const lines = [`# December ${y}`, '', `_Exported ${new Date().toISOString().slice(0, 10)}_`, '']
+  if (p.about?.markdown) lines.push('## About Me', '', p.about.markdown, '')
   for (const s of p.spaces) {
     lines.push(`## ${s.name}`, '')
     for (const b of s.blocks) {
@@ -401,7 +402,20 @@ const server = createServer(async (req, res) => {
       return json(res, 202, { scheduled: selectedEngineAvailable() })
     }
 
-    // The gear: which engine and model do the organizing.
+    if (path === '/api/about' && req.method === 'GET') {
+      return json(res, 200, project().about)
+    }
+    if (path === '/api/about' && req.method === 'POST') {
+      const body = await readBody(req)
+      try {
+        await writeAbout(body.markdown ?? body.text, body.mode || 'set', { manual: true })
+        return json(res, 200, project(settleStatus()))
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+
+    // Engine and model for the organizing pass.
     if (path === '/api/settings' && req.method === 'GET') {
       return json(res, 200, {
         ...getSettings(),

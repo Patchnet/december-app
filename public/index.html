@@ -12,6 +12,15 @@
 <body>
   <div class="shell" id="shell">
     <div class="settings-backdrop" id="settings-backdrop" hidden></div>
+    <section class="settings-pop about-pop" id="about-pop" role="dialog" aria-modal="true" aria-labelledby="about-title" tabindex="-1" hidden>
+      <h2 class="settings-title" id="about-title">About Me</h2>
+      <p class="about-lede">Who you are. December reads this before it files.</p>
+      <textarea class="about-md" id="about-md" spellcheck="true" autocomplete="off" aria-label="About Me markdown"></textarea>
+      <div class="about-actions">
+        <button type="button" class="btn-solid" id="about-save">Save</button>
+        <button type="button" class="btn-quiet" id="about-close">Close</button>
+      </div>
+    </section>
     <section class="settings-pop" id="settings-pop" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" hidden>
       <h2 class="settings-title" id="settings-title">Settings</h2>
 
@@ -140,13 +149,13 @@
         <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
         <div class="search-results" id="search-results"></div>
       </div>
-      <button class="theme-toggle" id="gear-toggle" aria-label="Settings" aria-expanded="false" aria-controls="settings-pop">
-        <svg class="gear" viewBox="0 0 14 14" aria-hidden="true">
-          <path d="M2 4.6h1.5 M7.5 4.6H12 M2 9.4h4.5 M10.5 9.4H12" />
-          <circle cx="5.5" cy="4.6" r="1.6" />
-          <circle cx="8.5" cy="9.4" r="1.6" />
-        </svg>
-      </button>
+      <div class="letter-wrap">
+        <button class="theme-toggle letter-toggle" id="letter-toggle" aria-label="About Me and Settings" aria-expanded="false" aria-haspopup="menu" aria-controls="letter-menu">D</button>
+        <div class="letter-menu" id="letter-menu" role="menu" hidden>
+          <button type="button" role="menuitem" id="open-about">About Me</button>
+          <button type="button" role="menuitem" id="open-settings">Settings</button>
+        </div>
+      </div>
     </header>
 
     <div class="body-grid">
@@ -154,7 +163,7 @@
       <main class="spaces" id="spaces"></main>
     </div>
 
-    <section class="resting" id="resting" aria-label="Quiet spaces"></section>
+    <section class="resting" id="resting" aria-label="Archive and quiet spaces"></section>
   </div>
 
   <div id="focus"></div>

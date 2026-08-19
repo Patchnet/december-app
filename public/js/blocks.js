@@ -240,16 +240,15 @@ const FULL = {
 }
 
 const RENDER = {
-  // Open items in full; the done pile compresses to its two most recent.
-  // The focused view shows the whole year.
+  // Live cards show only open work. Done rows stay in storage and in focus.
   list: (b, full) => {
     const open = b.items.filter((i) => !i.done)
     const done = b.items.filter((i) => i.done).sort((a, z) => (z.doneAt || '').localeCompare(a.doneAt || ''))
-    const shown = [...open, ...(full ? done : done.slice(0, 2))]
-    const more = !full && done.length > 2 ? `<div class="done-more">${done.length - 2} more done</div>` : ''
+    if (!full && open.length === 0) return ''
+    const shown = [...open, ...(full ? done : [])]
     return `
     ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
-    ${shown.map((i) => rowMarkup(b, i)).join('')}${more}`
+    ${shown.map((i) => rowMarkup(b, i)).join('')}`
   },
 
   tracker: (b, full_, hero) => {
@@ -316,7 +315,8 @@ const RENDER = {
     ${b.title && !/^notes?$/i.test(b.title.trim()) ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(b.text)}</div>`,
 
-  reminder: (b) => {
+  reminder: (b, full) => {
+    if (!full && b.done && !b.repeat) return ''
     const w = whenPhrase(b)
     const place = b.entities?.find((entity) => entity.type === 'place')
     const placeChip = place ? `<span class="place-chip">${esc(place.name)}</span>` : ''
@@ -373,10 +373,14 @@ function heroId(space) {
 const STOP = new Set(['a','an','the','my','your','with','from','for','to','at','on','in','of','and','is','was'])
 const words = (t) => new Set(String(t).toLowerCase().match(/[a-z0-9']+/g)?.filter((w) => !STOP.has(w)) || [])
 
+function archiveReady(space) {
+  return !space.finished && space.role === 'do' && !!space.complete
+}
+
 function soloOf(space) {
   if (space.blocks.length !== 1) return null
   const b = space.blocks[0]
-  const solo = b.type === 'reminder'
+  const solo = b.type === 'reminder' && !(b.done && !b.repeat)
     ? b
     : b.type === 'note' && !b.title && b.text.length <= 140 && !b.text.includes('\n')
       ? b
@@ -406,7 +410,7 @@ function spaceInner(space, full = false) {
   })
   const hero = full ? null : heroId(space)
   const corner = `<div class="card-tools">
-        <button class="card-tool ${space.complete ? 'ready' : ''}" data-finish="${space.id}" aria-label="${space.finished ? 'Reopen this space' : 'Close this space out'}" title="${space.finished ? 'reopen' : 'close out'}">
+        <button class="card-tool ${archiveReady(space) ? 'ready' : ''}" data-finish="${space.id}" aria-label="${space.finished ? 'Reopen this space' : 'Archive this space'}" title="${space.finished ? 'reopen' : 'archive'}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 6.5"/></svg>
         </button>
         <button class="card-tool ${space.pinned ? 'on' : ''}" data-pin="${space.id}" aria-label="${space.pinned ? 'Unpin' : 'Pin'}" title="${space.pinned ? 'unpin' : 'pin'}">
@@ -444,6 +448,7 @@ function spaceInner(space, full = false) {
         const compact = !full && !isHero && COMPACT[b.type]
         const draw = full && FULL[b.type] ? FULL[b.type] : RENDER[b.type]
         const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero) : ''
+        if (!String(body).trim()) return ''
         return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
       })
       .join('')}`

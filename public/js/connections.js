@@ -6,9 +6,9 @@ export const launchParams = new URLSearchParams(location.search)
 export const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
 export const onboarding = $('#onboarding')
 
-// ------------------------------------------------------------- the gear
+// ------------------------------------------------------------- settings
 // Engine + model live server-side (data/settings.json): they belong to
-// the settle pass, not this browser.
+// the settle pass, not this browser. The corner letter opens this.
 
 const settingsPop = $('#settings-pop')
 const settingsBackdrop = $('#settings-backdrop')
@@ -90,9 +90,7 @@ function closeSettings(restoreFocus = true) {
   settingsPop.hidden = true
   settingsBackdrop.hidden = true
   document.documentElement.classList.remove('modal-open')
-  const trigger = $('#gear-toggle')
-  trigger.setAttribute('aria-expanded', 'false')
-  if (restoreFocus) trigger.focus()
+  if (restoreFocus) $('#letter-toggle')?.focus()
 }
 
 function renderSettings(s) {
@@ -132,13 +130,11 @@ async function saveSettings(patch) {
   }
 }
 
-$('#gear-toggle').addEventListener('click', async () => {
-  const open = settingsPop.hidden
-  if (!open) return closeSettings()
+export async function openSettings() {
+  if (!settingsPop.hidden) return
   settingsBackdrop.hidden = false
   settingsPop.hidden = false
   document.documentElement.classList.add('modal-open')
-  $('#gear-toggle').setAttribute('aria-expanded', 'true')
   try {
     renderSettings(await api('/api/settings'))
     await Promise.all([loadConnections(), refreshPocket()])
@@ -147,7 +143,7 @@ $('#gear-toggle').addEventListener('click', async () => {
   }
   const first = settingsPop.querySelector('#theme-seg button[aria-checked="true"]') || settingsFocusables()[0]
   first?.focus()
-})
+}
 
 // the reference has a permanent home now, instead of one appearance on a
 // page you had not written anything on yet
@@ -243,7 +239,7 @@ function renderOnboarding() {
   </button>`
   const connected = Object.values(currentConnections || {}).filter((status) => status.state === 'connected').length
   $('#onboarding-note').textContent = connected
-    ? `${connected} assistant${connected === 1 ? '' : 's'} connected. You can reconnect any time from the gear.`
+    ? `${connected} assistant${connected === 1 ? '' : 's'} connected. You can reconnect any time from Settings.`
     : 'You can keep writing without a connection. December saves every capture locally.'
 }
 
@@ -259,4 +255,4 @@ $('#onboarding-close').addEventListener('click', () => {
   history.replaceState(null, '', `${location.pathname}${launchParams.size ? `?${launchParams}` : ''}`)
   $('#capture').focus()
 })
-export { loadConnections, renderSettings }
+export { loadConnections, renderSettings, closeSettings }

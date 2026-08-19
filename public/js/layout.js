@@ -124,7 +124,12 @@ function syncTools(el, space) {
     pin.setAttribute('title', space.pinned ? 'unpin' : 'pin')
     pin.querySelector('svg')?.setAttribute('fill', space.pinned ? 'currentColor' : 'none')
   }
-  el.querySelector('[data-finish]')?.classList.toggle('ready', !!space.complete)
+  const finish = el.querySelector('[data-finish]')
+  if (finish) {
+    finish.classList.toggle('ready', !space.finished && space.role === 'do' && !!space.complete)
+    finish.setAttribute('aria-label', space.finished ? 'Reopen this space' : 'Archive this space')
+    finish.setAttribute('title', space.finished ? 'reopen' : 'archive')
+  }
 }
 
 // The building moment: a card under construction is a hollow dashed frame
@@ -227,7 +232,7 @@ function askToFinish(space) {
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card co-card" role="dialog" aria-modal="true" aria-labelledby="co-title">
-        <h2 class="space-name" id="co-title">Close out ${esc(space.name)}?</h2>
+        <h2 class="space-name" id="co-title">Archive ${esc(space.name)}?</h2>
         <p class="co-read">${
           open.length
             ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} still unfinished.`
@@ -235,7 +240,7 @@ function askToFinish(space) {
         } You can reopen it anytime.</p>
         <div class="confirm-list">${open.slice(0, 6).map((t) => `<div class="confirm-item">${esc(t)}</div>`).join('')}${open.length > 6 ? `<div class="confirm-item more">and ${open.length - 6} more</div>` : ''}</div>
         <div class="co-actions">
-          <button class="btn-solid" data-confirm-finish="${space.id}">Close it out</button>
+          <button class="btn-solid" data-confirm-finish="${space.id}">Archive</button>
           <button class="btn-quiet" data-close>Keep it open</button>
         </div>
       </article>
@@ -508,7 +513,7 @@ function renderResting(finished, resting) {
     fold.innerHTML = counts
       .map(
         ([name, v]) =>
-          `<button class="rest-grp ${page.restOpen === name ? 'on' : ''}" data-grp="${name}" aria-expanded="${page.restOpen === name}">${name} <span class="rest-n">${v.length}</span></button>`
+          `<button class="rest-grp ${page.restOpen === name ? 'on' : ''}" data-grp="${name}" aria-expanded="${page.restOpen === name}">${name === 'finished' ? 'archive' : name} <span class="rest-n">${v.length}</span></button>`
       )
       .join('')
   }
@@ -789,7 +794,7 @@ const CAN_DO = [
   ['dump everything', 'paste many lines at once; each finds its own home'],
   ['talk to one space', 'open a card and write inside it'],
 ]
-/** The reference, reachable from the gear whenever you want it — rather
+/** The reference, reachable from Settings whenever you want it — rather
     than thrown at a brand new page once and then gone forever. The old
     footer promised "? for this", which was never wired: the writing line
     holds the caret from the moment the page opens, so a bare ? has nowhere

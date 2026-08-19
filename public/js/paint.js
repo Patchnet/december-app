@@ -6,6 +6,7 @@ import {
   renderAsk, renderRail, releaseHeld,
 } from './layout.js'
 import { renderCarryover, renderCarryoverNudge } from './year.js'
+import { paintLetter } from './about.js'
 
 export function renderStage() {
   const stage = $('#stage')
@@ -26,6 +27,7 @@ export function renderStage() {
 }
 
 export function render() {
+  paintLetter()
   renderYearline()
   $('#shell').classList.toggle('settling', page.state.captures.length > 0)
   const targets = travelTargets()

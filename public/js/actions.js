@@ -1,6 +1,6 @@
-import { $, toast, api, page, hooks } from './session.js'
+import { $, toast, api, page, hooks, reduced } from './session.js'
 import { whenPhrase } from './blocks.js'
-import { celebrate, pop, washCard, withFlip } from './motion.js'
+import { celebrate, pop, washCard, withFlip, celebrateSpace } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
 import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount } from './year.js'
 
@@ -57,37 +57,12 @@ document.addEventListener('click', async (e) => {
       const out = await api('/api/finish', { spaceId: finBtn.dataset.finish, finished: !sp?.finished })
       page.state = out.state
       if (out.finished) {
-        const leaving = page.spaceEls.get(finBtn.dataset.finish)?.el
-        page.spaceEls.delete(finBtn.dataset.finish)
-        closeFocus()
-        if (leaving && !reduced) {
-          // Pin it where it already is and lift it out of the flow, so the
-          // cards behind start closing the gap on the same frame it begins
-          // to go. Collapsing it first and reflowing after read as two
-          // separate events for something that is one.
-          const r = leaving.getBoundingClientRect()
-          Object.assign(leaving.style, {
-            position: 'fixed',
-            left: `${r.left}px`,
-            top: `${r.top}px`,
-            width: `${r.width}px`,
-            height: `${r.height}px`,
-            margin: '0',
-            zIndex: '5',
-          })
-          document.body.appendChild(leaving) // out of its column entirely
-          void leaving.offsetHeight
-          leaving.classList.add('leaving')
-          withFlip(() => hooks.render())
-          setTimeout(() => leaving.remove(), 460)
-        } else {
-          leaving?.remove()
-          hooks.render()
-        }
+        await leaveArchived(finBtn.dataset.finish)
+        toast(`${out.name} archived`)
         return
       }
       hooks.render()
-      toast(out.finished ? `${out.name} finished` : `${out.name} reopened`)
+      toast(`${out.name} reopened`)
     } catch (err) {
       toast(err.message)
     }
@@ -308,7 +283,7 @@ document.addEventListener('click', async (e) => {
 
     // the check counts: a space with exactly one tracker ticks it live —
     // the number beats, the bar glides, and completion earns the moment
-    const host = row.closest('.space, .focus-card')
+    const host = row.closest('.space, .focus-card, .today-item')
     const sid = host?.dataset.sid
     const isListItem = !!row.dataset.item
     // Checking a repeating reminder does not finish it — the server rolls
@@ -348,26 +323,34 @@ document.addEventListener('click', async (e) => {
 
     try {
       page.state = await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done })
-      const known = sid && page.spaceEls.get(sid)
+      const after = page.state.spaces.find((s) => s.id === sid || s.blocks?.some((b) => b.id === row.dataset.block))
+      const spaceId = sid || after?.id
+      const known = spaceId && page.spaceEls.get(spaceId)
       if (rolls) {
         // say what actually happened: it came round again, on this date
-        const now = page.state.spaces.find((s) => s.id === sid)?.blocks.find((b) => b.id === row.dataset.block)
+        const now = after?.blocks.find((b) => b.id === row.dataset.block)
         page.prev = page.state
-        resortCard(sid)
-        if (page.focusId === sid) buildFocus()
+        if (spaceId) resortCard(spaceId)
+        if (page.focusId === spaceId) buildFocus()
+        hooks.render()
         const w = now && whenPhrase(now)
         toast(w ? `done · back ${w.text}` : 'done')
         return
       }
       // adopt silently; the row is already painted
-      if (known) known.updatedAt = page.state.spaces.find((s) => s.id === sid)?.updatedAt
+      if (after?.finished) {
+        await leaveArchived(after.id)
+        toast(`${after.name} archived`)
+        return
+      }
+      if (known) known.updatedAt = after?.updatedAt
       page.prev = page.state
       // after the moment, the finished item rests: the card re-sorts it
       // into the done tail with a glide (no sheen; this was your hand)
-      if (isListItem && sid) {
+      if (isListItem && spaceId) {
         setTimeout(() => {
-          resortCard(sid)
-          if (page.focusId === sid) buildFocus()
+          resortCard(spaceId)
+          if (page.focusId === spaceId) buildFocus()
         }, done ? 900 : 400)
       }
     } catch (err) {
@@ -543,6 +526,32 @@ function trackerCounting(space, block) {
   const lists = space.blocks.filter((b) => b.type === 'list')
   if (trackers.length !== 1 || lists.length !== 1 || lists[0].id !== block.id) return null
   return trackers[0].target === block.items.length ? trackers[0] : null
+}
+
+async function leaveArchived(id) {
+  const leaving = page.spaceEls.get(id)?.el
+  page.spaceEls.delete(id)
+  closeFocus()
+  if (leaving && !reduced) {
+    const r = leaving.getBoundingClientRect()
+    Object.assign(leaving.style, {
+      position: 'fixed',
+      left: `${r.left}px`,
+      top: `${r.top}px`,
+      width: `${r.width}px`,
+      height: `${r.height}px`,
+      margin: '0',
+      zIndex: '5',
+    })
+    document.body.appendChild(leaving)
+    void leaving.offsetHeight
+    leaving.classList.add('leaving')
+    withFlip(() => hooks.render())
+    setTimeout(() => leaving.remove(), 460)
+  } else {
+    leaving?.remove()
+    hooks.render()
+  }
 }
 
 function jumpToSpace(sid) {
