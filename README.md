@@ -41,42 +41,30 @@ and a moment later
   $18,400 paid                ran today · 118 days
 ```
 
-You did not choose a type, name a card, or pick a chart. You did not learn
-anything. It was built for people who do not have an assistant, which is
-almost everyone.
+You did not pick a card type or set up a chart. There is nothing to learn.
 
-The frame is a year, and the name is the argument. January is when people
-measure themselves and decide they do not measure up. The resolution gets made
-there, and it is mostly a statement about who someone would like to be.
-December is where the weigh-in actually happens, and what you did across the
-year counts for more than what you decided at the start of it. So the page is
-built around getting you there, with something to show.
+December goes against the current AI trend. Everything is a chat now, and
+what you said last week is buried in a thread. December does the opposite. It
+puts what is important in front of you when you need it, and it keeps track
+of the rest.
 
-There is a second reason to keep a record like this one, and it is where the
-whole thing is pointed.
+The intelligence is your own AI, running on your own computer. If you already
+use Claude Code or Codex, December works with that. No new subscription, no
+API keys, no cost per line. Any assistant you use can also connect to the
+page over MCP and read or update it. It is an app for getting organized and
+staying on top of what you want to get done, and not just for you, but for
+you and your AI.
 
-The usual word is agent, and most people do not respond to it. The better word
-is digital worker: something that does the kind of work a person does at a
-screen, without a person having to sit there and do it. A digital worker needs
-somewhere to look. Not a conversation, which ends. Not a project tool, which
-someone has to keep fed. It needs a standing record of what is true and what
-is unfinished, kept current without anyone maintaining it.
+The page covers one year. The point is to get to December with a record of
+what you actually did, the goals you reached, and the milestones along the
+way.
 
-That is what this is. In time, what you write here is what gets picked up. You
-put the line down, and the work gets done without you having to ask twice.
+We built this for ourselves first, to get on top of the disorder that comes
+with fast AI content generation. We are working on more features and
+improvements.
 
-None of that part is built. The record comes first, because nothing can be
-done on your behalf until one place is written down and correct. The seam it
-would work through already exists, and it is the same one you can use today.
-
-The front of this was made in a few days. The systems that made building it in
-a few days possible took two years, and most of the distance was covered in
-the last six months.
-
-It is open source and it is public. No account, no server, no company standing
-between you and the page. Clone it, read all of it, change what you want, keep
-what you make. It was built to be used. Created by
-[louie305](https://github.com/louie305).
+Use as you wish, drop us a note on how we can make it better. MIT licensed.
+Created by [louie305](https://github.com/louie305).
 
 ---
 
