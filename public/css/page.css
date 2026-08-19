@@ -1096,6 +1096,7 @@ a.retire-link:hover { color: var(--accent-ink); }
    not bars: the card already has the bar. Each goal is its number in the
    page's serif, the name above, and one quiet line saying whether the year
    is ahead of you. It wraps; there is no cap. Absent until there is one. */
+.goals[hidden] { display: none; }
 .goals {
   display: flex;
   flex-wrap: wrap;

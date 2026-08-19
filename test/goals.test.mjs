@@ -26,7 +26,7 @@ test('a goal is derived from its block, so logging into the block moves the goal
   await core.updateBlock(made.blockId, { entry_label: 'Tuesday', entry_amount: 6 }, 'ledger', 'log_amount')
   const [goal] = core.agentView().goals
   assert.equal(goal.current, 10)
-  assert.equal(goal.lastMovedDaysAgo, 0)
+  assert.equal(goal.quietDays, 0)
   assert.equal(goal.space, 'Running')
   assert.equal(goal.blockId, made.blockId)
 
@@ -89,4 +89,19 @@ test('a calendar-year goal runs January to December from zero', () => {
   assert.equal(goal.base, 0)
   assert.equal(goalMeasure(block), 2)
   assert.throws(() => setBlockGoal({ type: 'note', text: '' }, { target: 1 }), /cannot carry a goal/)
+})
+
+test('a tracker created with goal: true carries the goal from its first line', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goals-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Running')
+  await core.createBlock(space.id, { type: 'tracker', title: '', current: 132, target: 200, unit: 'miles', goal: true })
+  const [g] = core.agentView().goals
+  assert.equal(g.target, 200)
+  assert.equal(g.current, 132)
+  assert.equal(g.unit, 'miles')
+  assert.equal(g.quietDays, 0)
+  // a plain tracker is not a goal
+  await core.createBlock(space.id, { type: 'tracker', title: 'Shoes', current: 1, target: 3 })
+  assert.equal(core.agentView().goals.length, 1)
 })

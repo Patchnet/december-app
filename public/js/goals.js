@@ -39,7 +39,8 @@ function renderGoals() {
   const before = new Map(liveGoals(page.prev).map((x) => [x.block.id, x.goal]))
   band.innerHTML = goals
     .map(({ space, block, goal: g }) => {
-      const stale = g.movedAt ? Math.floor((Date.now() - new Date(g.movedAt)) / 86400000) : null
+      const since = g.movedAt || (g.setAt && `${g.setAt}T12:00:00`)
+      const stale = since ? Math.floor((Date.now() - new Date(since)) / 86400000) : null
       const quiet = stale != null && stale >= 14 && !g.met ? ` · quiet ${stale} days` : ''
       // the space's name stands for its heartbeat; any other block says its own
       const label = block.id === heroId(space) || !block.title ? space.name : block.title
