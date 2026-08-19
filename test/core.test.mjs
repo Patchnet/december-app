@@ -280,3 +280,28 @@ test('an undated reminder that was done shows up in the month it was done', asyn
   await core.check(made.blockId, null, false)
   assert.equal(core.readMonth(ym).spaces.find((s) => s.name === 'Housing'), undefined)
 })
+
+test('a month faces forward: scheduled reminders and goal horizons appear in it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-ahead-'))
+  const core = await isolatedCore(dir)
+  const y = new Date().getFullYear()
+  const space = await core.createSpace('Trips')
+  await core.createBlock(space.id, { type: 'reminder', title: '', text: 'Flight to Denver', when: `${y}-11-14`, at: '09:30' })
+  const run = await core.createSpace('Running')
+  await core.createBlock(run.id, { type: 'tracker', title: '', current: 10, target: 100, unit: 'miles', goal: true, by: `${y}-11-30` })
+
+  const nov = core.readMonth(`${y}-11`)
+  assert.equal(nov.ahead, 2)
+  const trips = nov.spaces.find((s) => s.name === 'Trips')
+  assert.ok(trips.lines.some((l) => l.ahead && l.text === 'Flight to Denver' && l.at === '09:30'))
+  assert.match(trips.headline, /1 ahead/)
+  assert.ok(nov.spaces.find((s) => s.name === 'Running')?.lines.some((l) => l.goal && /goal: 100 miles/.test(l.text)))
+
+  // the year counts them for the month rows
+  const months = core.project().year.months
+  assert.equal(months[10].scheduled, 2)
+  // a done reminder stops being scheduled
+  const st = core.agentView().spaces.find((s) => s.name === 'Trips')
+  await core.check(st.blocks[0].id, null, true)
+  assert.equal(core.project().year.months[10].scheduled, 1)
+})
