@@ -346,8 +346,11 @@ document.addEventListener('click', async (e) => {
       if (known) known.updatedAt = after?.updatedAt
       page.prev = page.state
       // after the moment, the finished item rests: the card re-sorts it
-      // into the done tail with a glide (no sheen; this was your hand)
-      if (isListItem && spaceId) {
+      // into the done tail with a glide (no sheen; this was your hand).
+      // A one-shot reminder leaves the compact card the same way — left
+      // "adopted silently" it stayed painted, checked, until something
+      // else happened to re-render the card.
+      if ((isListItem || before?.type === 'reminder') && spaceId) {
         setTimeout(() => {
           resortCard(spaceId)
           if (page.focusId === spaceId) buildFocus()
