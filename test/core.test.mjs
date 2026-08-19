@@ -264,3 +264,19 @@ test.after(() => {
   if (originalDataDir == null) delete process.env.DECEMBER_DATA_DIR
   else process.env.DECEMBER_DATA_DIR = originalDataDir
 })
+
+test('an undated reminder that was done shows up in the month it was done', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-month-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Housing')
+  const made = await core.createBlock(space.id, { type: 'reminder', title: '', text: 'Schedule the furnace inspection' })
+  await core.check(made.blockId, null, true)
+  const ym = new Date().toISOString().slice(0, 7)
+  const month = core.readMonth(ym)
+  const housing = month.spaces.find((s) => s.name === 'Housing')
+  assert.ok(housing, 'the space appears in the month')
+  assert.ok(housing.lines.some((l) => l.text === 'Schedule the furnace inspection'))
+  // unchecking forgets the day again
+  await core.check(made.blockId, null, false)
+  assert.equal(core.readMonth(ym).spaces.find((s) => s.name === 'Housing'), undefined)
+})

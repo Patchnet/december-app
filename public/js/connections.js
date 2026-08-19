@@ -31,7 +31,10 @@ function connectionCopy(status) {
 }
 
 function providerMark(client) {
-  return `<img class="provider-logo" src="/providers/${client.logo}" alt="" />`
+  // a mask, not an image: the PNGs are drawn in four different inks (white,
+  // black, orange), so as images two of them vanished in one theme or the
+  // other. Painted in currentColor they all read in both.
+  return `<span class="provider-logo" style="--logo: url(/providers/${client.logo})" aria-hidden="true"></span>`
 }
 
 function renderConnectionSettings() {

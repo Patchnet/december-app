@@ -212,7 +212,8 @@ const FULL = {
     const end = new Date(now.getFullYear() + 1, 0, 1)
     const through = (now - start) / (end - start)
     const expected = b.target * through
-    const diff = Math.round((b.current - expected) * 10) / 10
+    const whole = Number.isInteger(b.current) && Number.isInteger(b.target)
+    const diff = whole ? Math.round(b.current - expected) : Math.round((b.current - expected) * 10) / 10
     const word =
       Math.abs(diff) < 0.5
         ? 'on pace'
@@ -438,19 +439,24 @@ function spaceInner(space, full = false) {
   const meta = full
     ? [space.area, space.pinned ? 'pinned' : '', touchedPhrase(space.updatedAt)].filter(Boolean).join(' · ')
     : ''
+  const rendered = blocks
+    .map((b) => {
+      const isHero = b.id === hero
+      const compact = !full && !isHero && COMPACT[b.type]
+      const draw = full && FULL[b.type] ? FULL[b.type] : RENDER[b.type]
+      const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero) : ''
+      if (!String(body).trim()) return ''
+      return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
+    })
+    .join('')
+  // Done work leaves the compact card, so a space whose every thing is done
+  // (a reopened one, say) would be a name over nothing. Say so, the way a
+  // list with no open rows does, rather than drawing an empty card.
+  const body = rendered.trim() || (full ? '' : '<div class="done-more">nothing open</div>')
   return `
     ${corner}
     <h2 class="space-name">${esc(space.name)}</h2>
     ${meta ? `<div class="focus-meta">${esc(meta)}</div>` : ''}
-    ${blocks
-      .map((b) => {
-        const isHero = b.id === hero
-        const compact = !full && !isHero && COMPACT[b.type]
-        const draw = full && FULL[b.type] ? FULL[b.type] : RENDER[b.type]
-        const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero) : ''
-        if (!String(body).trim()) return ''
-        return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
-      })
-      .join('')}`
+    ${body}`
 }
 export { clockOf, whenPhrase, words, spaceInner }
