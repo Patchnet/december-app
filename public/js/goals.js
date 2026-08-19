@@ -56,9 +56,14 @@ function renderGoals() {
       // the space's name stands for its heartbeat; any other block says its own
       const label = block.id === heroId(space) || !block.title ? space.name : block.title
       const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const pct = Math.min(100, Math.max(0, (g.current / g.target) * 100))
+      // the tick is where the year stands today; fill past it reads as
+      // ahead, short of it as behind, before any words. Met goals rest.
+      const tick = g.met ? '' : `<i style="left:${Math.round(g.through * 1000) / 10}%"></i>`
       return `<a href="#" class="goal ${cls}" data-goal="${block.id}" data-goal-open="${space.id}" aria-label="${esc(label)}: ${esc(fmtAmount(g.current, g.unit))} of ${esc(fmtAmount(g.target, g.unit))}, ${esc(paceWords(g))}">
         <span class="goal-name">${esc(label)}</span>
         <span class="goal-count"><b>${esc(g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, ''))}</b><small>of ${esc(fmtAmount(g.target, g.unit))}</small></span>
+        <span class="goal-meter"><b style="width:${Math.round(pct * 10) / 10}%"></b>${tick}</span>
         <span class="goal-pace">${esc(paceWords(g))}${esc(quiet)}</span>
       </a>`
     })
@@ -70,6 +75,16 @@ function renderGoals() {
     if (!was || was.current === g.current) continue
     const el = band.querySelector(`[data-goal="${block.id}"] .goal-count`)
     if (!el) continue
+    // the fill glides from where it was, the way a card's meter does
+    const span = band.querySelector(`[data-goal="${block.id}"] .goal-meter b`)
+    if (span) {
+      const target = span.style.width
+      span.style.transition = 'none'
+      span.style.width = `${Math.min(100, Math.max(0, (was.current / (was.target || g.target)) * 100))}%`
+      void span.offsetWidth
+      span.style.transition = ''
+      requestAnimationFrame(() => (span.style.width = target))
+    }
     bump(el)
     const d = Math.round((g.current - was.current) * 10) / 10
     markChange(el, `${d > 0 ? '+' : ''}${g.unit === '$' ? fmtAmount(d, '$') : d}`)

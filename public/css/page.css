@@ -1200,6 +1200,38 @@ a.retire-link:hover { color: var(--accent-ink); }
   letter-spacing: 0;
 }
 .goal.met .goal-count { color: var(--good-ink); }
+/* Where the goal stands, and where the year stands: a hairline meter, its
+   fill the count, its tick today. Fill past the tick reads as ahead and
+   short of it as behind, before any words. One length for every goal, so
+   the ticks keep one rhythm across the band. A met goal rests: green,
+   no tick left to chase. */
+.goal-meter {
+  position: relative;
+  display: block;
+  width: 112px;
+  height: 3px;
+  margin: 7px 0 5px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+}
+.goal-meter b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0.85;
+  transition: width var(--m-struct) var(--ease-out);
+}
+.goal.met .goal-meter b { background: var(--hue-ok); opacity: 1; }
+.goal-meter i {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--line-2);
+}
 .goal-pace {
   font-size: 10.5px;
   letter-spacing: 0.035em;
