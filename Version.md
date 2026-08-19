@@ -107,7 +107,7 @@ model override, persisted server-side), file drop intake (uploads +
 zero-dependency .docx text extraction, settle agent reads attached files),
 Windows engine support (direct .exe spawn, stderr-tail errors), and
 multi-instance safety (port-suffixed MCP config pinned via DECEMBER_URL).
-First version integrated through Formal Flow (PR #3, squash-merged).
+First version integrated through GitHub Flow (PR #3, squash-merged).
 
 ## 0.1.0 — 2026-08-12
 
@@ -115,5 +115,5 @@ Baseline stamp at formalization. December is a zero-dependency Node web app —
 one page where raw text is captured and a subscription-powered agent organizes
 it into spaces of six block types (list, tracker, ledger, streak, note,
 reminder) — plus a stdio MCP adapter so any connected assistant works the same
-page. This version marks the repo's promotion to Formal Flow (branch → PR →
+page. This version marks the repo's promotion to GitHub Flow (branch → PR →
 squash-merge) and the application of the public repo profile.

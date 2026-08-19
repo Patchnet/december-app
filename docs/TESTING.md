@@ -62,4 +62,4 @@ After `npm install`, exercise Electron behavior manually:
 - Tests must not touch `data/state.json` or any live page state. Pure-logic
   modules only; the running app exercises persistence.
 - Quality exemptions (skips, disabled assertions) require a `QX-` entry in
-  `docs/quality-exemptions.md` per the workspace Test-Master policy.
+  `docs/quality-exemptions.md` per the workspace testing policy.

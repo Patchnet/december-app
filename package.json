@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A local-first page that organizes itself",
-  "author": "Patchnet AI",
+  "author": "louie305",
   "main": "electron/main.mjs",
   "scripts": {
     "app": "electron .",

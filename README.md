@@ -75,7 +75,8 @@ the last six months.
 
 It is open source and it is public. No account, no server, no company standing
 between you and the page. Clone it, read all of it, change what you want, keep
-what you make. It was built to be used.
+what you make. It was built to be used. Created by
+[louie305](https://github.com/louie305).
 
 ---
 
