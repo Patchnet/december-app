@@ -1192,9 +1192,18 @@ a.retire-link:hover { color: var(--accent-ink); }
   .stage {
     position: relative;
     /* sized to the tallest moment it must hold, not to a third of the
-       screen: everything below it starts this much sooner */
-    height: clamp(112px, 15vh, 150px);
+       screen: everything below it starts this much sooner. The goals band
+       adds its own strip on top of that: the strip belongs to the goals
+       alone, so the moment keeps its full budget and the chips and the
+       attention rows are never squeezed against the band. The height
+       changes only when the band's row count does — once, when the first
+       goal ever lands — and it grows as a glide, not a jump. */
+    height: calc(clamp(112px, 15vh, 150px) + var(--goals-h, 0px));
     margin-bottom: var(--space-2);
+    transition: height var(--m-struct) var(--ease-settle);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stage { transition: none; }
   }
   .stage .cwrap {
     position: absolute;
