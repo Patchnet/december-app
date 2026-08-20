@@ -294,7 +294,7 @@ test('a month faces forward: scheduled reminders and goal horizons appear in it'
   assert.equal(nov.ahead, 2)
   const trips = nov.spaces.find((s) => s.name === 'Trips')
   assert.ok(trips.lines.some((l) => l.ahead && l.text === 'Flight to Denver' && l.at === '09:30'))
-  assert.match(trips.headline, /1 ahead/)
+  assert.match(trips.headline, /1 due/)
   assert.ok(nov.spaces.find((s) => s.name === 'Running')?.lines.some((l) => l.goal && /goal: 100 miles/.test(l.text)))
 
   // the year counts them for the month rows
