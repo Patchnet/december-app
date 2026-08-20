@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { goalOf } from '../lib/blocks.mjs'
 
 const originalDataDir = process.env.DECEMBER_DATA_DIR
 let importNumber = 0
@@ -210,6 +211,23 @@ test('rollover recovery never replaces a page mutated after rollover, including 
   assert.equal(kept.spaces[0].blocks[0].text, 'do not overwrite')
 })
 
+test('batch capture protects a rolled-over page from clock recovery after restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-rollover-batch-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], spaces: [], lessons: [], activity: [], retired: [], yearOf: 2024,
+  }))
+  let core = await isolatedCore(dir)
+  assert.equal(await core.rolloverIfNeeded(new Date('2025-01-01T12:00:00.000Z')), 2024)
+  await core.addCaptureBatch(['paid rent', 'ran three miles'])
+
+  core = await isolatedCore(dir)
+  assert.equal(await core.rolloverIfNeeded(new Date('2024-06-01T12:00:00.000Z')), null)
+  const kept = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal(kept.yearOf, 2025)
+  assert.equal(kept.rolloverProvenance.mutated, true)
+  assert.deepEqual(kept.captures.map((capture) => capture.text), ['paid rent', 'ran three miles'])
+})
+
 test('an archive alone is not rollover provenance', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-rollover-no-provenance-'))
   const core2024 = await isolatedCore(dir)
@@ -301,6 +319,70 @@ test('durable revisions and poll freshness cross same-state time boundaries', as
   const firstRevision = core.project().revision
   await core.addCapture('second same-clock candidate')
   assert.equal(core.project().revision, firstRevision + 1, 'every durable write has a distinct monotonic revision')
+})
+
+test('poll freshness follows same-day goal pace wording and styling', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-pace-freshness-'))
+  const block = {
+    id: 'pace-goal', type: 'tracker', title: '', current: 0, target: 2000, unit: '',
+    goal: { target: 2000, unit: '', from: '2026-08-20', by: '2026-08-20', base: 0, setAt: null, movedAt: null },
+  }
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], lessons: [], activity: [], retired: [], yearOf: 2026, revision: 7,
+    spaces: [{ id: 'pace-space', name: 'Pace', createdAt: '2026-08-20T00:00:00.000Z', updatedAt: '2026-08-20T00:00:00.000Z', blocks: [block] }],
+  }))
+  const core = await isolatedCore(dir)
+  const onPace = new Date(2026, 7, 20, 0, 0, 17)
+  const boundary = new Date(2026, 7, 20, 0, 0, 22)
+  const behind = new Date(2026, 7, 20, 0, 0, 26)
+  assert.equal(goalOf(block, onPace).paceText, 'on pace')
+  assert.equal(goalOf(block, boundary).paceText, '1 behind')
+  assert.equal(goalOf(block, boundary).behind, false, 'the exact -0.5 boundary stays visually neutral')
+  assert.equal(goalOf(block, behind).behind, true)
+  assert.notEqual(core.stateFingerprint(onPace), core.stateFingerprint(boundary))
+  assert.notEqual(core.stateFingerprint(boundary), core.stateFingerprint(behind))
+  assert.equal(core.project().revision, 7)
+})
+
+test('poll freshness follows same-day goal quiet wording', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-quiet-freshness-'))
+  const block = {
+    id: 'quiet-goal', type: 'tracker', title: '', current: 0, target: 1, unit: '',
+    goal: { target: 1, unit: '', from: '2026-01-01', by: '2026-12-31', base: 0, setAt: '2026-08-06', movedAt: null },
+  }
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], lessons: [], activity: [], retired: [], yearOf: 2026, revision: 8,
+    spaces: [{ id: 'quiet-space', name: 'Quiet', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', blocks: [block] }],
+  }))
+  const core = await isolatedCore(dir)
+  const before = new Date(2026, 7, 20, 11, 59)
+  const after = new Date(2026, 7, 20, 12, 0)
+  assert.equal(goalOf(block, before).quietText, '')
+  assert.equal(goalOf(block, after).quietText, 'quiet 14 days')
+  assert.notEqual(core.stateFingerprint(before), core.stateFingerprint(after))
+  assert.equal(core.project().revision, 8)
+})
+
+test('poll freshness follows the same-day goal tick', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-tick-freshness-'))
+  const block = {
+    id: 'tick-goal', type: 'tracker', title: '', current: 0, target: 1, unit: '',
+    goal: { target: 1, unit: '', from: '2026-01-01', by: '2026-12-31', base: 0, setAt: null, movedAt: null },
+  }
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], lessons: [], activity: [], retired: [], yearOf: 2026, revision: 9,
+    spaces: [{ id: 'tick-space', name: 'Tick', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', blocks: [block] }],
+  }))
+  const core = await isolatedCore(dir)
+  const morning = new Date(2026, 7, 20, 1, 0)
+  const afternoon = new Date(2026, 7, 20, 13, 0)
+  const morningGoal = goalOf(block, morning)
+  const afternoonGoal = goalOf(block, afternoon)
+  assert.equal(morningGoal.paceText, afternoonGoal.paceText)
+  assert.equal(morningGoal.quietText, afternoonGoal.quietText)
+  assert.notEqual(Math.round(morningGoal.through * 1000), Math.round(afternoonGoal.through * 1000))
+  assert.notEqual(core.stateFingerprint(morning), core.stateFingerprint(afternoon))
+  assert.equal(core.project().revision, 9)
 })
 
 test('agent undo is in-memory, clears legacy snapshots, and expires on restart', async () => {
