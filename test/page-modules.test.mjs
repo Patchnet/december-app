@@ -27,6 +27,17 @@ test('every page module parses', () => {
   }
 })
 
+// --check parses; it cannot see a name used without its import. That exact
+// class of bug shipped three times (markEdited, coAnswered, bump) before this
+// pass existed. eslint is a devDependency: installed, it gates; absent (a
+// checkout that never ran npm install), the suite still runs and says so.
+test('no undefined names, no dead imports (eslint)', (t) => {
+  const bin = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'eslint.cmd' : 'eslint')
+  let r = spawnSync(bin, ['.'], { cwd: root, encoding: 'utf8', shell: process.platform === 'win32' })
+  if (r.error?.code === 'ENOENT') return t.skip('eslint not installed — run npm install')
+  assert.equal(r.status, 0, `eslint:\n${r.stdout}${r.stderr}`)
+})
+
 test('app.js stays the boot file', () => {
   const src = read(join(publicDir, 'app.js'))
   const n = lineCount(join(publicDir, 'app.js'))
