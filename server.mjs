@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
@@ -49,7 +49,19 @@ const MIME = {
 await settle.writeMcpConfig()
 await rolloverIfNeeded() // the turn of the year happens before anything else
 const pocket = await createPocketSync({ dataDir: DATA_DIR })
-observePersists(() => pocket.queuePage(project()))
+const pocketUploads = createLatestWorkQueue(async (page) => {
+  if (!pocket.status().paired) return
+  await pocket.queuePage(page)
+  const status = await pocket.flush()
+  if (status.lastError) throw new Error(status.lastError)
+}, {
+  delayMs: 500,
+  onError: (error) => console.log('Pocket page upload failed:', String(error?.message || error).slice(0, 200)),
+})
+observePersists(() => {
+  const page = project(settleStatus())
+  pocketUploads.schedule(page, page.revision)
+})
 watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
 let surfacingScheduled = false
@@ -78,9 +90,14 @@ async function pullPocketCaptures() {
   return result
 }
 
-if (pocket.status().paired) void pocket.queuePage(project())
-void pullPocketCaptures()
-const pocketTimer = setInterval(() => void pullPocketCaptures(), 10_000)
+if (pocket.status().paired) {
+  const page = project(settleStatus())
+  pocketUploads.schedule(page, page.revision)
+}
+void pullPocketCaptures().catch((error) => console.log('Pocket capture pull failed:', String(error?.message || error).slice(0, 200)))
+const pocketTimer = setInterval(() => {
+  void pullPocketCaptures().catch((error) => console.log('Pocket capture pull failed:', String(error?.message || error).slice(0, 200)))
+}, 10_000)
 
 // the year is too precious for one copy: a dated snapshot every day, 30 kept
 function backup() {
@@ -227,7 +244,18 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (path === '/api/state' && req.method === 'GET') {
-      return json(res, 200, project(settleStatus()))
+      const fingerprint = stateFingerprint()
+      if (url.searchParams.get('since') === fingerprint) {
+        return json(res, 200, {
+          unchanged: true,
+          fingerprint,
+          revision: stateRevision(),
+          settle: settleStatus(),
+          canUndo: undoIsFresh(),
+          canUndoManual: canUndoManual(),
+        })
+      }
+      return json(res, 200, { ...project(settleStatus()), fingerprint })
     }
 
     if (path === '/api/pocket' && req.method === 'GET') {
@@ -235,13 +263,16 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/api/pocket/pair' && req.method === 'POST') {
       const paired = await pocket.pair()
-      await pocket.queuePage(project(settleStatus()))
-      await pocket.flush()
+      const page = project(settleStatus())
+      pocketUploads.schedule(page, page.revision)
+      await pocketUploads.drain()
       return json(res, 201, { ...paired, ...pocket.status() })
     }
     if (path === '/api/pocket/sync' && req.method === 'POST') {
-      await pocket.queuePage(project(settleStatus()))
-      const [status, captures] = await Promise.all([pocket.flush(), pullPocketCaptures()])
+      const page = project(settleStatus())
+      pocketUploads.schedule(page, page.revision)
+      const [, captures] = await Promise.all([pocketUploads.drain(), pullPocketCaptures()])
+      const status = pocket.status()
       return json(res, 200, { ...status, imported: captures?.imported || 0 })
     }
     if (path === '/api/pocket/disconnect' && req.method === 'POST') {
@@ -260,7 +291,8 @@ const server = createServer(async (req, res) => {
       const lines = text.includes('\n')
         ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 25)
         : [text]
-      for (const line of lines) await addCapture(line, body.hint)
+      if (lines.length === 1) await addCapture(lines[0], body.hint)
+      else await addCaptureBatch(lines, body.hint)
       scheduleSettle()
       return json(res, 200, project(settleStatus()))
     }
@@ -546,14 +578,18 @@ server.listen(PORT, '127.0.0.1', () => {
 })
 
 let shuttingDown = false
-function shutdown() {
+export async function shutdown({ exit = true } = {}) {
   if (shuttingDown) return
   shuttingDown = true
   clearInterval(backupTimer)
   clearInterval(pocketTimer)
-  server.close(() => process.exit(0))
-  setTimeout(() => process.exit(0), 3000).unref()
+  const closed = new Promise((resolveClose) => server.close(resolveClose))
+  let timeoutId
+  const timeout = new Promise((resolveTimeout) => { timeoutId = setTimeout(resolveTimeout, 3000) })
+  await Promise.race([Promise.allSettled([closed, pocketUploads.drain()]), timeout])
+  clearTimeout(timeoutId)
+  if (exit) process.exit(0)
 }
 
-process.on('SIGTERM', shutdown)
-process.on('SIGINT', shutdown)
+process.on('SIGTERM', () => { void shutdown() })
+process.on('SIGINT', () => { void shutdown() })

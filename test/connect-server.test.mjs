@@ -8,6 +8,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pocketCrypto } from '../lib/pocket-sync.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // the canonical skill's own version — tests follow it instead of pinning a literal
@@ -181,6 +182,60 @@ test('JSON body limit is byte-exact, mutation-safe, and leaves the server health
   assert.equal(after.updatedAt, before.updatedAt, 'oversized capture caused no persistence write')
 })
 
+test('/api/state uses revisions for compact polling and batch capture writes once', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-poll-'))
+  const data = join(base, 'data')
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM')
+      await once(child, 'exit')
+    }
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  const first = await (await fetch(`${url}/api/state`)).json()
+  assert.ok(first.fingerprint)
+  assert.equal(first.revision, 0)
+  const unchanged = await (await fetch(`${url}/api/state?since=${encodeURIComponent(first.fingerprint)}`)).json()
+  assert.deepEqual(Object.keys(unchanged).sort(), ['canUndo', 'canUndoManual', 'fingerprint', 'revision', 'settle', 'unchanged'])
+  assert.equal(unchanged.unchanged, true)
+
+  const captured = await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'paid rent\nran three miles\npaid rent' }),
+  })
+  assert.equal(captured.status, 200)
+  const after = await (await fetch(`${url}/api/state?since=${encodeURIComponent(first.fingerprint)}`)).json()
+  assert.equal(after.unchanged, undefined)
+  assert.equal(after.revision, 1, 'the whole dump is one durable state write')
+  assert.deepEqual(after.captures.map((capture) => capture.text), ['paid rent', 'ran three miles'])
+})
+
+test('client polling keeps live flags and rejects incomplete, stale, and overlapping responses', async () => {
+  const source = await readFile(join(ROOT, 'public', 'app.js'), 'utf8')
+  assert.match(source, /request !== pollRequest/)
+  assert.match(source, /incoming\.revision < current\.revision/)
+  assert.match(source, /!Array\.isArray\(incoming\.spaces\) \|\| !Array\.isArray\(incoming\.captures\)/)
+  assert.match(source, /Object\.hasOwn\(incoming, field\)/)
+})
+
 test('scratch server GET is read-only and POST writes only the injected home', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'december-connect-server-'))
   const home = join(base, 'home')
@@ -283,4 +338,90 @@ test('node connect.mjs --yes completes against an injected home', async (t) => {
   assert.match(config, /\[mcp_servers\.december\]/)
   assert.match(config, /DECEMBER_URL/)
   assert.match(await readFile(join(home, '.codex', 'skills', 'december', 'SKILL.md'), 'utf8'), skillVersionPattern)
+})
+
+test('shutdown drains the latest coalesced Pocket page', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-pocket-shutdown-'))
+  const data = join(base, 'data')
+  await mkdir(data, { recursive: true })
+  const contentKey = Buffer.alloc(32, 7)
+  await writeFile(join(data, 'pocket.json'), JSON.stringify({
+    version: 1,
+    clientId: 'shutdown-fixture',
+    connection: {
+      spaceId: 'space_fixture_123456',
+      desktopToken: 'desktop_fixture_123456',
+      pocketToken: 'pocket_fixture_123456',
+      contentKey: contentKey.toString('base64url'),
+    },
+    nextPageRevision: 1,
+    pendingPage: null,
+    captureCursor: 0,
+    lastSyncedAt: null,
+    lastError: null,
+  }))
+
+  let resolvePage
+  const pageReceived = new Promise((resolveReceived) => { resolvePage = resolveReceived })
+  const relay = createHttpServer(async (req, res) => {
+    if (req.url === '/page' && req.method === 'POST') {
+      let body = ''
+      for await (const chunk of req) body += chunk
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 75))
+      const page = JSON.parse(body)
+      resolvePage(page)
+      res.writeHead(201, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ revision: page.revision }))
+      return
+    }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ items: [] }))
+  })
+  relay.listen(0, '127.0.0.1')
+  await once(relay, 'listening')
+
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const serverUrl = new URL('../server.mjs', import.meta.url).href
+  const launcher = `const server = await import(${JSON.stringify(serverUrl)}); process.on('message', async () => { await server.shutdown({ exit: false }); process.send('drained') })`
+  const child = spawn(process.execPath, ['--input-type=module', '-e', launcher], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_RELAY_URL: `http://127.0.0.1:${relay.address().port}`,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  })
+  let childError = ''
+  child.stderr.on('data', (chunk) => { childError += chunk })
+  t.after(async () => {
+    if (child.exitCode === null) child.kill()
+    relay.close()
+    await once(relay, 'close').catch(() => {})
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  const response = await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'survive shutdown' }),
+  })
+  assert.equal(response.status, 200)
+  child.send('shutdown')
+  const [message] = await once(child, 'message')
+  assert.equal(message, 'drained', childError)
+
+  const uploaded = await Promise.race([
+    pageReceived,
+    new Promise((_, rejectTimeout) => setTimeout(() => rejectTimeout(new Error('Pocket page was not drained')), 2000)),
+  ])
+  const decrypted = pocketCrypto.decrypt(contentKey, uploaded.payload)
+  assert.equal(decrypted.page.captures[0].text, 'survive shutdown')
 })
