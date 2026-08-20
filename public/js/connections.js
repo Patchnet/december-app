@@ -1,4 +1,4 @@
-import { $, esc, toast, api, page } from './session.js'
+import { $, esc, toast, api } from './session.js'
 import { showIntro } from './layout.js'
 import { closePocketPairing, isPocketPairingOpen, refreshPocket, trapPocketFocus } from './pocket.js'
 
@@ -12,7 +12,6 @@ export const onboarding = $('#onboarding')
 
 const settingsPop = $('#settings-pop')
 const settingsBackdrop = $('#settings-backdrop')
-let currentSettings = null
 let currentConnections = null
 
 const connectionClients = [
@@ -97,7 +96,6 @@ function closeSettings(restoreFocus = true) {
 }
 
 function renderSettings(s) {
-  currentSettings = s
   $('#about-version').textContent = s.version ? `v${s.version}` : ''
   const seg = $('#engine-seg')
   seg.innerHTML = ''

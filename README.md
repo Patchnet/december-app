@@ -70,7 +70,7 @@ Created by [louie305](https://github.com/louie305).
 
 ## Running it
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+You need [Node.js](https://nodejs.org) 22.13 or newer.
 
 ```bash
 git clone https://github.com/Patchnet/december-app.git
@@ -78,7 +78,7 @@ cd december-app
 node server.mjs                 # → http://localhost:3008
 ```
 
-No install, no build, no dependencies.
+No install, no build, and no runtime dependencies.
 
 The intelligence is your own. December uses a CLI you are already signed into,
 [Claude Code](https://claude.com/claude-code) or
@@ -141,7 +141,7 @@ window hides it; Quit lives in the tray. Desktop state keeps to your user
 profile, so the repo stays clean and reinstalls never touch your year.
 
 ```bash
-npm install && npm run app        # run the shell in place
+npm ci && npm run app             # install development tools; run the shell in place
 npm run dist:win                  # build the Windows installer (unsigned yet)
 ```
 
@@ -151,8 +151,14 @@ until you connect one.
 
 ## Tests
 
-The suite runs on Node alone — no test dependencies:
+Install the development dependencies, then run the mandatory lint and Node test gates:
 
 ```bash
-node --test
+npm ci
+npm test
 ```
+
+The application itself still has no runtime dependencies. ESLint, Electron,
+and the packaging tools are development dependencies only. `npm run lint`
+runs the scope-aware undefined-name and unused-name check; `npm run test:node`
+runs only the built-in Node test suite and is not the complete gate.

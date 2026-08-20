@@ -3,13 +3,17 @@
 **Canonical suite** (the `test_gate: local` gate in `Version.md`):
 
 ```bash
-node --test
+npm ci --no-audit --no-fund
+npm test
 ```
 
-(Default discovery picks up `test/*.test.mjs`.)
+(The test script runs `npm run lint` before Node's built-in test runner. Default
+Node discovery picks up `test/*.test.mjs`.)
 
-Zero dependencies, like the app: the suite runs on Node's built-in `node:test`
-runner and `node:assert`. No package.json, no runner install.
+Node 22.13 or newer is required for development. The application runtime has no
+dependencies. ESLint, Electron, and packaging tools are development dependencies
+installed by `npm ci`; lint never skips when they are absent. Use
+`npm run test:node` for the Node suite alone, but not as the complete gate.
 
 ## What's covered
 
@@ -32,12 +36,12 @@ runner and `node:assert`. No package.json, no runner install.
   resolution for GUI launches, and the desktop fixed-port decision.
 - `test/page-modules.test.mjs` — the page is native ES modules under
   `public/js/` (no bundler). Boot file stays small, styles.css only
-  `@import`s sheets, modules parse, stay under the landing cap, and
-  do not import each other in a cycle.
+  `@import`s sheets, modules parse, stay under the landing cap, retain required
+  runtime imports and page-scoped state, and do not import each other in a cycle.
 
 ## Desktop smoke checklist
 
-After `npm install`, exercise Electron behavior manually:
+After `npm ci`, exercise Electron behavior manually:
 
 1. Run `npm run app`; confirm the main page opens and the December tray icon
    appears.
