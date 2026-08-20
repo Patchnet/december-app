@@ -1,6 +1,7 @@
 import { $, esc, reduced, fmtAmount, toast, api, page, hooks } from './session.js'
 import { pop, bloom } from './motion.js'
-import { clockOf } from './blocks.js'
+import { clockOf, heroId } from './blocks.js'
+import { liveGoals, paceWords } from './goals.js'
 
 // ------------------------------------------------------------- year view
 
@@ -19,59 +20,72 @@ function buildYear() {
   if (!y) return
   const wrap = $('#focus')
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  // Seven rows each reading "quiet" is not information, it is the same
-  // word seven times. Empty months that sit together collapse into one
-  // band, so the months that actually held something are the page.
-  const peak = Math.max(1, ...y.months.map((d) => d.events))
-  const openable = !page.yearShown // an archived year is a reading, not a place
-  const rows = []
-  let run = []
-  const flushQuiet = () => {
-    if (!run.length) return
-    // a band of several months uses short names so it stays on one line
-    const short = (i) => names[i].slice(0, 3)
-    const span = run.length === 1 ? names[run[0]] : `${short(run[0])} – ${short(run[run.length - 1])}`
-    rows.push(`<div class="ym quiet-band"><div class="ym-name">${span}</div><div class="ym-body"><span class="ym-quiet">quiet</span></div></div>`)
-    run = []
-  }
-  names.forEach((name, m) => {
-    const data = y.months[m]
-    const future = !page.yearShown && m > page.state.year.month
-    if (!data.events) {
-      if (!future) run.push(m)
-      else {
-        flushQuiet()
-        const sched = data.scheduled || 0
-        const last = m === 11 ? `<span class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</span>` : ''
-        // a future month holding something scheduled is a place, not a blank
-        rows.push(
-          sched
-            ? `<button class="ym future has" data-month="${y.year}-${String(m + 1).padStart(2, '0')}">
-                <div class="ym-name">${name}</div>
-                <div class="ym-body"><div class="ym-count">${sched} scheduled</div>${last}</div>
-              </button>`
-            : `<div class="ym future"><div class="ym-name">${name}</div><div class="ym-body">${last}</div></div>`
-        )
-      }
-      return
-    }
-    flushQuiet()
-    // one honest magnitude instead of up to 28 identical dots
-    const pct = Math.max(6, Math.round((data.events / peak) * 100))
-    const hl = data.highlights[0] ? `<div class="ym-hl">${esc(trim(data.highlights[0], 74))}</div>` : ''
-    rows.push(`
-      <${openable ? 'button' : 'div'} class="ym has ${m === y.month ? 'now' : ''}"${openable ? ` data-month="${y.year}-${String(m + 1).padStart(2, '0')}"` : ''}>
-        <div class="ym-name">${name}</div>
-        <div class="ym-body">
-          <div class="ym-bar"><span style="width:${pct}%"></span></div>
-          <div class="ym-count">${data.events} moment${data.events === 1 ? '' : 's'}${data.scheduled ? ` · ${data.scheduled} ahead` : ''}</div>
-          ${hl}
-        </div>
-      </${openable ? 'button' : 'div'}>`)
-  })
-  flushQuiet()
-  const rowsHtml = rows.join('')
   const past = !!page.yearShown
+  const openable = !past
+
+  // ---- the year's rhythm: one strip, week by week — what happened in
+  // ink, what is scheduled in outline. One graphic instead of a ladder
+  // of bars; the texture is the information.
+  const now = new Date()
+  const through = past ? 1 : Math.min(1, Math.max(0, (now - new Date(y.year, 0, 1)) / (new Date(y.year + 1, 0, 1) - new Date(y.year, 0, 1))))
+  const daysLeft = Math.ceil((new Date(y.year, 11, 1) - now) / 86400000)
+  const thisWeek = Math.min(51, Math.floor((now - new Date(y.year, 0, 1)) / (7 * 86400000)))
+  const peakW = Math.max(1, ...(y.weeks || []))
+  const strip = y.weeks
+    ? `<div class="yr-weeks" aria-hidden="true">${y.weeks
+        .map((c, i) => {
+          const sched = (y.sweeks || [])[i] || 0
+          if (c) return `<i class="w on${i === thisWeek && !past ? ' wnow' : ''}" style="--h:${Math.max(18, Math.round((c / peakW) * 100))}%"></i>`
+          if (sched && i >= thisWeek) return `<i class="w sched"></i>`
+          return `<i class="w${i === thisWeek && !past ? ' wnow' : ''}"></i>`
+        })
+        .join('')}</div>`
+    : ''
+  const moments = y.months.reduce((n, m) => n + m.events, 0)
+  const stat = past
+    ? `<div class="yr-sub">${moments} moment${moments === 1 ? '' : 's'}</div>`
+    : `<div class="yr-sub">${Math.round(through * 100)}% through · ${moments} moment${moments === 1 ? '' : 's'} · ${daysLeft} days to December</div>`
+
+  // ---- the goals, as numbers: the band on the page already draws their
+  // meters, so here they get the serif and a word — the weigh-in reads
+  // like a ledger of the year, not another row of bars.
+  const goals = past ? [] : liveGoals(page.state)
+  const goalRows = goals
+    .map(({ space, block, goal: g }) => {
+      const label = block.id === heroId(space) || !block.title ? space.name : block.title
+      const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const cur = g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, '')
+      return `<button class="yr-goal ${cls}" data-goal-open="${space.id}">
+        <span class="yr-goal-name">${esc(label)}</span>
+        <span class="yr-goal-dots" aria-hidden="true"></span>
+        <span class="yr-goal-fig"><b>${esc(cur)}</b> of ${esc(fmtAmount(g.target, g.unit))}</span>
+        <span class="yr-goal-pace">${esc(paceWords(g))}</span>
+      </button>`
+    })
+    .join('')
+
+  // ---- the months, as a grid of doors: a place each, its count beneath,
+  // the current month marked, the horizon in accent. No bars.
+  const cells = names
+    .map((name, m) => {
+      const data = y.months[m]
+      const future = !past && m > y.month
+      const nowM = !past && m === y.month
+      const bits = []
+      if (data.events) bits.push(`${data.events}`)
+      // "due", not "ahead": two lines up, ahead is a pace word. What lands
+      // in a month is due in it — a flight on the 14th, a goal by the 31st.
+      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} due</span>`)
+      const body = bits.length ? bits.join(' · ') : future || nowM ? (m === 11 ? `in ${daysLeft} days` : '') : ''
+      const has = data.events || data.scheduled
+      const cls = `yr-mo${nowM ? ' now' : ''}${future && !has ? ' quiet' : ''}`
+      const inner = `<span class="yr-mo-name">${name.slice(0, 3)}</span><span class="yr-mo-n">${body || '·'}</span>`
+      return openable && has
+        ? `<button class="${cls} has" data-month="${y.year}-${String(m + 1).padStart(2, '0')}">${inner}</button>`
+        : `<div class="${cls}">${inner}</div>`
+    })
+    .join('')
+
   const years = page.state.archivedYears || []
   const nav = [...years, page.state.year.year]
     .map((yy) =>
@@ -84,13 +98,19 @@ function buildYear() {
     ? `<div class="rest-head" style="margin-top:20px">what the year held</div>` +
       y.spaces.map((s) => `<div class="ym-hl"><b>${esc(s.name)}</b>${s.stats.length ? ` · ${esc(s.stats.join(' · '))}` : ''}</div>`).join('')
     : ''
+  // the freshest thing the year said about itself, one line, whole words
+  const hl = [...y.months].reverse().find((m) => m.highlights?.length)?.highlights[0]
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card year-card">
         <h2 class="space-name">${y.year}</h2>
+        ${strip}
+        ${stat}
         ${years.length ? `<div class="year-nav">${nav}</div>` : ''}
-        ${rowsHtml}
+        ${goalRows ? `<div class="yr-goals">${goalRows}</div>` : ''}
+        <div class="yr-months">${cells}</div>
+        ${hl && !past ? `<div class="yr-hl">${esc(trim(hl, 96))}</div>` : ''}
         ${held}
         ${past ? '' : `<a class="retire-link" href="/api/export.md" download>download the year</a>`}
       </article>

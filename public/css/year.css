@@ -54,6 +54,145 @@ button.ym:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 }
 .ym-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 
+/* The year's rhythm: fifty-two weeks in one strip — what happened in
+   ink, scaled to its loudest week; what is scheduled ahead in outline.
+   One graphic carries the record and the horizon. */
+.yr-weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+  margin: calc(-1 * var(--space-2)) 0 6px;
+}
+.yr-weeks .w {
+  flex: 1 1 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line-1);
+  opacity: 0.55;
+}
+.yr-weeks .w.on {
+  height: var(--h);
+  background: var(--accent);
+  opacity: 0.55;
+}
+.yr-weeks .w.sched {
+  height: 26%;
+  background: var(--accent);
+  opacity: 0.22;
+}
+.yr-weeks .w.wnow { background: var(--accent); opacity: 1; min-height: 4px; }
+.yr-sub {
+  font-size: 10.5px;
+  letter-spacing: 0.035em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--space-6);
+}
+
+/* The goals, as the ledger of the year: name, a quiet dotted leader, the
+   serif figure, the word. The band on the page already draws their
+   meters; here the numbers carry the weight. */
+.yr-goals { margin: 0 0 var(--space-6); }
+.yr-goal {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 4px 0;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.yr-goal-name {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--text-2);
+  transition: color var(--m-ui) var(--ease);
+}
+.yr-goal:hover .yr-goal-name { color: var(--text-1); }
+.yr-goal-dots {
+  flex: 1 1 auto;
+  border-bottom: 1px dotted var(--line-2);
+  opacity: 0.5;
+  transform: translateY(-3px);
+}
+.yr-goal-fig {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.yr-goal-fig b {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 16px;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+}
+.yr-goal-pace {
+  flex: 0 0 92px;
+  text-align: right;
+  font-size: 10.5px;
+  letter-spacing: 0.035em;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.yr-goal.behind .yr-goal-pace { color: var(--bad-ink); }
+.yr-goal.met .yr-goal-pace,
+.yr-goal.met .yr-goal-fig b { color: var(--good-ink); }
+.yr-goal:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+/* The months, as a grid of doors: a place each, its count beneath. The
+   current month wears the dot the row used to; the horizon is in accent. */
+.yr-months {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+  margin-bottom: var(--space-4);
+}
+.yr-mo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: inherit;
+}
+.yr-mo.has { cursor: pointer; transition: background var(--m-ui) var(--ease); }
+.yr-mo.has:hover { background: var(--surface-1); }
+.yr-mo.has:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.yr-mo-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--text-1);
+}
+.yr-mo.quiet .yr-mo-name { color: var(--text-3); }
+.yr-mo.now .yr-mo-name::after { content: "·"; color: var(--accent); margin-left: 4px; }
+.yr-mo-n {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  min-height: 15px;
+}
+.yr-mo.quiet .yr-mo-n { opacity: 0.4; }
+.yr-mo-n .ahead { color: var(--accent-ink); }
+@media (max-width: 640px) {
+  .yr-months { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* the year's latest word about itself */
+.yr-hl { font-size: 12px; color: var(--text-3); margin-bottom: var(--space-4); text-wrap: pretty; }
+
 /* a future month that holds something is a door like any other */
 button.ym.future .ym-name { color: var(--text-2); }
 .ym.future .ym-count { color: var(--text-3); }
