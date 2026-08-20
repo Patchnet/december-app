@@ -38,7 +38,19 @@ function schedulePoll() {
 
 async function poll() {
   try {
-    page.state = await api('/api/state')
+    // echo the fingerprint back; "unchanged" carries only the live flags,
+    // so a quiet page costs the wire almost nothing every ten seconds
+    const since = page.state?.fingerprint
+    const data = await api(`/api/state${since ? `?since=${encodeURIComponent(since)}` : ''}`)
+    if (data.unchanged) {
+      Object.assign(page.state, {
+        settle: data.settle,
+        canUndo: data.canUndo,
+        canUndoManual: data.canUndoManual,
+      })
+    } else {
+      page.state = data
+    }
     render()
   } catch {
     /* transient */

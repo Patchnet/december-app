@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists, stateFingerprint, undoIsFresh, canUndoManual } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
@@ -49,7 +49,15 @@ const MIME = {
 await settle.writeMcpConfig()
 await rolloverIfNeeded() // the turn of the year happens before anything else
 const pocket = await createPocketSync({ dataDir: DATA_DIR })
-observePersists(() => pocket.queuePage(project()))
+// Each queuePage projects and encrypts the WHOLE page, and a settle batch
+// persists a dozen times in a few seconds. Only the last state of a burst
+// ever reaches the phone anyway, so the observer coalesces: one encryption,
+// half a second after the writes go quiet.
+let pocketQueueTimer = null
+observePersists(() => {
+  clearTimeout(pocketQueueTimer)
+  pocketQueueTimer = setTimeout(() => void pocket.queuePage(project()), 500)
+})
 watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
 let surfacingScheduled = false
@@ -203,7 +211,19 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (path === '/api/state' && req.method === 'GET') {
-      return json(res, 200, project(settleStatus()))
+      // the poll echoes the fingerprint it last saw; a match means nothing
+      // the page draws has moved, so the whole year is not serialized again
+      const fingerprint = stateFingerprint()
+      if (url.searchParams.get('since') === fingerprint) {
+        return json(res, 200, {
+          unchanged: true,
+          fingerprint,
+          settle: settleStatus(),
+          canUndo: undoIsFresh(),
+          canUndoManual: canUndoManual(),
+        })
+      }
+      return json(res, 200, { ...project(settleStatus()), fingerprint })
     }
 
     if (path === '/api/pocket' && req.method === 'GET') {
@@ -236,7 +256,8 @@ const server = createServer(async (req, res) => {
       const lines = text.includes('\n')
         ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 25)
         : [text]
-      for (const line of lines) await addCapture(line, body.hint)
+      if (lines.length === 1) await addCapture(lines[0], body.hint)
+      else await addCaptureBatch(lines, body.hint) // one write for the whole dump
       scheduleSettle()
       return json(res, 200, project(settleStatus()))
     }
@@ -527,6 +548,7 @@ function shutdown() {
   shuttingDown = true
   clearInterval(backupTimer)
   clearInterval(pocketTimer)
+  clearTimeout(pocketQueueTimer)
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }

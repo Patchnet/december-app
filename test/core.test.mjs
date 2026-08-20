@@ -70,6 +70,46 @@ test('rollover uses the injected clock and starts the new year event file', asyn
   assert.deepEqual(fresh.lessons, ['keep it short'])
 })
 
+test('a brain dump is one write, and the poll fingerprint knows when nothing moved', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-batch-'))
+  const core = await isolatedCore(dir)
+
+  const before = core.stateFingerprint()
+  const kept = await core.addCaptureBatch(['paid rent 2300', 'ran 3 miles', 'ran 3 miles'])
+  // the echo dedupe holds inside a batch too: the doubled line lands once
+  assert.equal(kept.length, 2)
+  const disk = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal(disk.captures.length, 2)
+  // each kept line still writes its own event
+  const year = new Date().getFullYear()
+  assert.equal((await core.readEvents(year)).filter((e) => e.kind === 'capture').length, 2)
+
+  // the fingerprint moved with the write, and holds still when nothing does
+  const after = core.stateFingerprint()
+  assert.notEqual(before, after)
+  assert.equal(core.stateFingerprint(), after)
+
+  // urgency is time-driven: the same page fingerprints differently once a
+  // dated reminder's day arrives, so the poll re-sorts without a mutation
+  const today = new Date().toISOString().slice(0, 10)
+  await core.createBlock('Errands', { type: 'reminder', title: '', text: 'pick up keys', when: today })
+  const dueNow = core.stateFingerprint(new Date())
+  const lastWeek = core.stateFingerprint(new Date(Date.now() - 7 * 86400000))
+  assert.notEqual(dueNow, lastWeek)
+})
+
+test('the agent-batch undo snapshot no longer rides to disk', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-prev-'))
+  const core = await isolatedCore(dir)
+  await core.createSpace('Launch') // an agent write opens the snapshot
+  const disk = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal('previous' in disk, false)
+  // and undo still works from memory
+  await core.addCapture('note to self')
+  await core.undo()
+  assert.equal(core.project().spaces.length, 0)
+})
+
 test('pre-entities and pre-events state loads without data loss', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-compat-'))
   const year = new Date().getFullYear()

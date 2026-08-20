@@ -58,6 +58,55 @@ async function waitForServer(url, child) {
   throw new Error(`scratch server did not start: ${detail}`)
 }
 
+test('/api/state answers unchanged to an echoed fingerprint, and a dump is one write', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-since-'))
+  const data = join(base, 'data')
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM')
+      await once(child, 'exit')
+    }
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  const first = await (await fetch(`${url}/api/state`)).json()
+  assert.ok(first.fingerprint, 'the full payload carries its fingerprint')
+  assert.equal(first.unchanged, undefined)
+
+  // nothing moved: the echo comes back nearly empty
+  const echoed = await (await fetch(`${url}/api/state?since=${encodeURIComponent(first.fingerprint)}`)).json()
+  assert.equal(echoed.unchanged, true)
+  assert.equal(echoed.fingerprint, first.fingerprint)
+  assert.equal('spaces' in echoed, false)
+  assert.ok(echoed.settle)
+
+  // a multi-line dump lands every line and moves the fingerprint
+  await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'paid rent 2300\nran 3 miles\ncall the landlord' }),
+  })
+  const after = await (await fetch(`${url}/api/state?since=${encodeURIComponent(first.fingerprint)}`)).json()
+  assert.equal(after.unchanged, undefined)
+  assert.equal(after.captures.length, 3)
+})
+
 test('scratch server GET is read-only and POST writes only the injected home', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'december-connect-server-'))
   const home = join(base, 'home')
