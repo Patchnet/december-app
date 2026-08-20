@@ -406,12 +406,19 @@ function touchedPhrase(iso) {
 }
 
 function spaceInner(space, full = false) {
+  // A tracker that carries a goal already stands in the band over the
+  // cards — the same count, meter and pace, always on screen. Saying it
+  // again on the compact card is the page repeating itself, so the card
+  // shows everything else and the focus view keeps the full detail.
+  // Carriers with their own content (a goal over a ledger, a streak, a
+  // list) keep their blocks: those show the receipts, not the goal.
+  const shown = full ? space.blocks : space.blocks.filter((b) => !(b.goal && b.type === 'tracker'))
   // reminders that are open float to the top of the card
-  const blocks = [...space.blocks].sort((a, b) => {
+  const blocks = [...shown].sort((a, b) => {
     const w = (x) => (x.type === 'reminder' && !x.done ? 0 : 1)
     return w(a) - w(b)
   })
-  const hero = full ? null : heroId(space)
+  const hero = full ? null : heroId({ blocks: shown })
   const corner = `<div class="card-tools">
         <button class="card-tool ${archiveReady(space) ? 'ready' : ''}" data-finish="${space.id}" aria-label="${space.finished ? 'Reopen this space' : 'Archive this space'}" title="${space.finished ? 'reopen' : 'archive'}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17.5 19 6.5"/></svg>
