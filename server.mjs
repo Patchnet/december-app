@@ -140,7 +140,12 @@ function readBody(req) {
     let raw = ''
     req.on('data', (c) => {
       raw += c
-      if (raw.length > 1e6) reject(new Error('body too large'))
+      if (raw.length > 1e6) {
+        // rejecting alone left the stream flowing and raw growing until the
+        // sender finished; tear the connection down with the refusal
+        req.destroy()
+        reject(new Error('body too large'))
+      }
     })
     req.on('end', () => {
       try {
@@ -159,8 +164,10 @@ function readRaw(req, cap) {
     let size = 0
     req.on('data', (c) => {
       size += c.length
-      if (size > cap) reject(new Error('file too large (15 MB cap)'))
-      else chunks.push(c)
+      if (size > cap) {
+        req.destroy()
+        reject(new Error('file too large (15 MB cap)'))
+      } else chunks.push(c)
     })
     req.on('end', () => resolve(Buffer.concat(chunks)))
     req.on('error', reject)
@@ -187,8 +194,22 @@ function foreignOrigin(req) {
   const origin = req.headers.origin
   if (!origin) return false
   try {
-    const host = new URL(origin).hostname
-    return host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]'
+    return !LOCAL_HOSTS.has(new URL(origin).hostname)
+  } catch {
+    return true
+  }
+}
+
+// The Origin check guards writes; reads had nothing. A hostile page whose
+// domain rebinds to 127.0.0.1 becomes same-origin with this server and can
+// READ the whole year off /api/state — but its requests still carry its own
+// hostname in Host, which a browser never spoofs. The server only ever
+// listens on loopback, so any Host that is not a local name is rebinding.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+function foreignHost(host) {
+  if (!host) return false // HTTP/1.0 tools may omit it; loopback bind vouches
+  try {
+    return !LOCAL_HOSTS.has(new URL(`http://${host}`).hostname)
   } catch {
     return true
   }
@@ -198,6 +219,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const path = url.pathname
   if (req.method === 'POST') console.log(new Date().toISOString(), req.method, path)
+  if (foreignHost(req.headers.host)) {
+    return json(res, 403, { error: 'refused: December only answers to localhost' })
+  }
   if (req.method === 'POST' && foreignOrigin(req)) {
     return json(res, 403, { error: 'refused: this page did not come from December' })
   }

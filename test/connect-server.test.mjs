@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:net'
-import { createServer as createHttpServer } from 'node:http'
+import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -57,6 +57,63 @@ async function waitForServer(url, child) {
   }
   throw new Error(`scratch server did not start: ${detail}`)
 }
+
+test('the server refuses any request whose Host is not a local name', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-host-check-'))
+  const data = join(base, 'data')
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM')
+      await once(child, 'exit')
+    }
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  // a DNS-rebound page reaches loopback with its own hostname in Host — the
+  // one header a browser never lets a page choose. Reads must refuse it too.
+  // (fetch strips a spoofed Host, so this speaks raw http like the attack does)
+  const rawStatus = (path, host) => new Promise((resolveStatus, rejectStatus) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, headers: { host } }, (res) => {
+      res.resume()
+      resolveStatus(res.statusCode)
+    })
+    req.on('error', rejectStatus)
+    req.end()
+  })
+  assert.equal(await rawStatus('/api/state', 'evil.example'), 403)
+  assert.equal(await rawStatus('/api/export.md', 'evil.example:9999'), 403)
+  assert.equal(await rawStatus('/api/health', 'localhost:9999'), 200)
+
+  // local names keep working, port and all
+  const local = await fetch(`${url}/api/state`)
+  assert.equal(local.status, 200)
+  const loopback = await fetch(`http://127.0.0.1:${port}/api/health`)
+  assert.equal(loopback.status, 200)
+
+  // cross-site writes stay refused by Origin as before
+  const foreignWrite = await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+    body: JSON.stringify({ text: 'nope' }),
+  })
+  assert.equal(foreignWrite.status, 403)
+})
 
 test('scratch server GET is read-only and POST writes only the injected home', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'december-connect-server-'))

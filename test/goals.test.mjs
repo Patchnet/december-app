@@ -137,3 +137,19 @@ test('the conversion motion: a goal moves carriers without changing where it sta
 
   await assert.rejects(core.moveGoal({ space: 'Running', toBlockId: 'nope' }), /unknown toBlockId/)
 })
+
+test('a goal never moves to a block in another space', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-cross-'))
+  const core = await isolatedCore(dir)
+  await core.createSpace('Running')
+  await core.createBlock('Running', { type: 'tracker', title: 'Miles', target: 200, unit: 'mi', goal: true })
+  const other = await core.createBlock('Cycling', { type: 'ledger', title: 'Rides', unit: 'mi' })
+  await assert.rejects(
+    core.moveGoal({ space: 'Running', toBlockId: other.blockId }),
+    /lives in Cycling/
+  )
+  // nothing changed: Running still carries its goal, Cycling has none
+  const goals = core.agentView().goals
+  assert.equal(goals.length, 1)
+  assert.equal(goals[0].space, 'Running')
+})
