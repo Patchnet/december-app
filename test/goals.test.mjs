@@ -192,3 +192,164 @@ test('new ids are cryptographic while legacy short ids remain readable', async (
   assert.match(capture.id, /^[A-Za-z0-9_-]{22}$/)
   assert.equal(core.project().sources.oldcap1, 'legacy source')
 })
+
+test('goal readings cover zero, met, over, and fractional pace boundaries', () => {
+  const block = {
+    type: 'tracker',
+    current: 0,
+    target: 10,
+    unit: 'miles',
+    goal: {
+      target: 10,
+      unit: 'miles',
+      from: '2026-01-01',
+      by: '2026-12-31',
+      base: 0,
+      setAt: '2026-01-01',
+      movedAt: null,
+    },
+  }
+  const afterHorizon = new Date('2027-01-01T12:00:00')
+
+  let reading = goalOf(block, afterHorizon)
+  assert.equal(reading.current, 0)
+  assert.equal(reading.whole, true)
+  assert.equal(reading.gap, 10)
+  assert.equal(reading.paceText, '10 behind')
+  assert.equal(reading.behind, true)
+
+  block.current = 10
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.met, true)
+  assert.equal(reading.pace, 'met')
+  assert.equal(reading.paceText, 'done')
+  assert.equal(reading.behind, false)
+
+  block.current = 12
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.met, true)
+  assert.equal(reading.paceText, 'done')
+  assert.equal(reading.behind, false)
+
+  block.current = 9.5
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.diff, -0.5)
+  assert.equal(reading.whole, false)
+  assert.equal(reading.gap, 0.5)
+  assert.equal(reading.paceText, '0.5 behind', 'the existing pace wording is preserved')
+  assert.equal(reading.behind, false, 'negative one-half is visually neutral')
+
+  block.current = 9.6
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.diff, -0.4)
+  assert.equal(reading.paceText, 'on pace')
+  assert.equal(reading.behind, false)
+
+  block.current = 9.4
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.diff, -0.6)
+  assert.equal(reading.whole, false)
+  assert.equal(reading.behind, true)
+
+  block.current = 9
+  reading = goalOf(block, afterHorizon)
+  assert.equal(reading.whole, true)
+  assert.equal(reading.gap, 1)
+})
+
+test('calendar-year and dated goals expose the same derived contract', () => {
+  const calendar = { type: 'tracker', current: 25, target: 100, unit: 'miles' }
+  setBlockGoal(calendar, { target: 100 }, '2026-08-01')
+  const calendarReading = goalOf(calendar, new Date('2026-08-01T12:00:00'))
+  assert.equal(calendarReading.from, '2026-01-01')
+  assert.equal(calendarReading.by, '2026-12-31')
+  assert.equal(typeof calendarReading.paceText, 'string')
+  assert.equal(typeof calendarReading.behind, 'boolean')
+
+  const dated = { type: 'tracker', current: 25, target: 100, unit: 'miles' }
+  setBlockGoal(dated, { target: 100, by: '2026-10-31' }, '2026-08-01')
+  const datedReading = goalOf(dated, new Date('2026-08-01T12:00:00'))
+  assert.equal(datedReading.from, '2026-08-01')
+  assert.equal(datedReading.by, '2026-10-31')
+  assert.equal(datedReading.base, 25)
+  assert.equal(typeof datedReading.paceText, 'string')
+  assert.equal(typeof datedReading.behind, 'boolean')
+})
+
+test('quiet wording begins on day fourteen and movedAt takes precedence', () => {
+  const block = {
+    type: 'tracker',
+    current: 0,
+    target: 10,
+    unit: '',
+    goal: {
+      target: 10,
+      unit: '',
+      from: '2026-01-01',
+      by: '2026-12-31',
+      base: 0,
+      setAt: '2026-08-01',
+      movedAt: null,
+    },
+  }
+
+  let reading = goalOf(block, new Date('2026-08-14T12:00:00'))
+  assert.equal(reading.quietDays, 13)
+  assert.equal(reading.quietText, '')
+
+  reading = goalOf(block, new Date('2026-08-15T12:00:00'))
+  assert.equal(reading.quietDays, 14)
+  assert.equal(reading.quietText, 'quiet 14 days')
+
+  block.goal.movedAt = '2026-08-10T12:00:00'
+  reading = goalOf(block, new Date('2026-08-15T12:00:00'))
+  assert.equal(reading.quietDays, 5)
+  assert.equal(reading.quietText, '')
+})
+
+test('project derives labels and countedBy without changing durable serialization', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-projection-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Running')
+  const tracker = await core.createBlock(space.id, {
+    type: 'tracker', title: 'Year total', current: 1, target: 2, unit: 'runs', goal: true,
+  })
+  const list = await core.createBlock(space.id, { type: 'list', title: 'Sessions', items: ['First', 'Second'] })
+  const ledger = await core.createBlock(space.id, { type: 'ledger', title: 'Long runs', unit: 'miles' })
+  await core.setGoal({ space: space.id, blockId: ledger.blockId, target: 100, unit: 'miles' })
+
+  let projected = core.project().spaces.find((s) => s.id === space.id)
+  assert.equal(projected.blocks.find((b) => b.id === tracker.blockId).goal.label, 'Running')
+  assert.equal(projected.blocks.find((b) => b.id === ledger.blockId).goal.label, 'Long runs')
+  assert.equal(projected.blocks.find((b) => b.id === list.blockId).countedBy, tracker.blockId)
+  assert.deepEqual(core.agentView().goals.map((g) => g.label), ['Running', 'Long runs'])
+
+  await core.createBlock(space.id, { type: 'list', title: 'Gear', items: ['Shoes'] })
+  projected = core.project().spaces.find((s) => s.id === space.id)
+  assert.equal(projected.blocks.find((b) => b.id === list.blockId).countedBy, undefined, 'a second list withdraws the stamp')
+
+  const stored = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  const storedSpace = stored.spaces.find((s) => s.id === space.id)
+  const storedTracker = storedSpace.blocks.find((b) => b.id === tracker.blockId)
+  const storedList = storedSpace.blocks.find((b) => b.id === list.blockId)
+  assert.deepEqual(
+    Object.keys(storedTracker.goal).sort(),
+    ['base', 'by', 'from', 'movedAt', 'setAt', 'target', 'unit'],
+    'derived readings do not enter the legacy goal serialization'
+  )
+  assert.equal(storedList.countedBy, undefined)
+})
+
+test('multiple tracker candidates leave a counted list unstamped', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-counted-ambiguity-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Rent')
+  const list = await core.createBlock(space.id, { type: 'list', title: '', items: ['Jan', 'Feb'] })
+  await core.createBlock(space.id, { type: 'tracker', title: 'Payments', current: 0, target: 2, unit: '' })
+  let projected = core.project().spaces.find((s) => s.id === space.id)
+  assert.equal(typeof projected.blocks.find((b) => b.id === list.blockId).countedBy, 'string')
+
+  await core.createBlock(space.id, { type: 'tracker', title: 'Other', current: 0, target: 2, unit: '' })
+  projected = core.project().spaces.find((s) => s.id === space.id)
+  assert.equal(projected.blocks.find((b) => b.id === list.blockId).countedBy, undefined)
+})
