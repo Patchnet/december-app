@@ -95,4 +95,4 @@ function renderGoals() {
   }
 }
 
-export { renderGoals, liveGoals, goalOnly }
+export { renderGoals, liveGoals, goalOnly, paceWords }

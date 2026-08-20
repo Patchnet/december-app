@@ -1,6 +1,7 @@
 import { $, esc, reduced, fmtAmount, toast, api, page, hooks } from './session.js'
 import { pop, bloom } from './motion.js'
-import { clockOf } from './blocks.js'
+import { clockOf, heroId } from './blocks.js'
+import { liveGoals, paceWords } from './goals.js'
 
 // ------------------------------------------------------------- year view
 
@@ -34,13 +35,26 @@ function buildYear() {
     rows.push(`<div class="ym quiet-band"><div class="ym-name">${span}</div><div class="ym-body"><span class="ym-quiet">quiet</span></div></div>`)
     run = []
   }
+  let futureRun = []
+  const flushAhead = () => {
+    if (!futureRun.length) return
+    const short = (i) => names[i].slice(0, 3)
+    const span = futureRun.length === 1 ? names[futureRun[0]] : `${short(futureRun[0])} – ${short(futureRun[futureRun.length - 1])}`
+    rows.push(`<div class="ym quiet-band future"><div class="ym-name">${span}</div><div class="ym-body"><span class="ym-quiet">nothing yet</span></div></div>`)
+    futureRun = []
+  }
   names.forEach((name, m) => {
     const data = y.months[m]
     const future = !page.yearShown && m > page.state.year.month
     if (!data.events) {
       if (!future) run.push(m)
-      else {
+      else if (!(data.scheduled || 0) && m !== 11) {
+        // empty future months collapse like quiet past ones: three rows of
+        // nothing said "September October November" and meant one thing
+        futureRun.push(m)
+      } else {
         flushQuiet()
+        flushAhead()
         const sched = data.scheduled || 0
         const last = m === 11 ? `<span class="ym-quiet">in ${Math.ceil((new Date(y.year, 11, 1) - Date.now()) / 86400000)} days</span>` : ''
         // a future month holding something scheduled is a place, not a blank
@@ -56,6 +70,7 @@ function buildYear() {
       return
     }
     flushQuiet()
+    flushAhead()
     // one honest magnitude instead of up to 28 identical dots
     const pct = Math.max(6, Math.round((data.events / peak) * 100))
     const hl = data.highlights[0] ? `<div class="ym-hl">${esc(trim(data.highlights[0], 74))}</div>` : ''
@@ -70,6 +85,7 @@ function buildYear() {
       </${openable ? 'button' : 'div'}>`)
   })
   flushQuiet()
+  flushAhead()
   const rowsHtml = rows.join('')
   const past = !!page.yearShown
   const years = page.state.archivedYears || []
@@ -84,12 +100,41 @@ function buildYear() {
     ? `<div class="rest-head" style="margin-top:20px">what the year held</div>` +
       y.spaces.map((s) => `<div class="ym-hl"><b>${esc(s.name)}</b>${s.stats.length ? ` · ${esc(s.stats.join(' · '))}` : ''}</div>`).join('')
     : ''
+  // the year itself, drawn: fill is how far it has come, ticks its months
+  const now = new Date()
+  const through = past ? 1 : Math.min(1, Math.max(0, (now - new Date(y.year, 0, 1)) / (new Date(y.year + 1, 0, 1) - new Date(y.year, 0, 1))))
+  const daysLeft = Math.ceil((new Date(y.year, 11, 1) - now) / 86400000)
+  const yearLine = `
+    <div class="yr-line" aria-hidden="true">${Array.from({ length: 11 }, (_, i) => `<i style="left:${(((i + 1) * 100) / 12).toFixed(1)}%"></i>`).join('')}<b style="width:${(through * 100).toFixed(1)}%"></b></div>
+    ${past ? '' : `<div class="yr-sub">${Math.round(through * 100)}% through · ${daysLeft} days to December</div>`}`
+
+  // the year's goals, on the months' own grid: name, meter, standing.
+  // This card is where the reckoning lives, so the goals lead it.
+  const goals = past ? [] : liveGoals(page.state)
+  const goalRows = goals
+    .map(({ space, block, goal: g }) => {
+      const pct = Math.min(100, Math.max(0, (g.current / g.target) * 100))
+      const tick = g.met ? '' : `<i style="left:${(g.through * 100).toFixed(1)}%"></i>`
+      const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const cur = g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, '')
+      // the space's name stands for its heartbeat, as it does in the band
+      const label = block.id === heroId(space) || !block.title ? space.name : block.title
+      return `<button class="yr-goal ${cls}" data-goal-open="${space.id}">
+        <span class="yr-goal-name">${esc(label)}</span>
+        <span class="goal-meter"><b style="width:${pct.toFixed(1)}%"></b>${tick}</span>
+        <span class="yr-goal-fig">${esc(cur)} of ${esc(fmtAmount(g.target, g.unit))} · ${esc(paceWords(g))}</span>
+      </button>`
+    })
+    .join('')
+
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card year-card">
         <h2 class="space-name">${y.year}</h2>
+        ${yearLine}
         ${years.length ? `<div class="year-nav">${nav}</div>` : ''}
+        ${goalRows ? `<div class="yr-goals">${goalRows}</div>` : ''}
         ${rowsHtml}
         ${held}
         ${past ? '' : `<a class="retire-link" href="/api/export.md" download>download the year</a>`}
