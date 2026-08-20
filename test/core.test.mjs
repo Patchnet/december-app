@@ -70,6 +70,49 @@ test('rollover uses the injected clock and starts the new year event file', asyn
   assert.deepEqual(fresh.lessons, ['keep it short'])
 })
 
+test('filed captures survive the inbox cap — the year keeps its receipts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-capture-cap-'))
+  const core = await isolatedCore(dir)
+  const first = await core.addCapture('paid rent 2300')
+  await core.createSpace('Housing')
+  await core.fileCapture(first.id, 'Housing', 'logged rent')
+  // a runaway automation floods the inbox; the cap holds it at 200…
+  for (let i = 0; i < 230; i++) await core.addCapture(`line ${i}`)
+  const captures = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8')).captures
+  assert.equal(captures.filter((c) => c.status === 'inbox').length, 200)
+  // …but the filed record is never eaten from the front
+  assert.equal(captures.find((c) => c.id === first.id)?.summary, 'logged rent')
+  assert.ok(core.project().sources[first.id])
+})
+
+test('a retired space keeps its record in the month and year, and schedules nothing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-retired-record-'))
+  const core = await isolatedCore(dir)
+  const month = new Date().toISOString().slice(0, 7)
+  const future = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  await core.createSpace('Truck')
+  const led = await core.createBlock('Truck', { type: 'ledger', title: 'Repairs', unit: '$', entries: [{ label: 'brakes', amount: 400 }] })
+  await core.createBlock('Truck', { type: 'reminder', title: '', text: 'oil change', when: future })
+  const before = core.readMonth(month)
+  assert.ok(before.spaces.some((sp) => sp.name === 'Truck'))
+
+  const spaceId = core.project().spaces.find((sp) => sp.name === 'Truck').id
+  await core.retireSpace(spaceId)
+
+  // what happened in it still happened…
+  const after = core.readMonth(month)
+  const truck = after.spaces.find((sp) => sp.name === 'Truck')
+  assert.ok(truck, 'the retired space still shows its month record')
+  assert.ok(truck.lines.some((l) => l.text === 'brakes'))
+  // …but nothing in it is due anymore, anywhere
+  assert.ok(!truck.lines.some((l) => l.ahead))
+  const scheduled = core.project().year.months.reduce((n, m) => n + (m.scheduled || 0), 0)
+  assert.equal(scheduled, 0)
+  // and the year's happened count still includes its ledger entry
+  const events = core.project().year.months.reduce((n, m) => n + m.events, 0)
+  assert.ok(events >= 1)
+})
+
 test('pre-entities and pre-events state loads without data loss', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-compat-'))
   const year = new Date().getFullYear()
