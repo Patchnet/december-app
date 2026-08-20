@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.11.0
+current: 0.12.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.12.0 - 2026-08-20
+
+Improve runtime safety, time and history handling, persistence, security checks, and server-derived goal freshness.
 
 ## 0.11.0 - 2026-08-19
 
