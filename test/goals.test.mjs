@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { setBlockGoal, goalOf, goalMeasure } from '../lib/blocks.mjs'
+import { setBlockGoal, goalOf, goalMeasure, uid } from '../lib/blocks.mjs'
 
 let importNumber = 0
 async function isolatedCore(dataDir) {
@@ -110,10 +110,10 @@ test('the conversion motion: a goal moves carriers without changing where it sta
   const dir = await mkdtemp(join(tmpdir(), 'december-goals-'))
   const core = await isolatedCore(dir)
   const space = await core.createSpace('Running')
-  await core.createBlock(space.id, { type: 'tracker', title: 'Miles by December', current: 132, target: 200, unit: 'miles', goal: true })
+  const tracker = await core.createBlock(space.id, { type: 'tracker', title: 'Miles by December', current: 132, target: 200, unit: 'miles', goal: true })
   const ledger = await core.createBlock(space.id, { type: 'ledger', title: '', unit: 'mi', entries: [{ label: 'Monday', amount: 4 }] })
 
-  const out = await core.moveGoal({ space: 'Running', toBlockId: ledger.blockId })
+  const out = await core.moveGoal({ space: 'Running', blockId: tracker.blockId, toBlockId: ledger.blockId })
   assert.equal(out.absorbed, true, 'the mirroring tracker is absorbed')
   assert.equal(out.goal.current, 132, 'standing unchanged: 128 carried + 4 already logged')
   const sp = core.project().spaces[0]
@@ -128,12 +128,67 @@ test('the conversion motion: a goal moves carriers without changing where it sta
 
   // a carrier holding the person's words is never absorbed
   const streak = await core.createBlock(space.id, { type: 'streak', title: 'Ran', dates: ['2026-08-01'] })
-  await core.moveGoal({ space: 'Running', toBlockId: streak.blockId })
+  await core.moveGoal({ space: 'Running', blockId: ledger.blockId, toBlockId: streak.blockId })
   const after = core.project().spaces[0]
   assert.equal(after.blocks.length, 2, 'the ledger stays: it holds entries')
   assert.equal(after.blocks.find((b) => b.type === 'ledger').goal, undefined)
   // 138 stood; the streak counts 1 day; 137 rides as carried
   assert.equal(after.blocks.find((b) => b.type === 'streak').goal.current, 138)
 
-  await assert.rejects(core.moveGoal({ space: 'Running', toBlockId: 'nope' }), /unknown toBlockId/)
+  await assert.rejects(core.moveGoal({ space: 'Running', blockId: streak.blockId, toBlockId: 'nope' }), /unknown toBlockId/)
+})
+
+test('a rejected cross-space goal move has no memory, event, or persistence effects', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-cross-'))
+  const core = await isolatedCore(dir)
+  await core.createSpace('Running')
+  const source = await core.createBlock('Running', { type: 'tracker', title: 'Miles', target: 200, unit: 'mi', goal: true })
+  const other = await core.createBlock('Cycling', { type: 'ledger', title: 'Rides', unit: 'mi' })
+  const year = new Date().getFullYear()
+  const statePath = join(dir, 'state.json')
+  const eventsPath = join(dir, `events-${year}.jsonl`)
+  const beforeProject = core.project()
+  const beforeSource = structuredClone(core.readBlock(source.blockId).block)
+  const beforeTarget = structuredClone(core.readBlock(other.blockId).block)
+  const beforeState = await readFile(statePath, 'utf8')
+  const beforeEvents = await readFile(eventsPath, 'utf8')
+
+  await assert.rejects(
+    core.moveGoal({ space: 'Running', blockId: source.blockId, toBlockId: other.blockId }),
+    /lives in Cycling/
+  )
+  assert.deepEqual(core.readBlock(source.blockId).block, beforeSource)
+  assert.deepEqual(core.readBlock(other.blockId).block, beforeTarget)
+  assert.equal(core.project().updatedAt, beforeProject.updatedAt)
+  assert.equal(core.project().canUndo, beforeProject.canUndo)
+  assert.equal(await readFile(statePath, 'utf8'), beforeState)
+  assert.equal(await readFile(eventsPath, 'utf8'), beforeEvents)
+})
+
+test('new ids are cryptographic while legacy short ids remain readable', async () => {
+  const ids = Array.from({ length: 512 }, uid)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.ok(ids.every((id) => /^[A-Za-z0-9_-]{22}$/.test(id)))
+
+  const dir = await mkdtemp(join(tmpdir(), 'december-legacy-ids-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [{ id: 'oldcap1', text: 'legacy source', at: '2025-01-02T00:00:00.000Z', status: 'filed' }],
+    spaces: [{
+      id: 'oldspace1',
+      name: 'Legacy',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-02T00:00:00.000Z',
+      blocks: [{ id: 'oldblock1', type: 'note', title: '', text: 'still here', entities: [] }],
+      area: '',
+      pinned: false,
+      finished: false,
+    }],
+    yearOf: new Date().getFullYear(),
+  }))
+  const core = await isolatedCore(dir)
+  assert.equal(core.project().spaces[0].id, 'oldspace1')
+  assert.equal(core.readBlock('oldblock1').block.text, 'still here')
+  const capture = await core.addCapture('new record')
+  assert.match(capture.id, /^[A-Za-z0-9_-]{22}$/)
+  assert.equal(core.project().sources.oldcap1, 'legacy source')
 })

@@ -131,40 +131,48 @@ function exportMarkdown() {
 }
 
 const json = (res, code, body) => {
-  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
+  const headers = { 'content-type': 'application/json; charset=utf-8' }
+  if (code === 413) headers.connection = 'close'
+  res.writeHead(code, headers)
   res.end(JSON.stringify(body))
 }
 
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = ''
-    req.on('data', (c) => {
-      raw += c
-      if (raw.length > 1e6) reject(new Error('body too large'))
-    })
-    req.on('end', () => {
-      try {
-        resolve(raw ? JSON.parse(raw) : {})
-      } catch (e) {
-        reject(e)
-      }
-    })
-    req.on('error', reject)
-  })
-}
+const JSON_BODY_LIMIT = 1_000_000
 
-function readRaw(req, cap) {
+function limitedBody(req, cap, message) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let size = 0
-    req.on('data', (c) => {
-      size += c.length
-      if (size > cap) reject(new Error('file too large (15 MB cap)'))
-      else chunks.push(c)
+    let refused = false
+    req.on('data', (chunk) => {
+      if (refused) return
+      size += chunk.length
+      if (size > cap) {
+        refused = true
+        chunks.length = 0
+        const error = new Error(message)
+        error.statusCode = 413
+        reject(error)
+      } else {
+        chunks.push(chunk)
+      }
     })
-    req.on('end', () => resolve(Buffer.concat(chunks)))
-    req.on('error', reject)
+    req.on('end', () => {
+      if (!refused) resolve(Buffer.concat(chunks, size))
+    })
+    req.on('error', (error) => {
+      if (!refused) reject(error)
+    })
   })
+}
+
+async function readBody(req) {
+  const raw = await limitedBody(req, JSON_BODY_LIMIT, 'body too large (1 MB cap)')
+  return raw.length ? JSON.parse(raw.toString('utf8')) : {}
+}
+
+function readRaw(req, cap) {
+  return limitedBody(req, cap, 'file too large (15 MB cap)')
 }
 
 async function serveStatic(res, urlPath) {
@@ -187,8 +195,21 @@ function foreignOrigin(req) {
   const origin = req.headers.origin
   if (!origin) return false
   try {
-    const host = new URL(origin).hostname
-    return host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]'
+    return !LOCAL_HOSTS.has(new URL(origin).hostname)
+  } catch {
+    return true
+  }
+}
+
+// Host is checked before every route, including reads and Pocket operations.
+// This closes DNS rebinding: the server listens on loopback, while the Host
+// header still identifies the name a browser used to reach it. Missing Host
+// is refused because there is no name to validate; supported clients send it.
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+function foreignHost(host) {
+  if (!host) return true
+  try {
+    return !LOCAL_HOSTS.has(new URL(`http://${host}`).hostname)
   } catch {
     return true
   }
@@ -198,6 +219,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const path = url.pathname
   if (req.method === 'POST') console.log(new Date().toISOString(), req.method, path)
+  if (foreignHost(req.headers.host)) {
+    return json(res, 403, { error: 'refused: December only answers to localhost' })
+  }
   if (req.method === 'POST' && foreignOrigin(req)) {
     return json(res, 403, { error: 'refused: this page did not come from December' })
   }
@@ -512,7 +536,7 @@ const server = createServer(async (req, res) => {
 
     return serveStatic(res, path)
   } catch (err) {
-    return json(res, 500, { error: String(err.message || err) })
+    return json(res, err.statusCode || 500, { error: String(err.message || err) })
   }
 })
 

@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createServer } from 'node:net'
-import { createServer as createHttpServer } from 'node:http'
+import { connect as connectNet, createServer } from 'node:net'
+import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -57,6 +57,129 @@ async function waitForServer(url, child) {
   }
   throw new Error(`scratch server did not start: ${detail}`)
 }
+
+test('server rejects untrusted or missing Host on every surface', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-host-check-'))
+  const data = join(base, 'data')
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM')
+      await once(child, 'exit')
+    }
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  const rawStatus = (path, host, method = 'GET') => new Promise((resolveStatus, rejectStatus) => {
+    const options = { host: '127.0.0.1', port, path, method, setHost: host !== null }
+    if (host !== null) options.headers = { host }
+    const req = httpRequest(options, (res) => {
+      res.resume()
+      resolveStatus(res.statusCode)
+    })
+    req.on('error', rejectStatus)
+    req.end()
+  })
+  const missingHostStatus = () => new Promise((resolveStatus, rejectStatus) => {
+    const socket = connectNet(port, '127.0.0.1')
+    let response = ''
+    socket.setEncoding('utf8')
+    socket.on('connect', () => socket.end('GET /api/health HTTP/1.0\r\n\r\n'))
+    socket.on('data', (chunk) => { response += chunk })
+    socket.on('error', rejectStatus)
+    socket.on('close', () => resolveStatus(Number(response.match(/^HTTP\/\d\.\d (\d+)/)?.[1])))
+  })
+
+  // Reads, static files, writes, and Pocket all pass through the same gate.
+  assert.equal(await rawStatus('/api/state', 'evil.example'), 403)
+  assert.equal(await rawStatus('/', 'evil.example'), 403)
+  assert.equal(await rawStatus('/api/capture', 'evil.example', 'POST'), 403)
+  assert.equal(await rawStatus('/api/pocket', 'evil.example'), 403)
+  assert.equal(await rawStatus('/api/pocket/pair', 'evil.example', 'POST'), 403)
+  assert.equal(await missingHostStatus(), 403, 'a missing Host fails closed')
+
+  assert.equal(await rawStatus('/api/health', `localhost:${port}`), 200)
+  assert.equal(await rawStatus('/api/health', `127.0.0.1:${port}`), 200)
+  assert.equal((await fetch(`${url}/api/pocket`)).status, 200)
+
+  const foreignWrite = await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+    body: JSON.stringify({ text: 'nope' }),
+  })
+  assert.equal(foreignWrite.status, 403, 'Origin validation remains in force for writes')
+})
+
+test('JSON body limit is byte-exact, mutation-safe, and leaves the server healthy', async (t) => {
+  const base = await mkdtemp(join(tmpdir(), 'december-body-limit-'))
+  const data = join(base, 'data')
+  const port = await freePort()
+  const url = `http://localhost:${port}`
+  const generatedMcp = join(ROOT, `mcp.${port}.json`)
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DECEMBER_DATA_DIR: data,
+      DECEMBER_CLAUDE: join(base, 'missing-claude'),
+      DECEMBER_CODEX: join(base, 'missing-codex'),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  t.after(async () => {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM')
+      await once(child, 'exit')
+    }
+    await rm(generatedMcp, { force: true })
+    await rm(base, { recursive: true, force: true })
+  })
+  await waitForServer(url, child)
+
+  const atLimit = JSON.stringify({ question: 'x'.repeat(999_985) })
+  assert.equal(Buffer.byteLength(atLimit), 1_000_000)
+  const accepted = await fetch(`${url}/api/query`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: atLimit,
+  })
+  assert.equal(accepted.status, 503, 'the exact byte limit reaches the route')
+
+  const before = await (await fetch(`${url}/api/state`)).json()
+  const overLimit = JSON.stringify({ text: 'é'.repeat(499_995) })
+  assert.equal(Buffer.byteLength(overLimit), 1_000_001)
+  assert.ok(overLimit.length < 1_000_000, 'the limit counts bytes, not JavaScript characters')
+  const refused = await fetch(`${url}/api/capture`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: overLimit,
+  })
+  assert.equal(refused.status, 413)
+  assert.match((await refused.json()).error, /body too large/)
+
+  const health = await fetch(`${url}/api/health`)
+  assert.equal(health.status, 200)
+  assert.equal(child.exitCode, null)
+  const after = await (await fetch(`${url}/api/state`)).json()
+  assert.deepEqual(after.captures, before.captures, 'oversized capture made no partial mutation')
+  assert.equal(after.updatedAt, before.updatedAt, 'oversized capture caused no persistence write')
+})
 
 test('scratch server GET is read-only and POST writes only the injected home', async (t) => {
   const base = await mkdtemp(join(tmpdir(), 'december-connect-server-'))
