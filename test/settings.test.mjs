@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { getSettings, updateSettings, ENGINES, resolveEngineBinary } from '../lib/settings.mjs'
+import { buildEngineChoices, nextEngineKey } from '../public/js/onboarding-state.js'
 
 test('defaults: a known engine and a string model', () => {
   const s = getSettings()
@@ -53,7 +54,39 @@ test('Windows engine discovery retains the older Claude npm executable', () => {
 
 test('first-run copy separates organizing engines from assistant connections', () => {
   const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../public/js/connections.js', import.meta.url), 'utf8')
   assert.match(html, /Choose an organizing engine/)
   assert.match(html, /Connect assistants/)
   assert.match(html, /This is separate from choosing the engine above/)
+  assert.doesNotMatch(source, /is ready to organize/)
+  assert.match(source, /was found/)
+  assert.match(source, /complete sign-in/)
+})
+
+test('available engine choices keep the selected radio focusable and support arrow navigation', () => {
+  const definitions = [{ key: 'claude' }, { key: 'codex' }]
+  const choices = buildEngineChoices(definitions, {
+    engine: 'claude',
+    engines: { claude: true, codex: true },
+  })
+
+  assert.deepEqual(
+    choices.map(({ key, selected, disabled, tabIndex }) => ({ key, selected, disabled, tabIndex })),
+    [
+      { key: 'claude', selected: true, disabled: false, tabIndex: 0 },
+      { key: 'codex', selected: false, disabled: false, tabIndex: -1 },
+    ]
+  )
+  assert.equal(nextEngineKey(choices, 'claude', 'ArrowRight'), 'codex')
+  assert.equal(nextEngineKey(choices, 'claude', 'ArrowLeft'), 'codex')
+  assert.equal(nextEngineKey(choices, 'codex', 'Home'), 'claude')
+})
+
+test('an available alternative receives tab focus when the selected engine is missing', () => {
+  const choices = buildEngineChoices([{ key: 'claude' }, { key: 'codex' }], {
+    engine: 'claude',
+    engines: { claude: false, codex: true },
+  })
+  assert.equal(choices.find((choice) => choice.key === 'claude').disabled, true)
+  assert.equal(choices.find((choice) => choice.key === 'codex').tabIndex, 0)
 })

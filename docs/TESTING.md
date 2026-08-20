@@ -24,8 +24,8 @@ installed by `npm ci`; lint never skips when they are absent. Use
 - `test/docx.test.mjs` — dropped-document text extraction against a real
   in-memory zip; corrupt and empty documents rejected.
 - `test/settings.test.mjs` — gear settings validation: known engines only,
-  defensive copies, engine metadata, Windows PATH discovery, and first-run
-  engine/connection copy.
+  defensive copies, engine metadata, Windows PATH discovery, honest first-run
+  copy, and keyboard-correct engine choice state.
 - `test/connect.test.mjs` — isolated client-config round trips, Claude
   Desktop backup behavior, forward-slash Codex TOML, skill version publishing,
   detection/status shape, and the non-interactive wizard. Every home and app
