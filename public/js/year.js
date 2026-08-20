@@ -1,7 +1,7 @@
 import { $, esc, reduced, fmtAmount, toast, api, page, hooks } from './session.js'
 import { pop, bloom } from './motion.js'
-import { clockOf, heroId } from './blocks.js'
-import { liveGoals, paceWords } from './goals.js'
+import { clockOf } from './blocks.js'
+import { liveGoals, paceWords, goalLabel } from './goals.js'
 
 // ------------------------------------------------------------- year view
 
@@ -52,8 +52,8 @@ function buildYear() {
   const goals = past ? [] : liveGoals(page.state)
   const goalRows = goals
     .map(({ space, block, goal: g }) => {
-      const label = block.id === heroId(space) || !block.title ? space.name : block.title
-      const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const label = goalLabel(space, block)
+      const cls = g.met ? 'met' : g.paceWord === 'behind' ? 'behind' : ''
       const cur = g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, '')
       return `<button class="yr-goal ${cls}" data-goal-open="${space.id}">
         <span class="yr-goal-name">${esc(label)}</span>

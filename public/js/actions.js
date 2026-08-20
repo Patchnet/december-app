@@ -321,9 +321,10 @@ document.addEventListener('click', async (e) => {
     const rolls = done && before?.type === 'reminder' && !!before.repeat && !!before.when
     if (isListItem && sid) {
       const sp = page.state.spaces.find((s) => s.id === sid)
-      // the same rule the server applies, so the page never paints a number
-      // the server is about to disagree with
-      const t = trackerCounting(sp, sp?.blocks.find((b) => b.id === row.dataset.block))
+      // the server stamps which tracker counts this list (countedBy), so the
+      // page never paints a number the server is about to disagree with
+      const listBlock = sp?.blocks.find((b) => b.id === row.dataset.block)
+      const t = listBlock?.countedBy ? sp.blocks.find((b) => b.id === listBlock.countedBy) : null
       if (t) {
         const prevC = t.current
         t.current = Math.max(0, prevC + (done ? 1 : -1))
@@ -548,16 +549,6 @@ document.addEventListener('dblclick', (e) => {
   el.addEventListener('keydown', onKey)
   el.addEventListener('blur', onBlur)
 })
-
-/** The page's copy of the server's rule (lib/core.mjs trackerCounting): a
-    tracker moves with a list only when it is counting that exact list. */
-function trackerCounting(space, block) {
-  if (!space || !block || block.type !== 'list') return null
-  const trackers = space.blocks.filter((b) => b.type === 'tracker')
-  const lists = space.blocks.filter((b) => b.type === 'list')
-  if (trackers.length !== 1 || lists.length !== 1 || lists[0].id !== block.id) return null
-  return trackers[0].target === block.items.length ? trackers[0] : null
-}
 
 async function leaveArchived(id) {
   const leaving = page.spaceEls.get(id)?.el

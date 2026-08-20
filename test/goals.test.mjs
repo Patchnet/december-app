@@ -137,3 +137,37 @@ test('the conversion motion: a goal moves carriers without changing where it sta
 
   await assert.rejects(core.moveGoal({ space: 'Running', toBlockId: 'nope' }), /unknown toBlockId/)
 })
+
+test('goalOf carries the readings every voice speaks from', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-goal-readings-'))
+  const core = await isolatedCore(dir)
+  await core.createSpace('Running')
+  const made = await core.createBlock('Running', { type: 'ledger', title: 'Runs', unit: 'mi' })
+  await core.setGoal({ space: 'Running', target: 200, unit: 'miles' })
+
+  // never moved: quiet counts from the day it was set
+  let [g] = core.agentView().goals
+  assert.equal(g.quietDays, 0)
+  assert.match(g.pace, /^(on pace|\d+(\.\d+)? (ahead|behind)|met)$/)
+
+  await core.updateBlock(made.blockId, { entry_label: 'Monday', entry_amount: 4 }, 'ledger', 'log_amount')
+  const block = core.project().spaces.find((sp) => sp.name === 'Running').blocks.find((b) => b.id === made.blockId)
+  // the projected goal hands the page its verdict, gap, and quiet — derived once
+  assert.ok(['met', 'on', 'ahead', 'behind'].includes(block.goal.paceWord))
+  assert.equal(typeof block.goal.gap, 'number')
+  assert.equal(block.goal.quietDays, 0)
+})
+
+test('project stamps countedBy on a list its tracker is counting', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-countedby-'))
+  const core = await isolatedCore(dir)
+  await core.createSpace('Rent')
+  const tracker = await core.createBlock('Rent', { type: 'tracker', title: 'Payments', target: 3, unit: 'payments' })
+  const list = await core.createBlock('Rent', { type: 'list', title: '', items: ['Jan', 'Feb', 'Mar'] })
+  const sp = () => core.project().spaces.find((x) => x.name === 'Rent')
+  assert.equal(sp().blocks.find((b) => b.id === list.blockId).countedBy, tracker.blockId)
+
+  // a second list breaks the plain-counting rule, and the stamp goes with it
+  await core.createBlock('Rent', { type: 'list', title: 'Errands', items: ['buy stamps'] })
+  assert.equal(sp().blocks.find((b) => b.id === list.blockId).countedBy, undefined)
+})

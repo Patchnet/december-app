@@ -18,13 +18,20 @@ function liveGoals(state) {
   return out.sort((a, b) => (a.goal.setAt || '').localeCompare(b.goal.setAt || '') || a.block.id.localeCompare(b.block.id))
 }
 
+/** The pace, worded for the page. The verdict and the gap come from the
+    server's goalOf — one derivation for band, year card, and engine — and
+    only the $-dressing happens here. */
 function paceWords(g) {
   if (g.met) return 'done'
-  const whole = Number.isInteger(g.current) && Number.isInteger(g.target)
-  const gap = whole ? Math.round(Math.abs(g.diff)) : Math.abs(g.diff)
-  if (gap < 0.5) return 'on pace'
-  const n = g.unit === '$' ? fmtAmount(gap, '$') : gap
-  return `${n} ${g.diff > 0 ? 'ahead' : 'behind'}`
+  if (g.paceWord === 'on') return 'on pace'
+  const n = g.unit === '$' ? fmtAmount(g.gap, '$') : g.gap
+  return `${n} ${g.paceWord}`
+}
+
+/** What a goal row is called: the space's name stands for its heartbeat;
+    any other block says its own title. One rule for the band and the year. */
+function goalLabel(space, block) {
+  return block.id === heroId(space) || !block.title ? space.name : block.title
 }
 
 /** A space that is nothing but its goal lives in the band, not the grid:
@@ -50,12 +57,9 @@ function renderGoals() {
   const before = new Map(liveGoals(page.prev).map((x) => [x.block.id, x.goal]))
   band.innerHTML = goals
     .map(({ space, block, goal: g }) => {
-      const since = g.movedAt || (g.setAt && `${g.setAt}T12:00:00`)
-      const stale = since ? Math.floor((Date.now() - new Date(since)) / 86400000) : null
-      const quiet = stale != null && stale >= 14 && !g.met ? ` · quiet ${stale} days` : ''
-      // the space's name stands for its heartbeat; any other block says its own
-      const label = block.id === heroId(space) || !block.title ? space.name : block.title
-      const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const quiet = g.quietDays != null && g.quietDays >= 14 && !g.met ? ` · quiet ${g.quietDays} days` : ''
+      const label = goalLabel(space, block)
+      const cls = g.met ? 'met' : g.paceWord === 'behind' ? 'behind' : ''
       const pct = Math.min(100, Math.max(0, (g.current / g.target) * 100))
       // the tick is where the year stands today; fill past it reads as
       // ahead, short of it as behind, before any words. Met goals rest.
@@ -95,4 +99,4 @@ function renderGoals() {
   }
 }
 
-export { renderGoals, liveGoals, goalOnly, paceWords }
+export { renderGoals, liveGoals, goalOnly, paceWords, goalLabel }
