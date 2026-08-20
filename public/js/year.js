@@ -312,7 +312,7 @@ function coAnswer(yes, el) {
 }
 
 async function coCommit() {
-  const ids = [...coAnswered.entries()].filter(([, keep]) => keep).map(([id]) => id)
+  const ids = [...page.coAnswered.entries()].filter(([, keep]) => keep).map(([id]) => id)
   const wrap = $('#focus')
   wrap.dataset.co = 'closing'
   wrap.innerHTML = `

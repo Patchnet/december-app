@@ -1,6 +1,6 @@
 import { $, toast, api, page, hooks, reduced } from './session.js'
 import { whenPhrase } from './blocks.js'
-import { celebrate, pop, washCard, withFlip, celebrateSpace } from './motion.js'
+import { celebrate, pop, washCard, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
 import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount } from './year.js'
 

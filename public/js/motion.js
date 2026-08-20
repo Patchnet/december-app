@@ -1,4 +1,4 @@
-import { $, reduced, page } from './session.js'
+import { reduced, page } from './session.js'
 
 // --------------------------------------------------------- celebration
 // The commit celebration, per Design repo §1.12. One shot, then gone.

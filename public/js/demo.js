@@ -1,5 +1,4 @@
-import { $, reduced, page } from './session.js'
-import { showIntro } from './layout.js'
+import { $, page } from './session.js'
 import { shouldOnboard } from './connections.js'
 
 // ----------------------------------------------------- the first-run demo
