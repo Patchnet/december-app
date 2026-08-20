@@ -27,6 +27,40 @@ test('every page module parses', () => {
   }
 })
 
+test('goal page helpers trust server stamps and degrade safely', async () => {
+  const priorWindow = globalThis.window
+  globalThis.window = { matchMedia: () => ({ matches: true }) }
+  try {
+    const { paceWords, goalLabel, goalClass, quietWords } = await import('../public/js/goals.js?stamp-test')
+    assert.equal(paceWords({ paceText: '0.5 behind' }), '0.5 behind')
+    assert.equal(paceWords({ paceText: 'not a pace', met: false }), 'pace unavailable')
+    assert.equal(paceWords({}), 'pace unavailable')
+    assert.equal(paceWords({ met: true }), 'done')
+    assert.equal(goalClass({ behind: true }), 'behind')
+    assert.equal(goalClass({ behind: 'true' }), '')
+    assert.equal(goalClass({ met: true, behind: true }), 'met')
+    assert.equal(quietWords({ quietText: 'quiet 14 days' }), 'quiet 14 days')
+    assert.equal(quietWords({ quietText: 'quiet soon' }), '')
+    assert.equal(quietWords({}), '')
+    assert.equal(goalLabel({ name: 'Running' }, { title: 'Runs', goal: { label: 'Running' } }), 'Running')
+    assert.equal(goalLabel({ name: 'Running' }, { title: 'Runs', goal: { label: 7 } }), 'Runs')
+    assert.equal(goalLabel({}, { goal: {} }), 'Goal')
+  } finally {
+    if (priorWindow === undefined) delete globalThis.window
+    else globalThis.window = priorWindow
+  }
+})
+
+test('goal page modules do not rederive server pace or counted-list rules', () => {
+  const goals = read(join(jsDir, 'goals.js'))
+  const year = read(join(jsDir, 'year.js'))
+  const actions = read(join(jsDir, 'actions.js'))
+  assert.doesNotMatch(goals, /\.diff\b|Date\.now\(\)/)
+  assert.doesNotMatch(year, /\.diff\b/)
+  assert.doesNotMatch(actions, /function trackerCounting\b/)
+  assert.match(actions, /typeof listBlock\?\.countedBy === 'string'/)
+})
+
 test('runtime-only page names stay imported and page-scoped', () => {
   const actions = read(join(jsDir, 'actions.js'))
   const motionImport = actions.match(/import \{([^}]+)\} from '\.\/motion\.js'/)?.[1] || ''

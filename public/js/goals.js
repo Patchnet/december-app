@@ -1,5 +1,4 @@
 import { $, esc, fmtAmount, page } from './session.js'
-import { heroId } from './blocks.js'
 import { markChange, bump, pop, celebrate } from './motion.js'
 
 /** The goals band: what you said you would reach this year, as the numbers
@@ -19,12 +18,22 @@ function liveGoals(state) {
 }
 
 function paceWords(g) {
-  if (g.met) return 'done'
-  const whole = Number.isInteger(g.current) && Number.isInteger(g.target)
-  const gap = whole ? Math.round(Math.abs(g.diff)) : Math.abs(g.diff)
-  if (gap < 0.5) return 'on pace'
-  const n = g.unit === '$' ? fmtAmount(gap, '$') : gap
-  return `${n} ${g.diff > 0 ? 'ahead' : 'behind'}`
+  if (typeof g?.paceText === 'string' && /^(done|on pace|\$?[\d,.]+ (ahead|behind))$/.test(g.paceText)) return g.paceText
+  return g?.met === true ? 'done' : 'pace unavailable'
+}
+
+function goalLabel(space, block) {
+  const stamped = block?.goal?.label
+  if (typeof stamped === 'string' && stamped.trim()) return stamped
+  return block?.title || space?.name || 'Goal'
+}
+
+function goalClass(g) {
+  return g?.met === true ? 'met' : g?.behind === true ? 'behind' : ''
+}
+
+function quietWords(g) {
+  return typeof g?.quietText === 'string' && /^quiet \d+ days$/.test(g.quietText) ? g.quietText : ''
 }
 
 /** A space that is nothing but its goal lives in the band, not the grid:
@@ -50,12 +59,9 @@ function renderGoals() {
   const before = new Map(liveGoals(page.prev).map((x) => [x.block.id, x.goal]))
   band.innerHTML = goals
     .map(({ space, block, goal: g }) => {
-      const since = g.movedAt || (g.setAt && `${g.setAt}T12:00:00`)
-      const stale = since ? Math.floor((Date.now() - new Date(since)) / 86400000) : null
-      const quiet = stale != null && stale >= 14 && !g.met ? ` · quiet ${stale} days` : ''
-      // the space's name stands for its heartbeat; any other block says its own
-      const label = block.id === heroId(space) || !block.title ? space.name : block.title
-      const cls = g.met ? 'met' : g.diff < -0.5 ? 'behind' : ''
+      const quiet = quietWords(g)
+      const label = goalLabel(space, block)
+      const cls = goalClass(g)
       const pct = Math.min(100, Math.max(0, (g.current / g.target) * 100))
       // the tick is where the year stands today; fill past it reads as
       // ahead, short of it as behind, before any words. Met goals rest.
@@ -64,7 +70,7 @@ function renderGoals() {
         <span class="goal-name">${esc(label)}</span>
         <span class="goal-count"><b>${esc(g.unit === '$' ? fmtAmount(g.current, '$') : fmtAmount(g.current, ''))}</b><small>of ${esc(fmtAmount(g.target, g.unit))}</small></span>
         <span class="goal-meter"><b style="width:${Math.round(pct * 10) / 10}%"></b>${tick}</span>
-        <span class="goal-pace">${esc(paceWords(g))}${esc(quiet)}</span>
+        <span class="goal-pace">${esc(paceWords(g))}${quiet ? ` · ${esc(quiet)}` : ''}</span>
       </a>`
     })
     .join('')
@@ -95,4 +101,4 @@ function renderGoals() {
   }
 }
 
-export { renderGoals, liveGoals, goalOnly, paceWords }
+export { renderGoals, liveGoals, goalOnly, paceWords, goalLabel, goalClass, quietWords }
