@@ -70,6 +70,70 @@ test('rollover uses the injected clock and starts the new year event file', asyn
   assert.deepEqual(fresh.lessons, ['keep it short'])
 })
 
+test('a monthly rhythm on the 31st clamps to short months and stays local', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-nextwhen-'))
+  const core = await isolatedCore(dir)
+  // setMonth alone rolled Jan 31 to Mar 3; the clamp lands on Feb 28
+  assert.equal(core.nextWhen('2026-01-31', 'monthly', '2026-01-01'), '2026-02-28')
+  assert.equal(core.nextWhen('2026-08-31', 'monthly', '2026-08-01'), '2026-09-30')
+  // a leap day repeats on Feb 28 in a common year, not March 1
+  assert.equal(core.nextWhen('2024-02-29', 'yearly', '2024-02-01'), '2025-02-28')
+  assert.equal(core.nextWhen('2026-03-10', 'weekly', '2026-03-01'), '2026-03-17')
+})
+
+test('a clock jump of more than a year must hold before the page turns', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-clockjump-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], spaces: [], lessons: [], activity: [], ask: null, suggestions: [],
+    surfaced: [], retired: [], yearOf: 2024, carryover: null, previous: null,
+    updatedAt: '2024-06-01T12:00:00.000Z',
+  }))
+  const core = await isolatedCore(dir)
+  // a two-year leap is not believed on first sight…
+  assert.equal(await core.rolloverIfNeeded(new Date('2026-01-01T12:00:00.000Z')), null)
+  // …nor a moment later…
+  assert.equal(await core.rolloverIfNeeded(new Date('2026-01-01T12:01:00.000Z')), null)
+  // …but held for five minutes, it is the calendar, and the page turns
+  assert.equal(await core.rolloverIfNeeded(new Date('2026-01-01T12:06:00.000Z')), 2024)
+  const fresh = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal(fresh.yearOf, 2026)
+})
+
+test('a spurious rollover heals when the clock comes back to an unwritten page', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-clockback-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [{ id: 'c1', text: 'ran 3 miles', at: '2024-06-01T12:00:00.000Z', status: 'filed', summary: 'logged' }],
+    spaces: [{ id: 's1', name: 'Running', createdAt: '2024-06-01', updatedAt: '2024-06-01', blocks: [] }],
+    lessons: [], activity: [], ask: null, suggestions: [], surfaced: [], retired: [],
+    yearOf: 2024, carryover: null, previous: null, updatedAt: '2024-06-01T12:00:00.000Z',
+  }))
+  const core = await isolatedCore(dir)
+  // an ordinary one-year turn still rolls immediately (a wrong one, here)
+  assert.equal(await core.rolloverIfNeeded(new Date('2025-01-01T12:00:00.000Z')), 2024)
+  assert.equal(core.project().spaces.length, 0)
+  // the clock comes back; the fresh page holds nothing, so 2024 is restored
+  assert.equal(await core.rolloverIfNeeded(new Date('2024-07-01T12:00:00.000Z')), 2024)
+  const healed = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal(healed.yearOf, 2024)
+  assert.equal(healed.spaces[0].name, 'Running')
+  assert.equal(healed.captures[0].text, 'ran 3 miles')
+})
+
+test('a spurious rollover never overwrites a page that has been written on', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-clockback-written-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], spaces: [{ id: 's1', name: 'Old year', createdAt: '2024-06-01', updatedAt: '2024-06-01', blocks: [] }],
+    lessons: [], activity: [], ask: null, suggestions: [], surfaced: [], retired: [],
+    yearOf: 2024, carryover: null, previous: null, updatedAt: '2024-06-01T12:00:00.000Z',
+  }))
+  const core = await isolatedCore(dir)
+  assert.equal(await core.rolloverIfNeeded(new Date('2025-01-01T12:00:00.000Z')), 2024)
+  // the person wrote on the new page before the clock was fixed
+  await core.createSpace('New year notes')
+  assert.equal(await core.rolloverIfNeeded(new Date('2024-07-01T12:00:00.000Z')), null)
+  assert.equal(core.project().spaces[0].name, 'New year notes')
+})
+
 test('pre-entities and pre-events state loads without data loss', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-compat-'))
   const year = new Date().getFullYear()
