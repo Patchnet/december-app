@@ -54,7 +54,7 @@ test('rollover uses the injected clock and starts the new year event file', asyn
   const legacy = {
     captures: [{ id: 'c1', text: 'old note', at: '2024-06-01T12:00:00.000Z', status: 'filed', summary: 'kept note' }],
     spaces: [], lessons: ['keep it short'], activity: [], ask: null, suggestions: [], surfaced: [], retired: [],
-    yearOf: 2024, carryover: null, previous: null, updatedAt: '2024-12-31T23:00:00.000Z',
+    yearOf: 2024, carryover: null, previous: null, updatedAt: '2024-12-31T23:00:00.000Z', revision: 41,
   }
   await writeFile(join(dir, 'state.json'), JSON.stringify(legacy))
   const oldEvent = '{"at":"2024-06-01T12:00:00.000Z","kind":"capture"}\n'
@@ -68,6 +68,7 @@ test('rollover uses the injected clock and starts the new year event file', asyn
   assert.deepEqual((await core.readEvents(2025)).map((event) => event.kind), ['rollover'])
   const fresh = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
   assert.equal(fresh.yearOf, 2025)
+  assert.equal(fresh.revision, 42)
   assert.deepEqual(fresh.lessons, ['keep it short'])
 })
 
@@ -124,6 +125,18 @@ test('local day projection follows the executing timezone at date boundaries', a
   assert.equal(west.stdout, '2025-12-31')
 })
 
+test('tomorrow urgency uses the local calendar across a 25-hour DST day', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-dst-'))
+  const moduleUrl = new URL('../lib/core.mjs', import.meta.url).href
+  const script = `import { urgencyOf } from ${JSON.stringify(moduleUrl)}; const space = { blocks: [{ type: 'reminder', done: false, when: '2026-11-02' }] }; process.stdout.write(String(urgencyOf(space, new Date('2026-11-01T04:30:00.000Z'))))`
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    env: { ...process.env, TZ: 'America/New_York', DECEMBER_DATA_DIR: dir },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout, '20')
+})
+
 test('invalid recurrence dates are rejected without changing durable state', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-rhythm-invalid-'))
   const initial = {
@@ -167,6 +180,7 @@ test('a multi-year clock jump must hold before rollover and recovers after resta
   assert.equal(await core.rolloverIfNeeded(new Date('2024-07-01T12:00:00.000Z')), 2024)
   const restored = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
   assert.equal(restored.yearOf, 2024)
+  assert.ok(restored.revision > fresh.revision, 'recovery keeps the write revision monotonic')
   assert.equal(restored.spaces[0].blocks[0].text, 'Keep this writing')
   assert.deepEqual(restored.lessons, ['keep it short'])
   assert.match(restored.about.markdown, /Profile text/)
@@ -236,6 +250,124 @@ test('the capture cap removes only oldest inbox entries when legacy ids collide'
   ])
   assert.equal(saved.some((capture) => capture.text === 'inbox 0'), false)
   assert.equal(core.project().sources['duplicate-id'], 'second filed receipt')
+})
+
+test('batch capture deduplicates in order, persists once, and caps only the inbox', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-batch-'))
+  const year = new Date().getFullYear()
+  const captures = [
+    { id: 'filed-1', text: 'first receipt', at: `${year}-01-01T12:00:00.000Z`, status: 'filed' },
+    { id: 'filed-2', text: 'second receipt', at: `${year}-01-02T12:00:00.000Z`, status: 'filed' },
+    ...Array.from({ length: 199 }, (_, index) => ({
+      id: `inbox-${index}`, text: `existing ${index}`, at: `${year}-02-01T12:00:00.000Z`, status: 'inbox',
+    })),
+  ]
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ captures, spaces: [], lessons: [], activity: [], retired: [], yearOf: year }))
+  const core = await isolatedCore(dir)
+  let persists = 0
+  core.observePersists(() => { persists++ })
+
+  const kept = await core.addCaptureBatch(['paid rent', 'ran three miles', 'paid rent'])
+  assert.deepEqual(kept.map((capture) => capture.text), ['paid rent', 'ran three miles'])
+  assert.equal(persists, 1)
+
+  const raw = await readFile(join(dir, 'state.json'), 'utf8')
+  const saved = JSON.parse(raw)
+  assert.equal(raw.includes('\n'), false, 'the live state stays compact')
+  assert.equal(saved.revision, 1)
+  assert.equal(saved.captures.filter((capture) => capture.status === 'inbox').length, 200)
+  assert.deepEqual(saved.captures.filter((capture) => capture.status === 'filed').map((capture) => capture.text), [
+    'first receipt', 'second receipt',
+  ])
+  const events = (await core.readEvents(year)).filter((event) => event.kind === 'capture')
+  assert.deepEqual(events.map((event) => event.summary), ['paid rent', 'ran three miles'])
+})
+
+test('durable revisions and poll freshness cross same-state time boundaries', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-freshness-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Tomorrow')
+  await core.createBlock(space.id, { type: 'reminder', text: 'prepare', when: '2026-01-02' })
+  const revision = core.project().revision
+
+  const afternoon = core.stateFingerprint(new Date(2026, 0, 1, 16, 59))
+  const evening = core.stateFingerprint(new Date(2026, 0, 1, 17, 0))
+  const priorMonth = core.stateFingerprint(new Date(2025, 11, 31, 23, 59))
+  assert.notEqual(afternoon, evening, 'the tomorrow urgency threshold changes at 5pm')
+  assert.notEqual(priorMonth, afternoon, 'local day and month boundaries change freshness')
+  assert.equal(core.project().revision, revision, 'time-only freshness does not mutate durable state')
+
+  await core.addCapture('first same-clock candidate')
+  const firstRevision = core.project().revision
+  await core.addCapture('second same-clock candidate')
+  assert.equal(core.project().revision, firstRevision + 1, 'every durable write has a distinct monotonic revision')
+})
+
+test('agent undo is in-memory, clears legacy snapshots, and expires on restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-agent-undo-'))
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    captures: [], spaces: [], lessons: [], activity: [], retired: [], yearOf: new Date().getFullYear(),
+    previous: JSON.stringify({ spaces: [{ id: 'stale' }], captures: [], lessons: [] }),
+    previousAt: new Date().toISOString(),
+  }))
+  let core = await isolatedCore(dir)
+  assert.equal(core.project().canUndo, false, 'a legacy on-disk snapshot is not offered after restart')
+  await core.createSpace('First session')
+  assert.equal(core.project().canUndo, true)
+  const saved = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8'))
+  assert.equal('previous' in saved, false)
+  assert.equal('previousAt' in saved, false)
+
+  core = await isolatedCore(dir)
+  assert.equal(core.project().canUndo, false)
+  await assert.rejects(core.undo(), /nothing recent to undo/)
+  await core.createSpace('Second session')
+  await core.undo()
+  assert.deepEqual(core.project().spaces.map((space) => space.name), ['First session'])
+})
+
+test('latest-work queue coalesces overlap and contains retryable failures', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-work-queue-'))
+  const core = await isolatedCore(dir)
+  const calls = []
+  let releaseFirst
+  let firstStarted
+  const started = new Promise((resolveStarted) => { firstStarted = resolveStarted })
+  const gate = new Promise((resolveGate) => { releaseFirst = resolveGate })
+  const queue = core.createLatestWorkQueue(async (value, revision) => {
+    calls.push([value, revision])
+    if (revision === 1) {
+      firstStarted()
+      await gate
+    }
+  }, { delayMs: 0 })
+
+  queue.schedule('first', 1)
+  await started
+  queue.schedule('middle', 2)
+  queue.schedule('latest', 3)
+  releaseFirst()
+  await queue.drain()
+  assert.deepEqual(calls, [['first', 1], ['latest', 3]])
+  assert.deepEqual(queue.status(), { pendingRevision: null, inFlightRevision: null, lastError: null })
+  queue.schedule('stale', 2)
+  await queue.drain()
+  assert.deepEqual(calls, [['first', 1], ['latest', 3]], 'a completed newer revision still rejects stale work')
+
+  let fail = true
+  const errors = []
+  const retry = core.createLatestWorkQueue(async () => {
+    if (fail) throw new Error('relay unavailable')
+  }, { delayMs: 0, onError: (error) => errors.push(error.message) })
+  retry.schedule('page', 9)
+  const failed = await retry.drain()
+  assert.equal(failed.pendingRevision, 9)
+  assert.equal(failed.inFlightRevision, null)
+  assert.equal(failed.lastError, 'relay unavailable')
+  assert.deepEqual(errors, ['relay unavailable'])
+  fail = false
+  retry.schedule('page', 9)
+  assert.deepEqual(await retry.drain(), { pendingRevision: null, inFlightRevision: null, lastError: null })
 })
 
 test('retired spaces remain in current and archived history but never schedule or carry work', async () => {
