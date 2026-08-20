@@ -73,7 +73,9 @@ function buildYear() {
       const nowM = !past && m === y.month
       const bits = []
       if (data.events) bits.push(`${data.events}`)
-      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} ahead</span>`)
+      // "due", not "ahead": two lines up, ahead is a pace word. What lands
+      // in a month is due in it — a flight on the 14th, a goal by the 31st.
+      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} due</span>`)
       const body = bits.length ? bits.join(' · ') : future || nowM ? (m === 11 ? `in ${daysLeft} days` : '') : ''
       const has = data.events || data.scheduled
       const cls = `yr-mo${nowM ? ' now' : ''}${future && !has ? ' quiet' : ''}`
