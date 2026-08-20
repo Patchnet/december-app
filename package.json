@@ -5,14 +5,22 @@
   "type": "module",
   "description": "A local-first page that organizes itself",
   "author": "louie305",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "main": "electron/main.mjs",
   "scripts": {
     "app": "electron .",
-    "dist:win": "electron-builder --win nsis --x64"
+    "dist:win": "electron-builder --win nsis --x64",
+    "lint": "eslint .",
+    "test:node": "node --test",
+    "test": "npm run lint && npm run test:node"
   },
   "devDependencies": {
     "electron": "^43.4.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "eslint": "^10.8.1",
+    "globals": "^17.11.0"
   },
   "build": {
     "appId": "ai.patchnet.december",

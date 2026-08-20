@@ -1,7 +1,7 @@
 // Page module layout — native ES modules, no bundler, landing caps.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
@@ -25,6 +25,70 @@ test('every page module parses', () => {
     const r = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' })
     assert.equal(r.status, 0, `${file}: ${r.stderr}`)
   }
+})
+
+test('goal page helpers trust server stamps and degrade safely', async () => {
+  const priorWindow = globalThis.window
+  globalThis.window = { matchMedia: () => ({ matches: true }) }
+  try {
+    const { paceWords, goalLabel, goalClass, quietWords } = await import('../public/js/goals.js?stamp-test')
+    assert.equal(paceWords({ paceText: '0.5 behind' }), '0.5 behind')
+    assert.equal(paceWords({ paceText: 'not a pace', met: false }), 'pace unavailable')
+    assert.equal(paceWords({}), 'pace unavailable')
+    assert.equal(paceWords({ met: true }), 'done')
+    assert.equal(goalClass({ behind: true }), 'behind')
+    assert.equal(goalClass({ behind: 'true' }), '')
+    assert.equal(goalClass({ met: true, behind: true }), 'met')
+    assert.equal(quietWords({ quietText: 'quiet 14 days' }), 'quiet 14 days')
+    assert.equal(quietWords({ quietText: 'quiet soon' }), '')
+    assert.equal(quietWords({}), '')
+    assert.equal(goalLabel({ name: 'Running' }, { title: 'Runs', goal: { label: 'Running' } }), 'Running')
+    assert.equal(goalLabel({ name: 'Running' }, { title: 'Runs', goal: { label: 7 } }), 'Runs')
+    assert.equal(goalLabel({}, { goal: {} }), 'Goal')
+  } finally {
+    if (priorWindow === undefined) delete globalThis.window
+    else globalThis.window = priorWindow
+  }
+})
+
+test('goal page modules do not rederive server pace or counted-list rules', () => {
+  const goals = read(join(jsDir, 'goals.js'))
+  const year = read(join(jsDir, 'year.js'))
+  const actions = read(join(jsDir, 'actions.js'))
+  assert.doesNotMatch(goals, /\.diff\b|Date\.now\(\)/)
+  assert.doesNotMatch(year, /\.diff\b/)
+  assert.doesNotMatch(actions, /function trackerCounting\b/)
+  assert.match(actions, /typeof listBlock\?\.countedBy === 'string'/)
+})
+
+test('runtime-only page names stay imported and page-scoped', () => {
+  const actions = read(join(jsDir, 'actions.js'))
+  const motionImport = actions.match(/import \{([^}]+)\} from '\.\/motion\.js'/)?.[1] || ''
+  assert.match(motionImport, /\bmarkEdited\b/, 'actions imports markEdited')
+  assert.match(motionImport, /\bbump\b/, 'actions imports bump')
+
+  const year = read(join(jsDir, 'year.js'))
+  const coCommit = year.match(/async function coCommit\(\) \{[\s\S]*?(?=\n\})/)?.[0] || ''
+  assert.match(coCommit, /page\.coAnswered\.entries\(\)/, 'coCommit reads answers from the page context')
+  assert.doesNotMatch(coCommit, /(?<![.\w])coAnswered\.entries\(\)/, 'coCommit has no bare coAnswered reference')
+})
+
+test('lint rejects undefined and unused page names', () => {
+  const eslint = join(root, 'node_modules', 'eslint', 'bin', 'eslint.js')
+  assert.ok(existsSync(eslint), 'ESLint is required; run npm ci before the test suite')
+  const result = spawnSync(
+    process.execPath,
+    [eslint, '--stdin', '--stdin-filename', 'public/js/lint-regression.js'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      input: 'markEdited(document.body)\nconst coAnswered = new Map()\n',
+    }
+  )
+  const output = `${result.stdout}${result.stderr}`
+  assert.equal(result.status, 1, output)
+  assert.match(output, /markEdited.*no-undef/s)
+  assert.match(output, /coAnswered.*no-unused-vars/s)
 })
 
 test('app.js stays the boot file', () => {

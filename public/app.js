@@ -32,18 +32,49 @@ hooks.jumpToSpace = jumpToSpace
 
 function schedulePoll() {
   clearTimeout(page.pollTimer)
-  const busy = page.state && (page.state.captures.length || page.state.settle.running)
+  const busy = page.state && ((page.state.captures?.length || 0) || page.state.settle?.running)
   page.pollTimer = setTimeout(poll, busy ? 1500 : 10000)
+}
+let pollRequest = 0
+const LIVE_FIELDS = ['settle', 'canUndo', 'canUndoManual']
+function reconcileState(current, incoming) {
+  if (!incoming || typeof incoming !== 'object') return current
+  if (
+    Number.isSafeInteger(current?.revision) &&
+    (!Number.isSafeInteger(incoming.revision) || incoming.revision < current.revision)
+  ) return current
+  if (incoming.unchanged) {
+    if (!current) return current
+    const next = { ...current }
+    for (const field of ['fingerprint', ...LIVE_FIELDS]) {
+      if (Object.hasOwn(incoming, field)) next[field] = incoming[field]
+    }
+    return next
+  }
+  // An interrupted or proxy-truncated response must not erase the page.
+  if (!Array.isArray(incoming.spaces) || !Array.isArray(incoming.captures)) return current
+  const next = { ...incoming }
+  for (const field of LIVE_FIELDS) {
+    if (!Object.hasOwn(incoming, field) && Object.hasOwn(current || {}, field)) next[field] = current[field]
+  }
+  return next
 }
 
 async function poll() {
+  const request = ++pollRequest
   try {
-    page.state = await api('/api/state')
-    render()
+    const since = page.state?.fingerprint
+    const incoming = await api(`/api/state${since ? `?since=${encodeURIComponent(since)}` : ''}`)
+    if (request !== pollRequest) return
+    const next = reconcileState(page.state, incoming)
+    if (next !== page.state) {
+      page.state = next
+      render()
+    }
   } catch {
     /* transient */
   }
-  schedulePoll()
+  if (request === pollRequest) schedulePoll()
 }
 
 hooks.schedulePoll = schedulePoll

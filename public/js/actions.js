@@ -1,6 +1,6 @@
 import { $, toast, api, page, hooks, reduced } from './session.js'
 import { whenPhrase } from './blocks.js'
-import { celebrate, pop, washCard, withFlip, celebrateSpace } from './motion.js'
+import { celebrate, pop, washCard, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
 import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount } from './year.js'
 
@@ -321,9 +321,11 @@ document.addEventListener('click', async (e) => {
     const rolls = done && before?.type === 'reminder' && !!before.repeat && !!before.when
     if (isListItem && sid) {
       const sp = page.state.spaces.find((s) => s.id === sid)
-      // the same rule the server applies, so the page never paints a number
-      // the server is about to disagree with
-      const t = trackerCounting(sp, sp?.blocks.find((b) => b.id === row.dataset.block))
+      // Only animate a server-stamped relationship. Missing, withdrawn, or
+      // malformed stamps stay neutral until the response is rendered.
+      const listBlock = sp?.blocks.find((b) => b.id === row.dataset.block)
+      const countedBy = typeof listBlock?.countedBy === 'string' ? listBlock.countedBy : ''
+      const t = countedBy ? sp.blocks.find((b) => b.id === countedBy && b.type === 'tracker') : null
       if (t) {
         const prevC = t.current
         t.current = Math.max(0, prevC + (done ? 1 : -1))
@@ -548,16 +550,6 @@ document.addEventListener('dblclick', (e) => {
   el.addEventListener('keydown', onKey)
   el.addEventListener('blur', onBlur)
 })
-
-/** The page's copy of the server's rule (lib/core.mjs trackerCounting): a
-    tracker moves with a list only when it is counting that exact list. */
-function trackerCounting(space, block) {
-  if (!space || !block || block.type !== 'list') return null
-  const trackers = space.blocks.filter((b) => b.type === 'tracker')
-  const lists = space.blocks.filter((b) => b.type === 'list')
-  if (trackers.length !== 1 || lists.length !== 1 || lists[0].id !== block.id) return null
-  return trackers[0].target === block.items.length ? trackers[0] : null
-}
 
 async function leaveArchived(id) {
   const leaving = page.spaceEls.get(id)?.el

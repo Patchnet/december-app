@@ -71,3 +71,17 @@ test('entities validate, normalize, update, and project on old blocks', () => {
   assert.throws(() => makeBlock({ type: 'note', entities: [{ type: 'thing', name: 'x'.repeat(61) }] }), /1-60/)
   assert.deepEqual(projectBlock({ id: 'old', type: 'note', title: '', text: 'legacy' }).entities, [])
 })
+
+test('reminder rhythms retain and reset their calendar anchor', () => {
+  const reminder = makeBlock({ type: 'reminder', text: 'pay rent', when: '2026-01-31', repeat: 'monthly' })
+  assert.equal(reminder.repeatAnchor, '01-31')
+
+  updateBlock(reminder, { reminder_done: true })
+  assert.equal(reminder.repeatAnchor, '01-31')
+
+  updateBlock(reminder, { reminder_when: '2026-04-30' })
+  assert.equal(reminder.repeatAnchor, '04-30')
+
+  updateBlock(reminder, { reminder_repeat: '' })
+  assert.equal(Object.hasOwn(reminder, 'repeatAnchor'), false)
+})
