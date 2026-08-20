@@ -62,7 +62,7 @@ observePersists(() => {
   const page = project(settleStatus())
   pocketUploads.schedule(page, page.revision)
 })
-watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
+const newYearTimer = watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
 let surfacingScheduled = false
 const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
@@ -583,6 +583,7 @@ export async function shutdown({ exit = true } = {}) {
   shuttingDown = true
   clearInterval(backupTimer)
   clearInterval(pocketTimer)
+  clearInterval(newYearTimer)
   const closed = new Promise((resolveClose) => server.close(resolveClose))
   let timeoutId
   const timeout = new Promise((resolveTimeout) => { timeoutId = setTimeout(resolveTimeout, 3000) })

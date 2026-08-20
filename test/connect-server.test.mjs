@@ -384,7 +384,7 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
   const url = `http://localhost:${port}`
   const generatedMcp = join(ROOT, `mcp.${port}.json`)
   const serverUrl = new URL('../server.mjs', import.meta.url).href
-  const launcher = `const server = await import(${JSON.stringify(serverUrl)}); process.on('message', async () => { await server.shutdown({ exit: false }); process.send('drained') })`
+  const launcher = `const server = await import(${JSON.stringify(serverUrl)}); process.on('message', async () => { await server.shutdown({ exit: false }); process.send('drained', () => process.disconnect()) })`
   const child = spawn(process.execPath, ['--input-type=module', '-e', launcher], {
     cwd: ROOT,
     env: {
@@ -397,10 +397,15 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
     },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   })
+  const childExit = once(child, 'exit')
   let childError = ''
   child.stderr.on('data', (chunk) => { childError += chunk })
   t.after(async () => {
-    if (child.exitCode === null) child.kill()
+    if (child.exitCode === null) {
+      if (child.connected) child.disconnect()
+      child.kill('SIGKILL')
+      await childExit.catch(() => {})
+    }
     relay.close()
     await once(relay, 'close').catch(() => {})
     await rm(generatedMcp, { force: true })
@@ -424,4 +429,7 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
   ])
   const decrypted = pocketCrypto.decrypt(contentKey, uploaded.payload)
   assert.equal(decrypted.page.captures[0].text, 'survive shutdown')
+  const [exitCode, exitSignal] = await childExit
+  assert.equal(exitSignal, null, childError)
+  assert.equal(exitCode, 0, childError)
 })
