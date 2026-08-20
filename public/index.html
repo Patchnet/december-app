@@ -110,10 +110,20 @@
 
     <section class="onboarding" id="onboarding" hidden aria-labelledby="onboarding-title">
       <button class="onboarding-close" id="onboarding-close" aria-label="Close setup">&times;</button>
-      <h2 id="onboarding-title">Connect your AI</h2>
-      <p>Your page stays local. Connect an assistant you already use. December writes its local connection for you.</p>
-      <div class="onboarding-engines" id="onboarding-engines"></div>
-      <div class="onboarding-note" id="onboarding-note"></div>
+      <h2 id="onboarding-title">Set up December</h2>
+      <p>Your page stays local. December needs Claude Code or Codex installed and signed in to organize what you capture.</p>
+      <section class="onboarding-step" aria-labelledby="onboarding-engine-title">
+        <h3 id="onboarding-engine-title">1. Choose an organizing engine</h3>
+        <p>This command does the filing. Desktop and editor apps are not organizing engines.</p>
+        <div class="onboarding-engines" id="onboarding-engines" role="radiogroup" aria-label="Organizing engine"></div>
+        <div class="onboarding-note" id="onboarding-engine-note" role="status" aria-live="polite"></div>
+      </section>
+      <section class="onboarding-step" aria-labelledby="onboarding-connections-title">
+        <h3 id="onboarding-connections-title">2. Connect assistants <span>(optional)</span></h3>
+        <p>Let an assistant read and update this page. This is separate from choosing the engine above.</p>
+        <div class="onboarding-engines" id="onboarding-connections"></div>
+        <div class="onboarding-note" id="onboarding-note" role="status" aria-live="polite"></div>
+      </section>
     </section>
 
     <h1 class="dateline" id="dateline" tabindex="0" role="button" aria-label="Open the year"></h1>

@@ -13,6 +13,12 @@ export const onboarding = $('#onboarding')
 const settingsPop = $('#settings-pop')
 const settingsBackdrop = $('#settings-backdrop')
 let currentConnections = null
+let currentSettings = null
+
+const organizingEngines = [
+  { key: 'claude', label: 'Claude Code', logo: 'claude-code.png' },
+  { key: 'codex', label: 'Codex', logo: 'codex.png' },
+]
 
 const connectionClients = [
   { key: 'claude-code', label: 'Claude Code', logo: 'claude-code.png', guidance: 'Install Claude Code and sign in once.' },
@@ -96,6 +102,7 @@ function closeSettings(restoreFocus = true) {
 }
 
 function renderSettings(s) {
+  currentSettings = s
   $('#about-version').textContent = s.version ? `v${s.version}` : ''
   const seg = $('#engine-seg')
   seg.innerHTML = ''
@@ -223,7 +230,27 @@ markTheme()
 
 function renderOnboarding() {
   if (onboarding.hidden) return
-  $('#onboarding-engines').innerHTML = connectionClients.map((client) => {
+  $('#onboarding-engines').innerHTML = organizingEngines.map((engine) => {
+    const available = Boolean(currentSettings?.engines?.[engine.key])
+    const selected = currentSettings?.engine === engine.key
+    const action = selected ? (available ? 'selected' : 'selected · not found') : (available ? 'choose' : 'not found')
+    return `<button type="button" class="onboarding-engine ${selected ? 'selected' : ''}" data-engine-select="${engine.key}" role="radio" aria-checked="${selected}" ${available && !selected ? '' : 'disabled'}>
+      ${providerMark(engine)}
+      <span class="provider-copy"><b>${engine.label}</b><small>${available ? 'installed on this machine' : 'CLI not found on this machine'}</small></span>
+      <span class="provider-action">${action}</span>
+    </button>`
+  }).join('')
+
+  const selectedEngine = organizingEngines.find((engine) => engine.key === currentSettings?.engine) || organizingEngines[0]
+  const selectedAvailable = Boolean(currentSettings?.engines?.[selectedEngine.key])
+  const availableEngine = organizingEngines.find((engine) => currentSettings?.engines?.[engine.key])
+  $('#onboarding-engine-note').textContent = selectedAvailable
+    ? `${selectedEngine.label} is ready to organize new captures.`
+    : availableEngine
+      ? `${selectedEngine.label} is selected but not found. Choose ${availableEngine.label}, or set a CLI path in Settings.`
+      : 'Capture-only mode: every line is saved, but nothing will organize it until you install and sign in to Claude Code or Codex.'
+
+  $('#onboarding-connections').innerHTML = connectionClients.map((client) => {
     const status = currentConnections?.[client.key]
     const copy = connectionCopy(status)
     const guidance = status?.state === 'not-installed' ? client.guidance : copy.line
@@ -241,10 +268,15 @@ function renderOnboarding() {
   const connected = Object.values(currentConnections || {}).filter((status) => status.state === 'connected').length
   $('#onboarding-note').textContent = connected
     ? `${connected} assistant${connected === 1 ? '' : 's'} connected. You can reconnect any time from Settings.`
-    : 'You can keep writing without a connection. December saves every capture locally.'
+    : 'Connections are optional. You can add them any time from Settings.'
 }
 
-$('#onboarding-engines').addEventListener('click', async (event) => {
+$('#onboarding').addEventListener('click', async (event) => {
+  const engineButton = event.target.closest('[data-engine-select]')
+  if (engineButton?.dataset.engineSelect) {
+    await saveSettings({ engine: engineButton.dataset.engineSelect })
+    return
+  }
   const button = event.target.closest('[data-connect-client]')
   if (button?.dataset.connectClient) await connectClient(button.dataset.connectClient, button)
 })
