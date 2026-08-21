@@ -54,6 +54,21 @@ test('installer keeps the stable artifact name, package contents, and zero runti
     'server.mjs',
     'mcp-server.mjs',
     'package.json',
+    'LICENSE',
+    'NOTICE',
   ])
   assert.deepEqual(pkg.dependencies ?? {}, {})
+})
+
+test('project license is Apache 2.0 and reserves December trademarks', () => {
+  assert.equal(pkg.license, 'Apache-2.0')
+  const license = readFileSync(join(root, 'LICENSE'), 'utf8')
+  assert.match(license, /Apache License/)
+  assert.match(license, /Version 2\.0/)
+  const notice = readFileSync(join(root, 'NOTICE'), 'utf8')
+  assert.match(notice, /trademark/i)
+  assert.match(notice, /December/)
+  const marks = readFileSync(join(root, 'TRADEMARKS.md'), 'utf8')
+  assert.match(marks, /trademark/i)
+  assert.match(marks, /December/)
 })

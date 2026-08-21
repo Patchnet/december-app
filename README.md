@@ -63,8 +63,8 @@ We built this for ourselves first, to get on top of the disorder that comes
 with fast AI content generation. We are working on more features and
 improvements.
 
-Use as you wish, drop us a note on how we can make it better. MIT licensed.
-Created by [louie305](https://github.com/louie305).
+Use as you wish, drop us a note on how we can make it better. [Apache 2.0](LICENSE) licensed.
+December, the name and the marks, belong to [louie305](https://github.com/louie305). The license is for the software, not the trademarks. See [TRADEMARKS](TRADEMARKS.md).
 
 ---
 
