@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.12.0
+current: 0.12.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.12.1 - 2026-08-20
+
+Clarify first-run engine requirements, improve Windows CLI discovery, and make engine selection keyboard-accessible.
 
 ## 0.12.0 - 2026-08-20
 
