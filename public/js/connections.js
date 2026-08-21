@@ -1,6 +1,7 @@
 import { $, esc, toast, api } from './session.js'
 import { showIntro } from './layout.js'
 import { closePocketPairing, isPocketPairingOpen, refreshPocket, trapPocketFocus } from './pocket.js'
+import { buildEngineChoices, nextEngineKey } from './onboarding-state.js'
 
 export const launchParams = new URLSearchParams(location.search)
 export const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
@@ -13,6 +14,12 @@ export const onboarding = $('#onboarding')
 const settingsPop = $('#settings-pop')
 const settingsBackdrop = $('#settings-backdrop')
 let currentConnections = null
+let currentSettings = null
+
+const organizingEngines = [
+  { key: 'claude', label: 'Claude Code', logo: 'claude-code.png' },
+  { key: 'codex', label: 'Codex', logo: 'codex.png' },
+]
 
 const connectionClients = [
   { key: 'claude-code', label: 'Claude Code', logo: 'claude-code.png', guidance: 'Install Claude Code and sign in once.' },
@@ -96,6 +103,7 @@ function closeSettings(restoreFocus = true) {
 }
 
 function renderSettings(s) {
+  currentSettings = s
   $('#about-version').textContent = s.version ? `v${s.version}` : ''
   const seg = $('#engine-seg')
   seg.innerHTML = ''
@@ -126,8 +134,10 @@ async function saveSettings(patch) {
   try {
     renderSettings(await api('/api/settings', patch))
     toast('settings saved')
+    return true
   } catch (e) {
     toast(e.message)
+    return false
   }
 }
 
@@ -223,7 +233,26 @@ markTheme()
 
 function renderOnboarding() {
   if (onboarding.hidden) return
-  $('#onboarding-engines').innerHTML = connectionClients.map((client) => {
+  const choices = buildEngineChoices(organizingEngines, currentSettings || {})
+  $('#onboarding-engines').innerHTML = choices.map((engine) => {
+    const action = engine.selected ? (engine.available ? 'selected' : 'selected · not found') : (engine.available ? 'choose' : 'not found')
+    return `<button type="button" class="onboarding-engine ${engine.selected ? 'selected' : ''}" data-engine-select="${engine.key}" role="radio" aria-checked="${engine.selected}" tabindex="${engine.tabIndex}" ${engine.disabled ? 'disabled' : ''}>
+      ${providerMark(engine)}
+      <span class="provider-copy"><b>${engine.label}</b><small>${engine.available ? 'CLI found on this machine' : 'CLI not found on this machine'}</small></span>
+      <span class="provider-action">${action}</span>
+    </button>`
+  }).join('')
+
+  const selectedEngine = organizingEngines.find((engine) => engine.key === currentSettings?.engine) || organizingEngines[0]
+  const selectedAvailable = Boolean(currentSettings?.engines?.[selectedEngine.key])
+  const availableEngine = organizingEngines.find((engine) => currentSettings?.engines?.[engine.key])
+  $('#onboarding-engine-note').textContent = selectedAvailable
+    ? `${selectedEngine.label} was found. Open it and complete sign-in before December organizes captures.`
+    : availableEngine
+      ? `${selectedEngine.label} is selected but not found. Choose ${availableEngine.label}, then open it and complete sign-in. You can also set a CLI path in Settings.`
+      : 'Capture-only mode: every line is saved, but nothing will organize it until you install and sign in to Claude Code or Codex.'
+
+  $('#onboarding-connections').innerHTML = connectionClients.map((client) => {
     const status = currentConnections?.[client.key]
     const copy = connectionCopy(status)
     const guidance = status?.state === 'not-installed' ? client.guidance : copy.line
@@ -241,12 +270,35 @@ function renderOnboarding() {
   const connected = Object.values(currentConnections || {}).filter((status) => status.state === 'connected').length
   $('#onboarding-note').textContent = connected
     ? `${connected} assistant${connected === 1 ? '' : 's'} connected. You can reconnect any time from Settings.`
-    : 'You can keep writing without a connection. December saves every capture locally.'
+    : 'Connections are optional. You can add them any time from Settings.'
 }
 
-$('#onboarding-engines').addEventListener('click', async (event) => {
+async function selectOnboardingEngine(key) {
+  const saved = currentSettings?.engine === key || await saveSettings({ engine: key })
+  if (saved) $(`#onboarding-engines [data-engine-select="${key}"]`)?.focus()
+}
+
+$('#onboarding').addEventListener('click', async (event) => {
+  const engineButton = event.target.closest('[data-engine-select]')
+  if (engineButton?.dataset.engineSelect) {
+    await selectOnboardingEngine(engineButton.dataset.engineSelect)
+    return
+  }
   const button = event.target.closest('[data-connect-client]')
   if (button?.dataset.connectClient) await connectClient(button.dataset.connectClient, button)
+})
+
+$('#onboarding-engines').addEventListener('keydown', async (event) => {
+  const button = event.target.closest('[data-engine-select]')
+  if (!button) return
+  const next = nextEngineKey(
+    buildEngineChoices(organizingEngines, currentSettings || {}),
+    button.dataset.engineSelect,
+    event.key
+  )
+  if (!next) return
+  event.preventDefault()
+  await selectOnboardingEngine(next)
 })
 
 $('#onboarding-close').addEventListener('click', () => {

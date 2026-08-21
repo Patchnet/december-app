@@ -2,7 +2,9 @@
 // never mutate. (Persistence itself is exercised by the running app.)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getSettings, updateSettings, ENGINES } from '../lib/settings.mjs'
+import { readFileSync } from 'node:fs'
+import { getSettings, updateSettings, ENGINES, resolveEngineBinary } from '../lib/settings.mjs'
+import { buildEngineChoices, nextEngineKey } from '../public/js/onboarding-state.js'
 
 test('defaults: a known engine and a string model', () => {
   const s = getSettings()
@@ -27,4 +29,64 @@ test('both engines carry a label and a binary', () => {
     assert.ok(e.label, `${key} has a label`)
     assert.ok(e.bin, `${key} has a bin`)
   }
+})
+
+test('Windows engine discovery finds native executables on PATH', () => {
+  const found = resolveEngineBinary('codex', {
+    env: { Path: 'C:\\tools;D:\\agents' },
+    platform: 'win32',
+    home: 'C:\\Users\\demo',
+    exists: (candidate) => candidate === 'D:\\agents\\codex.exe',
+  })
+  assert.equal(found, 'D:\\agents\\codex.exe')
+})
+
+test('Windows engine discovery retains the older Claude npm executable', () => {
+  const legacy = 'C:\\Users\\demo\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
+  const found = resolveEngineBinary('claude', {
+    env: { APPDATA: 'C:\\Users\\demo\\AppData\\Roaming' },
+    platform: 'win32',
+    home: 'C:\\Users\\demo',
+    exists: (candidate) => candidate === legacy,
+  })
+  assert.equal(found, legacy)
+})
+
+test('first-run copy separates organizing engines from assistant connections', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../public/js/connections.js', import.meta.url), 'utf8')
+  assert.match(html, /Choose an organizing engine/)
+  assert.match(html, /Connect assistants/)
+  assert.match(html, /This is separate from choosing the engine above/)
+  assert.doesNotMatch(source, /is ready to organize/)
+  assert.match(source, /was found/)
+  assert.match(source, /complete sign-in/)
+})
+
+test('available engine choices keep the selected radio focusable and support arrow navigation', () => {
+  const definitions = [{ key: 'claude' }, { key: 'codex' }]
+  const choices = buildEngineChoices(definitions, {
+    engine: 'claude',
+    engines: { claude: true, codex: true },
+  })
+
+  assert.deepEqual(
+    choices.map(({ key, selected, disabled, tabIndex }) => ({ key, selected, disabled, tabIndex })),
+    [
+      { key: 'claude', selected: true, disabled: false, tabIndex: 0 },
+      { key: 'codex', selected: false, disabled: false, tabIndex: -1 },
+    ]
+  )
+  assert.equal(nextEngineKey(choices, 'claude', 'ArrowRight'), 'codex')
+  assert.equal(nextEngineKey(choices, 'claude', 'ArrowLeft'), 'codex')
+  assert.equal(nextEngineKey(choices, 'codex', 'Home'), 'claude')
+})
+
+test('an available alternative receives tab focus when the selected engine is missing', () => {
+  const choices = buildEngineChoices([{ key: 'claude' }, { key: 'codex' }], {
+    engine: 'claude',
+    engines: { claude: false, codex: true },
+  })
+  assert.equal(choices.find((choice) => choice.key === 'claude').disabled, true)
+  assert.equal(choices.find((choice) => choice.key === 'codex').tabIndex, 0)
 })

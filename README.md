@@ -145,9 +145,11 @@ npm ci && npm run app             # install development tools; run the shell in 
 npm run dist:win                  # build the Windows installer (unsigned yet)
 ```
 
-First run shows the connection cards — choose a signed-in CLI and the page
-organizes itself from then on; skip it and December waits, capture-only,
-until you connect one.
+First run separates two jobs. Choose an installed, signed-in Claude Code or
+Codex CLI as the organizing engine. Assistant connections are optional: they
+let Claude Code, Claude Desktop, Codex, or Cursor read and update the page,
+but they do not organize captures. Without an available engine, December
+waits in capture-only mode and keeps every line safe.
 
 ## Tests
 

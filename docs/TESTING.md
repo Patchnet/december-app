@@ -24,7 +24,8 @@ installed by `npm ci`; lint never skips when they are absent. Use
 - `test/docx.test.mjs` — dropped-document text extraction against a real
   in-memory zip; corrupt and empty documents rejected.
 - `test/settings.test.mjs` — gear settings validation: known engines only,
-  defensive copies, engine metadata.
+  defensive copies, engine metadata, Windows PATH discovery, honest first-run
+  copy, and keyboard-correct engine choice state.
 - `test/connect.test.mjs` — isolated client-config round trips, Claude
   Desktop backup behavior, forward-slash Codex TOML, skill version publishing,
   detection/status shape, and the non-interactive wizard. Every home and app
@@ -45,8 +46,9 @@ After `npm ci`, exercise Electron behavior manually:
 
 1. Run `npm run app`; confirm the main page opens and the December tray icon
    appears.
-2. On a fresh Electron profile, confirm onboarding reports detected CLIs
-   honestly and offers capture-only mode when neither is available.
+2. On a fresh Electron profile, confirm onboarding separates the organizing
+   engine from optional assistant connections, reports detected CLIs honestly,
+   and offers capture-only mode when neither engine is available.
 3. Press `Ctrl+Alt+D`; confirm the window opens, rises to the front, and the
    capture field has focus. Repeat from the tray's **Capture** command.
 4. Submit a capture; confirm it lands immediately. If the selected CLI is
