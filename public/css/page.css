@@ -936,6 +936,9 @@
 
 /* reminder dates ride along quietly */
 .when-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; margin-left: var(--space-2); }
+/* flex-start hangs both from the same top, and 11.5px makes a shorter line
+   box than the row's 14px, so the date rides ~2px high. Pin it to the row's. */
+.row .when-sub { line-height: 21px; }
 .when-sub.urgent { color: var(--bad-ink); }
 .row.done .when-sub { opacity: 0.6; }
 .place-chip {
