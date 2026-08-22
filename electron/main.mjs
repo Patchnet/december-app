@@ -7,10 +7,20 @@ import {
   globalShortcut,
   Menu,
   nativeImage,
+  safeStorage,
+  session,
   shell,
   Tray,
 } from 'electron'
-import { DESKTOP_FALLBACK_PORT, DESKTOP_HOST, DESKTOP_PORT, isPortAvailable, selectDesktopPort } from './runtime.mjs'
+import {
+  DESKTOP_FALLBACK_PORT,
+  DESKTOP_HOST,
+  DESKTOP_PORT,
+  isPortAvailable,
+  navigationDecision,
+  preparePocketSecret,
+  selectDesktopPort,
+} from './runtime.mjs'
 
 app.setName('December')
 
@@ -60,18 +70,25 @@ async function waitForServer(timeoutMs = 20000) {
   throw new Error(`December's local server did not become ready.\n\n${serverOutput.trim()}`)
 }
 
-function startServer(dataDir) {
+function startServer(dataDir, pocketSecret) {
   const appRoot = app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked') : app.getAppPath()
   const entry = join(appRoot, 'server.mjs')
+  // The Pocket key travels in the child's environment and nowhere else. On a
+  // computer with no key store there is no key to pass, and the server is
+  // told so plainly rather than left to guess.
+  const env = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    PORT: String(desktopPort),
+    DECEMBER_DATA_DIR: dataDir,
+    DECEMBER_POCKET_SECRET_BACKEND: pocketSecret.backend,
+  }
+  if (pocketSecret.key) env.DECEMBER_POCKET_SECRET_KEY = pocketSecret.key
+  else delete env.DECEMBER_POCKET_SECRET_KEY
   serverProcess = spawn(process.execPath, [entry], {
     cwd: appRoot,
     windowsHide: true,
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      PORT: String(desktopPort),
-      DECEMBER_DATA_DIR: dataDir,
-    },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   serverProcess.stdout.on('data', rememberOutput)
@@ -80,6 +97,34 @@ function startServer(dataDir) {
 }
 
 const firstRunUrl = () => `${baseUrl()}/?desktop=1`
+
+// December's window is December's page. Everything that would take it
+// somewhere else is refused; a plain https link opens in the real browser,
+// where the person can see the address bar. Nothing gets a second window,
+// a webview, or a device permission.
+function guardContents(contents) {
+  const origin = baseUrl()
+  contents.setWindowOpenHandler(({ url: target }) => {
+    if (navigationDecision(target, origin) === 'external') shell.openExternal(target)
+    return { action: 'deny' }
+  })
+  contents.on('will-navigate', (event, target) => {
+    if (navigationDecision(target, origin) !== 'allow') {
+      event.preventDefault()
+      if (navigationDecision(target, origin) === 'external') shell.openExternal(target)
+    }
+  })
+  contents.on('will-redirect', (event, target) => {
+    if (navigationDecision(target, origin) !== 'allow') event.preventDefault()
+  })
+  contents.on('will-attach-webview', (event) => event.preventDefault())
+}
+
+function hardenSession() {
+  const permissions = session.defaultSession
+  permissions.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  permissions.setPermissionCheckHandler(() => false)
+}
 
 function createWindow(url) {
   mainWindow = new BrowserWindow({
@@ -93,13 +138,16 @@ function createWindow(url) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      webviewTag: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
       sandbox: true,
     },
   })
-  mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (target.startsWith('https://') || target.startsWith('http://')) shell.openExternal(target)
-    return { action: 'deny' }
-  })
+  // The window's own contents are guarded by the app-level hook below,
+  // which fires while this constructor is still running.
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.on('close', (event) => {
     if (!quitting) {
@@ -133,12 +181,14 @@ if (lock) {
   app.on('second-instance', () => showMain())
   app.whenReady().then(async () => {
     try {
+      hardenSession()
       const dataDir = join(app.getPath('userData'), 'data')
+      const pocketSecret = await preparePocketSecret({ userDataDir: app.getPath('userData'), safeStorage })
       const availability = await Promise.all(
         [DESKTOP_PORT, DESKTOP_FALLBACK_PORT].map(async (port) => [port, await isPortAvailable(port)])
       )
       desktopPort = selectDesktopPort(availability.filter(([, available]) => available).map(([port]) => port))
-      startServer(dataDir)
+      startServer(dataDir, pocketSecret)
       await waitForServer()
       createWindow(firstRunUrl())
       createTray()
@@ -158,6 +208,9 @@ if (lock) {
     }
   })
 }
+
+// Any contents December did not build itself still answers to the same rule.
+app.on('web-contents-created', (_event, contents) => guardContents(contents))
 
 app.on('before-quit', () => {
   quitting = true

@@ -5,6 +5,7 @@
 // agent connected to the same tools your own Claude uses.
 
 import { createServer } from 'node:http'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
@@ -147,11 +148,60 @@ function exportMarkdown() {
   return lines.join('\n')
 }
 
+// Every answer carries the same small set of refusals: don't guess the type,
+// don't leak the address, don't let another document frame or open into this
+// one. The page itself gets a policy computed from what it actually contains.
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+  'x-frame-options': 'DENY',
+}
+
+const policyCache = new Map()
+
+// The one inline script December ships is the theme flash-guard. Rather than
+// opening script-src to every inline script, hash the ones the file really
+// has, so an injected one is refused by the browser.
+export function contentSecurityPolicy(html) {
+  if (policyCache.has(html)) return policyCache.get(html)
+  const hashes = [...html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((match) => `'sha256-${createHash('sha256').update(match[1], 'utf8').digest('base64')}'`)
+  const policy = [
+    "default-src 'none'",
+    ["script-src 'self'", ...hashes].join(' '),
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+  ].join('; ')
+  policyCache.set(html, policy)
+  return policy
+}
+
 const json = (res, code, body) => {
-  const headers = { 'content-type': 'application/json; charset=utf-8' }
+  const headers = { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' }
   if (code === 413) headers.connection = 'close'
   res.writeHead(code, headers)
   res.end(JSON.stringify(body))
+}
+
+// A capability the Pocket routes require. Any page can post to a loopback
+// server, but only a page December itself served can read a reply, so a
+// value handed out over a same-origin read is a value a hostile tab cannot
+// hold. It is minted per run and never touches disk.
+const POCKET_CAPABILITY = randomBytes(32).toString('base64url')
+export function capabilityMatches(offered) {
+  if (typeof offered !== 'string') return false
+  const a = Buffer.from(offered)
+  const b = Buffer.from(POCKET_CAPABILITY)
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 const JSON_BODY_LIMIT = 1_000_000
@@ -196,11 +246,15 @@ async function serveStatic(res, urlPath) {
   const rel = urlPath === '/' ? '/index.html' : urlPath
   const file = join(PUBLIC, normalize(rel).replace(/^(\.\.[/\\])+/, ''))
   if (!file.startsWith(PUBLIC) || !existsSync(file)) {
-    res.writeHead(404, { 'content-type': 'text/plain' })
+    res.writeHead(404, { ...SECURITY_HEADERS, 'content-type': 'text/plain' })
     return res.end('not found')
   }
-  res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' })
-  res.end(await readFile(file))
+  const type = MIME[extname(file)] || 'application/octet-stream'
+  const body = await readFile(file)
+  const headers = { ...SECURITY_HEADERS, 'content-type': type, 'cache-control': 'no-store' }
+  if (extname(file) === '.html') headers['content-security-policy'] = contentSecurityPolicy(body.toString('utf8'))
+  res.writeHead(200, headers)
+  res.end(body)
 }
 
 // Any page open in another tab can POST to a loopback server without a
@@ -222,14 +276,30 @@ function foreignOrigin(req) {
 // This closes DNS rebinding: the server listens on loopback, while the Host
 // header still identifies the name a browser used to reach it. Missing Host
 // is refused because there is no name to validate; supported clients send it.
+// The port has to be ours too — a name that resolves to loopback on some
+// other port is somebody else's server borrowing our answers.
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-function foreignHost(host) {
+export function foreignHost(host, port = PORT) {
   if (!host) return true
   try {
-    return !LOCAL_HOSTS.has(new URL(`http://${host}`).hostname)
+    const parsed = new URL(`http://${host}`)
+    if (!LOCAL_HOSTS.has(parsed.hostname)) return true
+    return parsed.port !== '' && parsed.port !== String(port)
   } catch {
     return true
   }
+}
+
+// Browsers stamp Sec-Fetch-Site on every request they make. same-origin is
+// December's own page, none is a person typing the address; anything else is
+// another site reaching in and is refused whether or not it sends an Origin.
+// Clients that are not browsers — the MCP adapter, the desktop shell, curl —
+// send no such header and are yours.
+const OWN_FETCH_SITES = new Set(['same-origin', 'none'])
+export function foreignFetchSite(headers) {
+  const site = headers['sec-fetch-site']
+  if (!site) return false
+  return !OWN_FETCH_SITES.has(String(site))
 }
 
 const server = createServer(async (req, res) => {
@@ -239,8 +309,18 @@ const server = createServer(async (req, res) => {
   if (foreignHost(req.headers.host)) {
     return json(res, 403, { error: 'refused: December only answers to localhost' })
   }
+  if (foreignFetchSite(req.headers)) {
+    return json(res, 403, { error: 'refused: this request came from another site' })
+  }
   if (req.method === 'POST' && foreignOrigin(req)) {
     return json(res, 403, { error: 'refused: this page did not come from December' })
+  }
+  // Pocket hands out the pairing secret and can revoke a phone, so the
+  // routes that act want more than being local: they want the capability
+  // only a page December itself served is able to read. Plain status stays
+  // open — it holds nothing worth stealing.
+  if (path.startsWith('/api/pocket/') && req.method === 'POST' && !capabilityMatches(req.headers['x-december-capability'])) {
+    return json(res, 403, { error: 'refused: Pocket needs December\'s own page' })
   }
   try {
     if (path === '/api/state' && req.method === 'GET') {
@@ -258,15 +338,37 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ...project(settleStatus()), fingerprint })
     }
 
+    // Handed to December's own page and to nothing else. A cross-site page
+    // may reach this route but cannot read what it says.
+    if (path === '/api/pocket/capability' && req.method === 'GET') {
+      return json(res, 200, { capability: POCKET_CAPABILITY })
+    }
     if (path === '/api/pocket' && req.method === 'GET') {
       return json(res, 200, pocket.status())
     }
     if (path === '/api/pocket/pair' && req.method === 'POST') {
-      const paired = await pocket.pair()
-      const page = project(settleStatus())
-      pocketUploads.schedule(page, page.revision)
-      await pocketUploads.drain()
-      return json(res, 201, { ...paired, ...pocket.status() })
+      try {
+        const paired = await pocket.pair()
+        const page = project(settleStatus())
+        pocketUploads.schedule(page, page.revision)
+        await pocketUploads.drain()
+        return json(res, 201, { ...pocket.status(), pairingUrl: paired.pairingUrl })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    // The lost-phone door. A new key epoch opens, the relay drops what it
+    // held, and the phone that walked away can read nothing more.
+    if (path === '/api/pocket/rotate' && req.method === 'POST') {
+      try {
+        const rotated = await pocket.rotate({ reason: (await readBody(req)).reason || 'replace-device' })
+        const page = project(settleStatus())
+        pocketUploads.schedule(page, page.revision)
+        await pocketUploads.drain()
+        return json(res, 201, { ...pocket.status(), pairingUrl: rotated.pairingUrl })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
     }
     if (path === '/api/pocket/sync' && req.method === 'POST') {
       const page = project(settleStatus())
@@ -275,8 +377,14 @@ const server = createServer(async (req, res) => {
       const status = pocket.status()
       return json(res, 200, { ...status, imported: captures?.imported || 0 })
     }
+    // Disconnect asks the relay to delete the space before this computer
+    // forgets it. If the relay cannot be reached the request is kept and
+    // retried; the pairing is already gone from here either way.
     if (path === '/api/pocket/disconnect' && req.method === 'POST') {
-      return json(res, 200, await pocket.disconnect())
+      return json(res, 200, await pocket.revoke())
+    }
+    if (path === '/api/pocket/revoke' && req.method === 'POST') {
+      return json(res, 200, await pocket.revoke())
     }
 
     // Capture lands instantly; the settle pass runs behind you.
@@ -447,6 +555,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/export.md' && req.method === 'GET') {
       const md = exportMarkdown()
       res.writeHead(200, {
+        ...SECURITY_HEADERS,
         'content-type': 'text/markdown; charset=utf-8',
         'content-disposition': `attachment; filename="december-${new Date().getFullYear()}.md"`,
       })

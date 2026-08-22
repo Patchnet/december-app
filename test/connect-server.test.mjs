@@ -8,7 +8,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pocketCrypto } from '../lib/pocket-sync.mjs'
+import { createSecretStore, pocketCrypto, pocketSecrets } from '../lib/pocket-sync.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // the canonical skill's own version — tests follow it instead of pinning a literal
@@ -345,20 +345,26 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
   const data = join(base, 'data')
   await mkdir(data, { recursive: true })
   const contentKey = Buffer.alloc(32, 7)
+  const spaceId = 'space_fixture_123456'
+  const fileStore = createSecretStore({ backend: 'file' })
   await writeFile(join(data, 'pocket.json'), JSON.stringify({
-    version: 1,
+    version: 2,
     clientId: 'shutdown-fixture',
-    connection: {
-      spaceId: 'space_fixture_123456',
+    space: { spaceId, epoch: 1, pairedAt: '2026-08-21T00:00:00.000Z' },
+    secrets: pocketSecrets.seal(fileStore, {
+      deviceId: 'device_fixture_123456',
       desktopToken: 'desktop_fixture_123456',
-      pocketToken: 'pocket_fixture_123456',
       contentKey: contentKey.toString('base64url'),
-    },
+      epoch: 1,
+    }),
+    claim: null,
     nextPageRevision: 1,
     pendingPage: null,
     captureCursor: 0,
     lastSyncedAt: null,
     lastError: null,
+    requiresRepair: false,
+    pendingRevocation: null,
   }))
 
   let resolvePage
@@ -427,7 +433,13 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
     pageReceived,
     new Promise((_, rejectTimeout) => setTimeout(() => rejectTimeout(new Error('Pocket page was not drained')), 2000)),
   ])
-  const decrypted = pocketCrypto.decrypt(contentKey, uploaded.payload)
+  const decrypted = pocketCrypto.decrypt(contentKey, uploaded.payload, {
+    spaceId,
+    epoch: 1,
+    minEpoch: 1,
+    purpose: 'page',
+    sequence: uploaded.revision,
+  })
   assert.equal(decrypted.page.captures[0].text, 'survive shutdown')
   const [exitCode, exitSignal] = await childExit
   assert.equal(exitSignal, null, childError)
