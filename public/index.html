@@ -58,7 +58,7 @@
         <div class="pocket-heading">
           <div>
             <h3 id="pocket-title">Pocket</h3>
-            <p>The same page on your phone — <a href="https://app.getdecember.me" target="_blank" rel="noopener noreferrer">app.getdecember.me</a>.</p>
+            <p>Access your December page from your phone. View the current page and send notes back to this computer.</p>
           </div>
           <span class="pocket-state-mark" id="pocket-state-mark" aria-hidden="true"></span>
         </div>
@@ -68,12 +68,16 @@
         </div>
         <div class="pocket-actions">
           <button class="pocket-primary" type="button" id="pocket-connect">Connect phone</button>
+          <button class="pocket-primary" type="button" id="pocket-reconnect" hidden>Reconnect phone</button>
+          <button type="button" id="pocket-move" hidden>Move to a new phone</button>
+          <button type="button" id="pocket-lost" hidden>Phone lost or stolen</button>
           <button type="button" id="pocket-sync" hidden>Sync now</button>
           <button type="button" id="pocket-disconnect" hidden>Disconnect</button>
+          <button type="button" id="pocket-retry" hidden>Retry</button>
         </div>
-        <div class="pocket-confirm" id="pocket-confirm" hidden role="group" aria-label="Confirm disconnect">
-          <span>Disconnect this phone?</span>
-          <button type="button" id="pocket-disconnect-confirm">Yes, disconnect</button>
+        <div class="pocket-confirm" id="pocket-confirm" hidden role="group" aria-labelledby="pocket-confirm-copy">
+          <span id="pocket-confirm-copy">Confirm this phone action.</span>
+          <button type="button" id="pocket-disconnect-confirm">Continue</button>
           <button type="button" id="pocket-disconnect-cancel">Cancel</button>
         </div>
       </section>
@@ -101,9 +105,13 @@
       aria-labelledby="pocket-pairing-title" aria-describedby="pocket-pairing-copy" tabindex="-1" hidden>
       <button class="pocket-pairing-close" type="button" id="pocket-pairing-close" aria-label="Close phone pairing">&times;</button>
       <h2 id="pocket-pairing-title">Connect your phone</h2>
-      <p id="pocket-pairing-copy">On your phone, open <a href="https://app.getdecember.me" target="_blank" rel="noopener noreferrer">app.getdecember.me</a> and scan this code.</p>
+      <p id="pocket-pairing-copy">On your phone, open <a href="https://app.getdecember.me" target="_blank" rel="noopener noreferrer">app.getdecember.me</a>. Choose <strong>Scan QR</strong> or <strong>Enter pairing code</strong>.</p>
       <div class="pocket-qr" id="pocket-qr" aria-label="Pairing QR code"></div>
-      <p class="pocket-pairing-note">The relay cannot read your page. This one-time code is shown only while this window is open.</p>
+      <div class="pocket-code-choice" aria-hidden="true"><span>or enter pairing code</span></div>
+      <output class="pocket-pairing-code" id="pocket-pairing-code" aria-label="Pairing code"></output>
+      <p class="pocket-pairing-expiry" id="pocket-pairing-expiry" aria-live="off"></p>
+      <button class="pocket-pairing-retry" type="button" id="pocket-pairing-retry" hidden>Get a new code</button>
+      <p class="pocket-pairing-note">The relay cannot read your page. The QR and pairing code work once and stay only in this window.</p>
     </section>
 
     <div class="dropzone" id="dropzone" hidden>drop to add to your page</div>
