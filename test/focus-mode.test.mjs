@@ -210,7 +210,7 @@ test('the timer is the browser\'s alone and the write happens once, on exit', ()
 })
 
 test('the spotlight is a dialog, restores what it took, and leaves the card overlay alone', () => {
-  const markup = focusTask.match(/host\.innerHTML = `[\s\S]*?`\n/)?.[0]
+  const markup = focusTask.match(/host\.innerHTML = `[\s\S]*?`\r?\n/)?.[0]
   assert.ok(markup, 'the spotlight markup is present')
   assert.match(markup, /role="dialog"/)
   assert.match(markup, /aria-modal="true"/)
