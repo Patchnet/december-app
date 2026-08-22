@@ -14,7 +14,9 @@ export function configureUpdater(updater) {
     the one presentation path; absorb the duplicate rejection here. */
 export async function requestUpdateCheck(updater) {
   try {
-    return await updater.checkForUpdates()
+    const result = await updater.checkForUpdates()
+    result?.downloadPromise?.catch(() => {})
+    return result
   } catch {
     return null
   }

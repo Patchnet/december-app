@@ -57,6 +57,18 @@ test('an updater rejection is absorbed because the error event owns presentation
   assert.doesNotMatch(main, /checkForUpdates\(\)\.catch/)
 })
 
+test('a nested download rejection is absorbed by the updater error event path', async () => {
+  const downloadPromise = Promise.reject(new Error('installer download failed'))
+  const result = await requestUpdateCheck({
+    checkForUpdates() {
+      return Promise.resolve({ downloadPromise })
+    },
+  })
+
+  assert.equal(result.downloadPromise, downloadPromise)
+  await new Promise((resolve) => setImmediate(resolve))
+})
+
 test('restart dialog asks before replacing the running app', () => {
   const options = restartDialogOptions('0.15.0')
   assert.equal(options.message, 'December 0.15.0 is ready.')
