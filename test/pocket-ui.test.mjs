@@ -74,6 +74,8 @@ test('Pocket settings and pairing dialog expose the required accessible markup',
   assert.match(html, /id="pocket-confirm" hidden role="group" aria-label="Confirm disconnect"/)
   assert.match(html, /<section class="pocket-pairing"[^>]+role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="pocket-pairing-title" aria-describedby="pocket-pairing-copy" tabindex="-1" hidden/)
   assert.match(html, /id="pocket-pairing-close" aria-label="Close phone pairing"/)
+  assert.match(html, /href="https:\/\/app\.getdecember\.me"/)
+  assert.match(html, /The relay cannot read your page/)
   assert.match(qrCode, /setAttribute\('role', 'img'\)/)
   assert.match(qrCode, /setAttribute\('aria-label', 'Scan to connect this phone to December'\)/)
   assert.match(connections, /if \(e\.key === 'Escape'\) closePocketPairing\(\)/)

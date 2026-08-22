@@ -45,7 +45,7 @@ test('installer and uninstaller use the existing December icon', () => {
   assert.ok(existsSync(join(root, 'build', 'icon.ico')))
 })
 
-test('installer keeps the stable artifact name, package contents, and zero runtime dependencies', () => {
+test('installer keeps the stable artifact name, package contents, and one updater dependency', () => {
   assert.equal(build.win.artifactName, '${productName}-Setup-${version}-${arch}.${ext}')
   assert.deepEqual(build.files, [
     'electron/**/*',
@@ -54,6 +54,38 @@ test('installer keeps the stable artifact name, package contents, and zero runti
     'server.mjs',
     'mcp-server.mjs',
     'package.json',
+    'LICENSE',
+    'NOTICE',
   ])
-  assert.deepEqual(pkg.dependencies ?? {}, {})
+  assert.deepEqual(pkg.dependencies ?? {}, { 'electron-updater': '6.8.9' })
+})
+
+test('project license is Apache 2.0 and reserves December trademarks', () => {
+  assert.equal(pkg.license, 'Apache-2.0')
+  const license = readFileSync(join(root, 'LICENSE'), 'utf8')
+  assert.match(license, /Apache License/)
+  assert.match(license, /Version 2\.0/)
+  const notice = readFileSync(join(root, 'NOTICE'), 'utf8')
+  assert.match(notice, /trademark/i)
+  assert.match(notice, /December/)
+  assert.match(notice, /Patchnet AI/)
+  const marks = readFileSync(join(root, 'TRADEMARKS.md'), 'utf8')
+  assert.match(marks, /trademark/i)
+  assert.match(marks, /December/)
+  assert.match(marks, /Patchnet AI/)
+})
+
+test('Windows build publishes GitHub Releases only when asked', () => {
+  assert.deepEqual(build.publish, {
+    provider: 'github',
+    owner: 'Patchnet',
+    repo: 'december-app',
+    releaseType: 'release',
+  })
+  assert.match(pkg.scripts['dist:win'], /--publish never/)
+  assert.match(pkg.scripts['dist:win:publish'], /--publish always/)
+  const workflow = readFileSync(join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8')
+  assert.match(workflow, /tags:\s*\n\s+- 'v\*'/)
+  assert.match(workflow, /npm run dist:win:publish/)
+  assert.match(workflow, /windows-latest/)
 })

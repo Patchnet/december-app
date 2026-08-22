@@ -35,6 +35,10 @@ installed by `npm ci`; lint never skips when they are absent. Use
 
 - `test/desktop-runtime.test.mjs` — data-directory resolution, CLI path
   resolution for GUI launches, and the desktop fixed-port decision.
+- `test/update.test.mjs` — packaged-only update checks, quiet launch checks,
+  restart consent, and concise manual-check results.
+- `test/installer-config.test.mjs` — assisted NSIS behavior and explicit
+  GitHub Release publishing configuration.
 - `test/page-modules.test.mjs` — the page is native ES modules under
   `public/js/` (no bundler). Boot file stays small, styles.css only
   `@import`s sheets, modules parse, stay under the landing cap, retain required
@@ -59,7 +63,11 @@ After `npm ci`, exercise Electron behavior manually:
 6. Run `node server.mjs` without Electron and confirm `/api/health` responds on
    port 3008.
 7. Run `npm run dist:win` and confirm an unsigned NSIS installer exists in
-   `release/`.
+   `release/`. `npm run app` must not show **Check for updates**.
+8. In a packaged Windows build, confirm launch stays quiet when no update is
+   available. Confirm a newer release downloads in the background and asks
+   before restarting. Confirm tray **Check for updates** reports whether the
+   app is current or the check failed.
 
 ## Rules
 
