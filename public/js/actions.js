@@ -3,6 +3,9 @@ import { whenPhrase } from './blocks.js'
 import { celebrate, pop, washCard, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
 import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount } from './year.js'
+// Task focus listens in the capture phase, so it decides what a click on the
+// words of a row means before anything below gets to check the row off.
+import './focus-task.js'
 
 document.addEventListener('click', async (e) => {
   // a link in a card is a link: let the browser have it
@@ -281,6 +284,9 @@ document.addEventListener('click', async (e) => {
   // aria and all. It was left out of this selector, so the most common card
   // on the page could not be ticked off by clicking it — and because it is a
   // button, the open-the-card handler below skipped it too. It did nothing.
+  // A click on the words themselves never reaches here: focus-task.js takes
+  // it in the capture phase and spotlights the task instead. The tick, and
+  // the rest of the row beside the words, still check it off.
   const row = e.target.closest('.row[data-block], .solo[data-block]')
   if (row) {
     if (row.dataset.busy) return

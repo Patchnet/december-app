@@ -99,6 +99,16 @@ test('app.js stays the boot file', () => {
   assert.match(src, /new surface gets a new file/)
 })
 
+test('task focus is a page module of its own, and carries its own sheet', () => {
+  const actions = read(join(jsDir, 'actions.js'))
+  assert.match(actions, /import '\.\/focus-task\.js'/, 'actions loads task focus')
+  const focusTask = read(join(jsDir, 'focus-task.js'))
+  // The sheet is pulled in by the surface that owns it rather than through
+  // styles.css, so the whole feature is one file's business.
+  assert.match(focusTask, /link\.href = '\/css\/focus\.css'/)
+  assert.ok(readdirSync(join(publicDir, 'css')).includes('focus.css'))
+})
+
 test('styles.css only assembles sheets', () => {
   const src = read(join(publicDir, 'styles.css'))
   assert.ok(src.split(/\r?\n/).length < 20)
