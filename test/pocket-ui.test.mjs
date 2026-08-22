@@ -28,18 +28,19 @@ test('Pocket QR codes are constructed locally without a remote provider', () => 
   assert.doesNotMatch(`${html}\n${pocket}\n${qrCode}`, /(?:api\.qrserver\.com|chart\.googleapis\.com|quickchart\.io|qrcode\.monkey)/i)
 })
 
-test('the sensitive pairing URL is separated from status and cleared on every exit path', () => {
-  assert.match(pocket, /const \{ pairingUrl: sensitiveUrl, \.\.\.safeStatus \} = response\s+status = safeStatus/)
-  assert.match(pocket, /function forgetPairingUrl\(\) \{\s+pairingUrl = null\s+qr\.replaceChildren\(\)\s+\}/)
-  assert.match(pocket, /export function closePocketPairing[\s\S]*?pairingRequest\+\+[\s\S]*?forgetPairingUrl\(\)/)
-  assert.match(pocket, /if \(pairingDialog\.hidden\) \{\s+forgetPairingUrl\(\)\s+return/)
-  assert.match(pocket, /connectButton\.addEventListener\('click',[\s\S]*?forgetPairingUrl\(\)[\s\S]*?request !== pairingRequest/)
-  assert.match(pocket, /catch \(error\) \{\s+errorMessage = error\.message\s+forgetPairingUrl\(\)/)
+test('the sensitive pairing URL and human code are separated from status and cleared on every exit path', () => {
+  assert.match(pocket, /const \{ pairingUrl: sensitiveUrl, pairingCode: sensitiveCode, \.\.\.safeStatus \} = response\s+status = safeStatus/)
+  assert.match(pocket, /function forgetPairingSecrets\(\) \{[\s\S]*?pairingUrl = null[\s\S]*?pairingCode = null[\s\S]*?pairingExpiresAt = null[\s\S]*?qr\.replaceChildren\(\)[\s\S]*?pairingCodeOutput\.textContent = ''/)
+  assert.match(pocket, /export function closePocketPairing[\s\S]*?pairingRequest\+\+[\s\S]*?forgetPairingSecrets\(\)/)
+  assert.match(pocket, /async function executePairing[\s\S]*?forgetPairingSecrets\(\)[\s\S]*?request !== pairingRequest[\s\S]*?forgetPairingSecrets\(\)/)
+  assert.match(pocket, /function openPairing[\s\S]*?catch \(error\) \{[\s\S]*?forgetPairingSecrets\(\)/)
+  assert.match(pocket, /This pairing code has expired[\s\S]*?pairingRetryButton\.hidden = false/)
   assert.match(pocket, /pocket-pairing-close'\)\.addEventListener\('click', \(\) => closePocketPairing\(\)\)/)
   assert.match(pocket, /pagehide', \(\) => closePocketPairing\(false\)/)
   assert.match(connections, /function closeSettings[\s\S]*?closePocketPairing\(false\)/)
   assert.match(connections, /e\.key === 'Escape'\) closePocketPairing\(\)/)
-  assert.match(pocket, /pocket-disconnect-confirm'\)\.addEventListener[\s\S]*?closePocketPairing\(false\)/)
+  assert.match(pocket, /confirmButton\.addEventListener[\s\S]*?intent\?\.name === 'disconnect'\) closePocketPairing\(false\)/)
+  assert.doesNotMatch(pocket, /(?:localStorage|sessionStorage|document\.cookie|navigator\.clipboard)/)
 })
 
 test('Pocket status uses fixed copy and text-only DOM rendering', () => {
@@ -54,16 +55,18 @@ test('Pocket status uses fixed copy and text-only DOM rendering', () => {
 })
 
 test('Pocket controls are wired to their local API actions', () => {
-  const actions = [
-    ['connectButton', 'pair', '/api/pocket/pair'],
-    ['syncButton', 'sync', '/api/pocket/sync'],
-  ]
-  for (const [button, action, path] of actions) {
-    assert.match(pocket, new RegExp(`${button}\\.addEventListener\\('click',[\\s\\S]*?runAction\\('${action}', '${path}'\\)`))
+  for (const [name, path] of [
+    ['connect', '/api/pocket/pair'],
+    ['reconnect', '/api/pocket/rotate'],
+    ['move', '/api/pocket/rotate'],
+    ['lost', '/api/pocket/rotate'],
+    ['sync', '/api/pocket/sync'],
+    ['disconnect', '/api/pocket/disconnect'],
+  ]) {
+    assert.match(pocket, new RegExp(`${name}: \\{[\\s\\S]*?path: '${path.replaceAll('/', '\\/')}'`))
   }
-  assert.match(pocket, /pocket-disconnect-confirm'\)\.addEventListener[\s\S]*?runAction\('disconnect', '\/api\/pocket\/disconnect'\)/)
   assert.match(pocket, /export async function refreshPocket[\s\S]*?api\('\/api\/pocket'\)/)
-  for (const id of ['pocket-connect', 'pocket-sync', 'pocket-disconnect', 'pocket-disconnect-confirm', 'pocket-disconnect-cancel']) {
+  for (const id of ['pocket-connect', 'pocket-reconnect', 'pocket-move', 'pocket-lost', 'pocket-sync', 'pocket-disconnect', 'pocket-retry', 'pocket-disconnect-confirm', 'pocket-disconnect-cancel']) {
     assert.match(html, new RegExp(`<button[^>]+id="${id}"`))
   }
 })
@@ -71,10 +74,14 @@ test('Pocket controls are wired to their local API actions', () => {
 test('Pocket settings and pairing dialog expose the required accessible markup', () => {
   assert.match(html, /<section class="pocket-settings"[^>]+aria-labelledby="pocket-title"/)
   assert.match(html, /id="pocket-status" role="status" aria-live="polite"/)
-  assert.match(html, /id="pocket-confirm" hidden role="group" aria-label="Confirm disconnect"/)
+  assert.match(html, /id="pocket-confirm" hidden role="group" aria-labelledby="pocket-confirm-copy"/)
   assert.match(html, /<section class="pocket-pairing"[^>]+role="dialog" aria-modal="true"[\s\S]*?aria-labelledby="pocket-pairing-title" aria-describedby="pocket-pairing-copy" tabindex="-1" hidden/)
   assert.match(html, /id="pocket-pairing-close" aria-label="Close phone pairing"/)
   assert.match(html, /href="https:\/\/app\.getdecember\.me"/)
+  assert.match(html, /Choose <strong>Scan QR<\/strong> or <strong>Enter pairing code<\/strong>/)
+  assert.match(html, /id="pocket-pairing-code" aria-label="Pairing code"/)
+  assert.match(html, /id="pocket-pairing-expiry" aria-live="off"/)
+  assert.match(pocket, /pairingExpiryOutput\.setAttribute\('role', 'status'\)[\s\S]*?pairingExpiryOutput\.setAttribute\('aria-live', 'polite'\)/)
   assert.match(html, /The relay cannot read your page/)
   assert.match(qrCode, /setAttribute\('role', 'img'\)/)
   assert.match(qrCode, /setAttribute\('aria-label', 'Scan to connect this phone to December'\)/)
@@ -85,7 +92,8 @@ test('Pocket settings and pairing dialog expose the required accessible markup',
 test('Pocket pairing stays within a 390px viewport', () => {
   assert.match(settingsCss, /@media \(max-width: 390px\)/)
   assert.match(settingsCss, /\.pocket-pairing \{ width: calc\(100vw - 24px\)/)
-  assert.match(settingsCss, /\.pocket-qr \{ width: min\(232px, 72vw\)/)
+  assert.match(settingsCss, /\.pocket-qr \{ width: min\(220px, 66vw\)/)
+  assert.match(settingsCss, /\.pocket-pairing-code \{ font-size: 14px/)
   assert.match(settingsCss, /\.pocket-actions \{[^}]*flex-wrap: wrap/)
 })
 
@@ -94,17 +102,41 @@ test('every Pocket action carries the capability the page alone can read', () =>
   assert.match(pocket, /'x-december-capability': capability \|\| ''/)
   assert.match(pocket, /if \(response\.status === 403\) \{\s+await claimCapability\(\)/)
   // Every acting route goes through the capability wrapper, never bare api().
-  assert.match(pocket, /const response = await pocketPost\(path\)/)
+  assert.match(pocket, /const response = await pocketPost\(intent\.path, intent\.body\)/)
   assert.doesNotMatch(pocket, /api\('\/api\/pocket\/(?:pair|rotate|sync|disconnect|revoke)'/)
   // The capability is never written down anywhere it could outlive the run.
   assert.doesNotMatch(pocket, /(?:localStorage|sessionStorage|document\.cookie)/)
 })
 
-test('replacing a phone rotates the key instead of adding a second device', () => {
-  assert.match(pocket, /connectButton\.addEventListener\('click',[\s\S]*?runAction\('pair', '\/api\/pocket\/rotate'\)/)
-  assert.match(pocket, /const replacing = !!status\?\.paired \|\| !!status\?\.requiresRepair/)
-  assert.match(pocket, /connectButton\.textContent = action === 'pair' \? 'Connecting…' : \(paired \|\| repairing\) \? 'Replace phone' : 'Connect phone'/)
-  assert.match(pocket, /disconnectButton\.hidden = !\(paired \|\| repairing\)/)
+test('phone repair, movement, and loss are distinct confirmed actions', () => {
+  assert.match(pocket, /reconnect:[\s\S]*?reason: 'protocol-repair'[\s\S]*?confirmCopy:/)
+  assert.match(pocket, /move:[\s\S]*?reason: 'move-device'[\s\S]*?stays connected until the new phone claims the connection when that is safe/i)
+  assert.match(pocket, /lost:[\s\S]*?reason: 'lost-phone'[\s\S]*?immediately revokes that phone and rotates the encryption key/)
+  assert.match(pocket, /reconnectButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.reconnect\)\)/)
+  assert.match(pocket, /moveButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.move\)\)/)
+  assert.match(pocket, /lostButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.lost\)\)/)
+  assert.doesNotMatch(pocket, /Replace phone/)
+  assert.match(pocket, /title: 'Reconnect phone'/)
+})
+
+test('every request has progress, fixed failure copy, and an actionable retry', () => {
+  for (const action of ['pair', 'reconnect', 'move', 'lost', 'sync', 'disconnect', 'refresh']) {
+    assert.match(pocket, new RegExp(`action === '${action}'`))
+  }
+  assert.match(pocket, /errorMessage[\s\S]*?December could not finish that request\. Retry when you are ready\./)
+  assert.match(pocket, /lastFailedIntent = intent/)
+  assert.match(pocket, /retryButton\.addEventListener\('click', \(\) => executeIntent\(lastFailedIntent\)\)/)
+  assert.match(pocket, /pairingRetryButton\.addEventListener[\s\S]*?executePairing\(intent\)/)
+  assert.doesNotMatch(pocket, /textContent\s*=\s*(?:errorMessage|status\.lastError)/)
+})
+
+test('Pocket uses paired-device language and states the phone outcome', () => {
+  const pocketMarkup = html.slice(html.indexOf('<section class="pocket-settings"'), html.indexOf('<section class="connection-settings"'))
+  assert.match(pocketMarkup, /Access your December page from your phone\. View the current page and send notes back to this computer\./)
+  assert.doesNotMatch(pocketMarkup, /account|sign[ -]?in/i)
+  assert.match(pocket, /No phone paired/)
+  assert.match(pocket, /Phone paired/)
+  assert.match(pocket, /Reconnect this paired device with a fresh code/)
 })
 
 test('Pocket says plainly when this computer has no key store, and stays out of the way', () => {

@@ -3,22 +3,99 @@ import { createQrSvg } from './qr-code.js'
 
 const pairingDialog = $('#pocket-pairing')
 const qr = $('#pocket-qr')
+const pairingCodeOutput = $('#pocket-pairing-code')
+const pairingExpiryOutput = $('#pocket-pairing-expiry')
+const pairingRetryButton = $('#pocket-pairing-retry')
 const connectButton = $('#pocket-connect')
+const reconnectButton = $('#pocket-reconnect')
+const moveButton = $('#pocket-move')
+const lostButton = $('#pocket-lost')
 const syncButton = $('#pocket-sync')
 const disconnectButton = $('#pocket-disconnect')
+const retryButton = $('#pocket-retry')
 const confirmRow = $('#pocket-confirm')
+const confirmButton = $('#pocket-disconnect-confirm')
+const cancelButton = $('#pocket-disconnect-cancel')
+
+const intents = Object.freeze({
+  connect: {
+    name: 'pair',
+    path: '/api/pocket/pair',
+    body: {},
+    pairing: true,
+    mode: 'connect',
+    buttonId: 'pocket-connect',
+  },
+  reconnect: {
+    name: 'reconnect',
+    path: '/api/pocket/rotate',
+    body: { reason: 'protocol-repair' },
+    pairing: true,
+    mode: 'reconnect',
+    buttonId: 'pocket-reconnect',
+    confirmCopy: 'Reconnect this phone? This repairs Pocket security and replaces its old connection.',
+    confirmLabel: 'Reconnect phone',
+  },
+  move: {
+    name: 'move',
+    path: '/api/pocket/rotate',
+    body: { reason: 'move-device' },
+    pairing: true,
+    mode: 'move',
+    buttonId: 'pocket-move',
+    confirmCopy: 'Move to a new phone? Keep the old phone nearby. It stays connected until the new phone claims the connection when that is safe; otherwise December stops the move.',
+    confirmLabel: 'Prepare new phone',
+  },
+  lost: {
+    name: 'lost',
+    path: '/api/pocket/rotate',
+    body: { reason: 'lost-phone' },
+    pairing: true,
+    mode: 'lost',
+    buttonId: 'pocket-lost',
+    confirmCopy: 'Phone lost or stolen? December immediately revokes that phone and rotates the encryption key. This cannot be undone.',
+    confirmLabel: 'Revoke phone now',
+  },
+  sync: {
+    name: 'sync',
+    path: '/api/pocket/sync',
+    body: {},
+    buttonId: 'pocket-sync',
+  },
+  disconnect: {
+    name: 'disconnect',
+    path: '/api/pocket/disconnect',
+    body: {},
+    buttonId: 'pocket-disconnect',
+    confirmCopy: 'Disconnect this phone? It will stop receiving this page and sending notes to this computer.',
+    confirmLabel: 'Yes, disconnect',
+  },
+  refresh: { name: 'refresh', buttonId: 'pocket-retry' },
+})
+
+const pairingTitles = Object.freeze({
+  connect: 'Connect your phone',
+  reconnect: 'Reconnect your phone',
+  move: 'Move to your new phone',
+  lost: 'Connect a replacement phone',
+})
+
 let status = null
 let pairingUrl = null
+let pairingCode = null
+let pairingExpiresAt = null
+let pairingTimer = null
+let pairingMode = null
 let action = null
 let errorMessage = ''
 let restorePairingFocus = null
 let pairingRequest = 0
 let capability = null
+let pendingIntent = null
+let lastFailedIntent = null
 
 // Pocket's acting routes ask for a capability December only gives to a page
-// it served itself. Another tab can post to this port, but it cannot read
-// the reply that carries the value, so it cannot hold this header. The value
-// is minted per run, so a restarted server simply hands out a fresh one.
+// it served itself. The capability is minted per run and never written down.
 async function claimCapability() {
   const response = await fetch('/api/pocket/capability')
   if (!response.ok) throw new Error('request failed')
@@ -44,7 +121,9 @@ async function pocketPost(path, body = {}) {
   return data
 }
 
-const pairingFocusables = () => [...pairingDialog.querySelectorAll('button:not(:disabled)')]
+const pairingFocusables = () =>
+  [...pairingDialog.querySelectorAll('button:not(:disabled), a[href]')]
+    .filter((element) => !element.closest('[hidden]'))
 const looksOffline = (message) => /offline|fetch failed|network|timed?\s*out|timeout|unreachable|econn|enotfound/i.test(message || '')
 
 function relativeTime(value) {
@@ -58,38 +137,41 @@ function relativeTime(value) {
 }
 
 function viewState() {
-  if (action === 'pair') return { key: 'pairing', title: 'Getting your code ready…', detail: 'December is making a private connection.' }
+  if (action === 'pair') return { key: 'pairing', title: 'Getting your pairing options ready…', detail: 'December is creating a private five-minute connection.' }
+  if (action === 'reconnect') return { key: 'pairing', title: 'Preparing a secure reconnection…', detail: 'The phone action is in progress.' }
+  if (action === 'move') return { key: 'pairing', title: 'Preparing your new phone…', detail: 'The old phone stays connected while December prepares the move.' }
+  if (action === 'lost') return { key: 'pairing', title: 'Revoking the missing phone now…', detail: 'December is rotating the encryption key before showing a new code.' }
   if (action === 'sync') return { key: 'syncing', title: 'Syncing now…', detail: 'Your local page is still available.' }
-  // No key store means December will not write a phone pairing down here.
-  // The rest of the page is untouched and works exactly as it always did.
+  if (action === 'disconnect') return { key: 'pairing', title: 'Disconnecting phone…', detail: 'December is removing this phone connection.' }
+  if (action === 'refresh') return { key: 'pairing', title: 'Checking Pocket again…', detail: 'December is refreshing the phone connection status.' }
   if (status?.secretsPersisted === false) return {
     key: 'unavailable',
     title: 'Pocket is unavailable on this computer',
     detail: 'There is no secure key store here, so December will not save a phone connection. Everything else works.',
   }
+  if (errorMessage) return {
+    key: looksOffline(errorMessage) ? 'offline' : 'error',
+    title: looksOffline(errorMessage) ? 'Pocket is offline' : 'Pocket needs attention',
+    detail: looksOffline(errorMessage) ? 'Check your connection, then retry.' : 'December could not finish that request. Retry when you are ready.',
+  }
   if (status?.requiresRepair) return {
     key: 'repair',
-    title: 'Reconnect your phone',
-    detail: 'December improved how it protects Pocket. Choose Replace phone to scan a fresh code.',
+    title: 'Reconnect phone',
+    detail: 'December improved how it protects Pocket. Reconnect this paired device with a fresh code.',
   }
   if (status?.revokePending) return {
     key: 'offline',
     title: 'Finishing the disconnect',
     detail: 'Your phone is off this computer. December is still asking the relay to delete its copy.',
   }
-  if (errorMessage) return {
-    key: looksOffline(errorMessage) ? 'offline' : 'error',
-    title: looksOffline(errorMessage) ? 'Pocket is offline' : 'Pocket needs attention',
-    detail: looksOffline(errorMessage) ? 'Check your connection and try again.' : 'December could not finish that. Try again.',
-  }
-  if (!status?.paired) return { key: 'disconnected', title: 'Your phone is not connected', detail: 'Connect it with a private, one-time code.' }
+  if (!status?.paired) return { key: 'disconnected', title: 'No phone paired', detail: 'Pair a device with a private, one-time code.' }
   if (status.lastError) return {
     key: looksOffline(status.lastError) ? 'offline' : 'error',
     title: looksOffline(status.lastError) ? 'Pocket is offline' : 'Pocket needs attention',
     detail: looksOffline(status.lastError) ? 'Your changes are safe here. Sync will try again.' : 'December could not finish the last sync. Try again.',
   }
   if (status.pendingRevision != null) return { key: 'offline', title: 'Waiting to sync', detail: 'Your changes are safe here and will retry.' }
-  return { key: 'connected', title: 'Your phone is connected', detail: status.lastSyncedAt ? relativeTime(status.lastSyncedAt) : 'Ready for your first phone sync.' }
+  return { key: 'connected', title: 'Phone paired', detail: status.lastSyncedAt ? relativeTime(status.lastSyncedAt) : 'Ready for the first phone sync.' }
 }
 
 function render() {
@@ -105,25 +187,66 @@ function render() {
   const paired = !!status?.paired
   const repairing = !!status?.requiresRepair
   const usable = status?.secretsPersisted !== false
-  // A connected phone can still be replaced: that is the door for a phone
-  // that was lost, sold, or handed on.
-  connectButton.hidden = !usable
+  const busy = action !== null
+  const controlsLocked = busy || pendingIntent !== null
+  connectButton.hidden = !usable || paired || repairing
+  reconnectButton.hidden = !usable || !repairing
+  moveButton.hidden = !usable || !paired
+  lostButton.hidden = !usable || !paired
   syncButton.hidden = !paired
   disconnectButton.hidden = !(paired || repairing)
-  const busy = action !== null
+  retryButton.hidden = !lastFailedIntent || busy
   $('#pocket-status').setAttribute('aria-busy', String(busy))
-  connectButton.disabled = busy
-  syncButton.disabled = busy
-  disconnectButton.disabled = busy
-  $('#pocket-disconnect-confirm').disabled = busy
-  $('#pocket-disconnect-cancel').disabled = busy
-  connectButton.textContent = action === 'pair' ? 'Connecting…' : (paired || repairing) ? 'Replace phone' : 'Connect phone'
+
+  for (const button of [connectButton, reconnectButton, moveButton, lostButton, syncButton, disconnectButton, retryButton]) {
+    button.disabled = controlsLocked
+  }
+  confirmButton.disabled = busy
+  cancelButton.disabled = busy
+  connectButton.textContent = action === 'pair' ? 'Preparing…' : 'Connect phone'
+  reconnectButton.textContent = action === 'reconnect' ? 'Reconnecting…' : 'Reconnect phone'
+  moveButton.textContent = action === 'move' ? 'Preparing move…' : 'Move to a new phone'
+  lostButton.textContent = action === 'lost' ? 'Revoking phone…' : 'Phone lost or stolen'
   syncButton.textContent = action === 'sync' ? 'Syncing…' : 'Sync now'
+  disconnectButton.textContent = action === 'disconnect' ? 'Disconnecting…' : 'Disconnect'
 }
 
-function forgetPairingUrl() {
+function clearPairingTimer() {
+  if (pairingTimer != null) window.clearInterval(pairingTimer)
+  pairingTimer = null
+}
+
+function forgetPairingSecrets() {
   pairingUrl = null
+  pairingCode = null
+  pairingExpiresAt = null
+  clearPairingTimer()
   qr.replaceChildren()
+  pairingCodeOutput.textContent = ''
+  pairingExpiryOutput.textContent = ''
+  pairingExpiryOutput.removeAttribute('role')
+  pairingExpiryOutput.setAttribute('aria-live', 'off')
+  pairingRetryButton.hidden = true
+}
+
+function updatePairingCountdown() {
+  if (pairingDialog.hidden || pairingExpiresAt == null) return
+  const seconds = Math.max(0, Math.ceil((pairingExpiresAt - Date.now()) / 1000))
+  if (seconds === 0) {
+    pairingUrl = null
+    pairingCode = null
+    pairingExpiresAt = null
+    clearPairingTimer()
+    qr.replaceChildren()
+    pairingCodeOutput.textContent = ''
+    pairingExpiryOutput.setAttribute('role', 'status')
+    pairingExpiryOutput.setAttribute('aria-live', 'polite')
+    pairingExpiryOutput.textContent = 'This pairing code has expired.'
+    pairingRetryButton.hidden = false
+    return
+  }
+  const minutes = Math.floor(seconds / 60)
+  pairingExpiryOutput.textContent = `Expires in ${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 export function isPocketPairingOpen() {
@@ -132,29 +255,54 @@ export function isPocketPairingOpen() {
 
 export function closePocketPairing(restoreFocus = true) {
   pairingRequest++
-  if (pairingDialog.hidden) {
-    forgetPairingUrl()
-    return
-  }
+  const target = restoreFocus ? restorePairingFocus : null
   pairingDialog.hidden = true
-  forgetPairingUrl()
+  forgetPairingSecrets()
+  pairingMode = null
+  restorePairingFocus = null
   $('#settings-pop').inert = false
   $('#settings-pop').removeAttribute('aria-hidden')
-  const target = restorePairingFocus ? restorePairingFocus : null
-  restorePairingFocus = null
   target?.focus()
 }
 
-function openPairing(url) {
+function returnTargetFor(mode) {
+  const preferred = {
+    reconnect: reconnectButton,
+    move: moveButton,
+    lost: lostButton,
+  }[mode]
+  return preferred && !preferred.hidden ? preferred : syncButton
+}
+
+function openPairing({ pairingUrl: url, pairingCode: code, pairingExpiresAt: expiry, mode }) {
   pairingDialog.hidden = true
-  forgetPairingUrl()
-  pairingUrl = url
-  qr.replaceChildren(createQrSvg(pairingUrl))
-  restorePairingFocus = syncButton.hidden ? connectButton : syncButton
-  $('#settings-pop').inert = true
-  $('#settings-pop').setAttribute('aria-hidden', 'true')
-  pairingDialog.hidden = false
-  $('#pocket-pairing-close').focus()
+  forgetPairingSecrets()
+  const expiresAt = Date.parse(expiry)
+  if (typeof url !== 'string' || !url || typeof code !== 'string' || !code || !Number.isFinite(expiresAt)) {
+    throw new Error('pairing options unavailable')
+  }
+  try {
+    pairingUrl = url
+    pairingCode = code
+    pairingExpiresAt = expiresAt
+    pairingMode = mode
+    qr.replaceChildren(createQrSvg(pairingUrl))
+    pairingCodeOutput.textContent = pairingCode
+    $('#pocket-pairing-title').textContent = pairingTitles[mode] || pairingTitles.connect
+    restorePairingFocus = returnTargetFor(mode)
+    $('#settings-pop').inert = true
+    $('#settings-pop').setAttribute('aria-hidden', 'true')
+    pairingDialog.hidden = false
+    updatePairingCountdown()
+    if (pairingExpiresAt != null) pairingTimer = window.setInterval(updatePairingCountdown, 1000)
+    $('#pocket-pairing-close').focus()
+  } catch (error) {
+    pairingDialog.hidden = true
+    forgetPairingSecrets()
+    $('#settings-pop').inert = false
+    $('#settings-pop').removeAttribute('aria-hidden')
+    throw error
+  }
 }
 
 export function trapPocketFocus(event) {
@@ -173,33 +321,64 @@ export function trapPocketFocus(event) {
   return true
 }
 
+function hideConfirmation(restoreFocus = false) {
+  const target = restoreFocus && pendingIntent ? $(`#${pendingIntent.buttonId}`) : null
+  pendingIntent = null
+  confirmRow.hidden = true
+  render()
+  target?.focus()
+}
+
+function showConfirmation(intent) {
+  if (action || pendingIntent) return
+  pendingIntent = intent
+  $('#pocket-confirm-copy').textContent = intent.confirmCopy
+  confirmButton.textContent = intent.confirmLabel
+  confirmRow.hidden = false
+  render()
+  confirmButton.focus()
+}
+
 export async function refreshPocket() {
   errorMessage = ''
-  confirmRow.hidden = true
+  lastFailedIntent = null
+  hideConfirmation()
+  action = 'refresh'
+  render()
   try {
     status = await api('/api/pocket')
   } catch (error) {
     errorMessage = error.message
+    lastFailedIntent = intents.refresh
+  } finally {
+    action = null
+    render()
   }
-  render()
 }
 
-async function runAction(name, path) {
+async function runAction(intent) {
   if (action) return null
-  action = name
+  action = intent.name
   errorMessage = ''
+  lastFailedIntent = null
   render()
   try {
-    const response = await pocketPost(path)
-    if (name === 'pair') {
-      const { pairingUrl: sensitiveUrl, ...safeStatus } = response
+    const response = await pocketPost(intent.path, intent.body)
+    if (intent.pairing) {
+      const { pairingUrl: sensitiveUrl, pairingCode: sensitiveCode, ...safeStatus } = response
       status = safeStatus
-      return { pairingUrl: sensitiveUrl }
+      return {
+        pairingUrl: sensitiveUrl,
+        pairingCode: sensitiveCode,
+        pairingExpiresAt: safeStatus.pairingExpiresAt,
+        mode: intent.mode,
+      }
     }
     status = response
     return response
   } catch (error) {
     errorMessage = error.message
+    lastFailedIntent = intent
     return null
   } finally {
     action = null
@@ -207,60 +386,71 @@ async function runAction(name, path) {
   }
 }
 
-connectButton.addEventListener('click', async () => {
-  forgetPairingUrl()
+async function executePairing(intent) {
+  forgetPairingSecrets()
   const request = ++pairingRequest
-  // Replacing a phone rotates the key instead of adding a second device, so
-  // the phone that walked away is left holding something that opens nothing.
-  const replacing = !!status?.paired || !!status?.requiresRepair
-  const result = replacing
-    ? await runAction('pair', '/api/pocket/rotate')
-    : await runAction('pair', '/api/pocket/pair')
-  if (!result?.pairingUrl || request !== pairingRequest) return
+  const result = await runAction(intent)
+  if (!result || request !== pairingRequest) {
+    if (request !== pairingRequest) forgetPairingSecrets()
+    return
+  }
   try {
-    openPairing(result.pairingUrl)
+    openPairing(result)
   } catch (error) {
     errorMessage = error.message
-    forgetPairingUrl()
+    lastFailedIntent = intent
+    forgetPairingSecrets()
     render()
   }
-})
+}
 
-syncButton.addEventListener('click', async () => {
-  const result = await runAction('sync', '/api/pocket/sync')
+async function executeIntent(intent) {
+  if (!intent) return
+  if (intent.name === 'refresh') {
+    await refreshPocket()
+    return
+  }
+  if (intent.pairing) {
+    await executePairing(intent)
+    return
+  }
+  const result = await runAction(intent)
   if (!result) return
-  const imported = Number(result.imported) || 0
-  if (imported && !result.lastError) {
-    errorMessage = ''
-    $('#pocket-status span').textContent = `${imported} phone ${imported === 1 ? 'note' : 'notes'} added. ${relativeTime(result.lastSyncedAt)}`
+  if (intent.name === 'sync') {
+    const imported = Number(result.imported) || 0
+    if (imported && !result.lastError) {
+      $('#pocket-status span').textContent = `${imported} phone ${imported === 1 ? 'note' : 'notes'} added. ${relativeTime(result.lastSyncedAt)}`
+    }
+    return
   }
+  if (intent.name === 'disconnect') {
+    if (result.revoked === false) {
+      $('#pocket-status span').textContent = 'Your phone is off this computer. December will finish deleting the relay copy when it can reach it.'
+    }
+    connectButton.focus()
+  }
+}
+
+connectButton.addEventListener('click', () => executePairing(intents.connect))
+reconnectButton.addEventListener('click', () => showConfirmation(intents.reconnect))
+moveButton.addEventListener('click', () => showConfirmation(intents.move))
+lostButton.addEventListener('click', () => showConfirmation(intents.lost))
+syncButton.addEventListener('click', () => executeIntent(intents.sync))
+disconnectButton.addEventListener('click', () => showConfirmation(intents.disconnect))
+retryButton.addEventListener('click', () => executeIntent(lastFailedIntent))
+
+cancelButton.addEventListener('click', () => hideConfirmation(true))
+confirmButton.addEventListener('click', async () => {
+  const intent = pendingIntent
+  hideConfirmation()
+  if (intent?.name === 'disconnect') closePocketPairing(false)
+  await executeIntent(intent)
 })
 
-disconnectButton.addEventListener('click', () => {
-  if (action) return
-  confirmRow.hidden = false
-  disconnectButton.hidden = true
-  syncButton.disabled = true
-  $('#pocket-disconnect-confirm').focus()
-})
-
-$('#pocket-disconnect-cancel').addEventListener('click', () => {
-  confirmRow.hidden = true
-  disconnectButton.hidden = false
-  syncButton.disabled = false
-  disconnectButton.focus()
-})
-
-$('#pocket-disconnect-confirm').addEventListener('click', async () => {
+pairingRetryButton.addEventListener('click', async () => {
+  const intent = intents[pairingMode] || intents.connect
   closePocketPairing(false)
-  const result = await runAction('disconnect', '/api/pocket/disconnect')
-  confirmRow.hidden = true
-  if (result) connectButton.focus()
-  // Fixed copy either way. The phone is off this computer the moment the
-  // pairing is forgotten; the relay copy may take one more attempt.
-  if (result && result.revoked === false) {
-    $('#pocket-status span').textContent = 'Your phone is off this computer. December will finish deleting the relay copy when it can reach it.'
-  }
+  await executePairing(intent)
 })
 
 $('#pocket-pairing-close').addEventListener('click', () => closePocketPairing())
