@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.13.0
+current: 0.14.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.14.0 - 2026-08-22
+
+Add watched block refresh and a quiet task focus mode with automatic time logging.
 
 ## 0.13.0 - 2026-08-22
 
