@@ -1,7 +1,7 @@
 # Trademarks
 
 December, the December name, the December logo, and related word marks and
-design marks are trademarks of Patchnet AI.
+design marks are trademarks of Patchnet AI, Inc.
 
 The Apache License 2.0 grants rights to the software in this repository. It
 does not grant any right to use these trademarks, except for reasonable and
@@ -18,4 +18,4 @@ You may not:
 - use the December logo or word mark to imply endorsement
 - remove or alter trademark notices
 
-Questions about trademark use can go to [Patchnet AI](https://github.com/Patchnet).
+Questions about trademark use can go to [Patchnet AI, Inc.](https://github.com/Patchnet).

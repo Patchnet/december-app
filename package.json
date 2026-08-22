@@ -55,7 +55,8 @@
       "mcp-server.mjs",
       "package.json",
       "LICENSE",
-      "NOTICE"
+      "NOTICE",
+      "TRADEMARKS.md"
     ],
     "win": {
       "target": [

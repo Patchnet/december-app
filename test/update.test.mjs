@@ -2,12 +2,18 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   configureUpdater,
+  requestUpdateCheck,
   restartDialogOptions,
   shouldAnnounce,
   shouldCheckForUpdates,
   updateFailedDialogOptions,
   upToDateDialogOptions,
 } from '../electron/update.mjs'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 test('only the packaged app checks for updates', () => {
   assert.equal(shouldCheckForUpdates({ packaged: true }), true)
@@ -32,6 +38,23 @@ test('updater downloads in the background and never installs on quit', () => {
   assert.equal(updater.autoDownload, true)
   assert.equal(updater.autoInstallOnAppQuit, false)
   assert.equal(updater.allowPrerelease, false)
+})
+
+test('an updater rejection is absorbed because the error event owns presentation', async () => {
+  let checks = 0
+  const result = await requestUpdateCheck({
+    checkForUpdates() {
+      checks += 1
+      return Promise.reject(new Error('same failure emitted as an error event'))
+    },
+  })
+  assert.equal(checks, 1)
+  assert.equal(result, null)
+
+  const main = readFileSync(join(root, 'electron', 'main.mjs'), 'utf8')
+  assert.match(main, /requestUpdateCheck\(updater\)/)
+  assert.match(main, /updater\.on\('error',[\s\S]*?updateFailedDialogOptions\(error\)/)
+  assert.doesNotMatch(main, /checkForUpdates\(\)\.catch/)
 })
 
 test('restart dialog asks before replacing the running app', () => {

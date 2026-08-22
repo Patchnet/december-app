@@ -246,7 +246,7 @@ you did, the goals you reached, and the milestones along the way.
 
 Use it as you wish and tell us how to make it better. The software is licensed
 under the [Apache License 2.0](LICENSE). December, its name, logo, and related
-marks are trademarks of [Patchnet AI](https://github.com/Patchnet); the software
+marks are trademarks of [Patchnet AI, Inc.](https://github.com/Patchnet); the software
 license does not grant trademark rights. See [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Your data

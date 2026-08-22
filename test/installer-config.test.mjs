@@ -56,6 +56,7 @@ test('installer keeps the stable artifact name, package contents, and one update
     'package.json',
     'LICENSE',
     'NOTICE',
+    'TRADEMARKS.md',
   ])
   assert.deepEqual(pkg.dependencies ?? {}, { 'electron-updater': '6.8.9' })
 })
@@ -68,11 +69,11 @@ test('project license is Apache 2.0 and reserves December trademarks', () => {
   const notice = readFileSync(join(root, 'NOTICE'), 'utf8')
   assert.match(notice, /trademark/i)
   assert.match(notice, /December/)
-  assert.match(notice, /Patchnet AI/)
+  assert.match(notice, /Patchnet AI, Inc\./)
   const marks = readFileSync(join(root, 'TRADEMARKS.md'), 'utf8')
   assert.match(marks, /trademark/i)
   assert.match(marks, /December/)
-  assert.match(marks, /Patchnet AI/)
+  assert.match(marks, /Patchnet AI, Inc\./)
 })
 
 test('Windows build publishes GitHub Releases only when asked', () => {
@@ -86,6 +87,11 @@ test('Windows build publishes GitHub Releases only when asked', () => {
   assert.match(pkg.scripts['dist:win:publish'], /--publish always/)
   const workflow = readFileSync(join(root, '.github', 'workflows', 'windows-release.yml'), 'utf8')
   assert.match(workflow, /tags:\s*\n\s+- 'v\*'/)
+  const tagCheck = workflow.indexOf('node scripts/check-release-tag.mjs')
+  const publish = workflow.indexOf('npm run dist:win:publish')
+  assert.ok(tagCheck >= 0, 'release workflow is missing the tag/version check')
+  assert.ok(publish > tagCheck, 'release workflow must check the tag before publishing')
+  assert.match(workflow, /RELEASE_TAG:\s*\$\{\{ github\.ref_name \}\}/)
   assert.match(workflow, /npm run dist:win:publish/)
   assert.match(workflow, /windows-latest/)
 })

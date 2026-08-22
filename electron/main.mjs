@@ -24,6 +24,7 @@ import {
 } from './runtime.mjs'
 import {
   configureUpdater,
+  requestUpdateCheck,
   restartDialogOptions,
   shouldAnnounce,
   shouldCheckForUpdates,
@@ -78,11 +79,7 @@ function checkForDesktopUpdate(source = 'launch') {
     askToRestart(downloadedVersion)
     return
   }
-  updater.checkForUpdates().catch((error) => {
-    if (shouldAnnounce({ source, kind: 'error' })) {
-      dialog.showMessageBox(mainWindow, updateFailedDialogOptions(error))
-    }
-  })
+  requestUpdateCheck(updater)
 }
 
 function wireDesktopUpdates() {

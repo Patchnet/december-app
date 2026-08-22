@@ -28,6 +28,11 @@ jobs:
       - name: Run canonical suite
         run: npm test
 
+      - name: Verify release tag matches package version
+        run: node scripts/check-release-tag.mjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
       - name: Publish unsigned Windows installer
         run: npm run dist:win:publish
         env:

@@ -10,6 +10,16 @@ export function configureUpdater(updater) {
   updater.allowPrerelease = false
 }
 
+/** electron-updater emits `error` and also rejects this promise. The event is
+    the one presentation path; absorb the duplicate rejection here. */
+export async function requestUpdateCheck(updater) {
+  try {
+    return await updater.checkForUpdates()
+  } catch {
+    return null
+  }
+}
+
 /** Launch checks stay quiet unless an update is already downloaded. */
 export function shouldAnnounce({ source, kind }) {
   if (kind === 'downloaded') return true

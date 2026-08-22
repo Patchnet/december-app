@@ -37,6 +37,8 @@ installed by `npm ci`; lint never skips when they are absent. Use
   resolution for GUI launches, and the desktop fixed-port decision.
 - `test/update.test.mjs` — packaged-only update checks, quiet launch checks,
   restart consent, and concise manual-check results.
+- `test/release-tag.test.mjs` — tag/package-version parity before a Windows
+  release can publish.
 - `test/installer-config.test.mjs` — assisted NSIS behavior and explicit
   GitHub Release publishing configuration.
 - `test/page-modules.test.mjs` — the page is native ES modules under
