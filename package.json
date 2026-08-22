@@ -5,16 +5,21 @@
   "type": "module",
   "description": "A local-first page that organizes itself",
   "author": "louie305",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.13.0"
   },
   "main": "electron/main.mjs",
   "scripts": {
     "app": "electron .",
-    "dist:win": "electron-builder --win nsis --x64",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "dist:win:publish": "electron-builder --win nsis --x64 --publish always",
     "lint": "eslint .",
     "test:node": "node --test",
     "test": "npm run lint && npm run test:node"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -36,13 +41,22 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "Patchnet",
+      "repo": "december-app",
+      "releaseType": "release"
+    },
     "files": [
       "electron/**/*",
       "lib/**/*",
       "public/**/*",
       "server.mjs",
       "mcp-server.mjs",
-      "package.json"
+      "package.json",
+      "LICENSE",
+      "NOTICE",
+      "TRADEMARKS.md"
     ],
     "win": {
       "target": [

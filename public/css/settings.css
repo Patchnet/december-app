@@ -251,6 +251,8 @@
 }
 .pocket-heading h3 { margin: 0; font-size: 13px; font-weight: 500; }
 .pocket-heading p { margin: var(--space-1) 0 0; color: var(--text-3); font-size: 11.5px; }
+.pocket-heading a,
+.pocket-pairing a { color: inherit; text-underline-offset: 2px; }
 .pocket-state-mark {
   width: 8px;
   height: 8px;

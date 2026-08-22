@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import {
   app,
@@ -21,6 +22,15 @@ import {
   preparePocketSecret,
   selectDesktopPort,
 } from './runtime.mjs'
+import {
+  configureUpdater,
+  requestUpdateCheck,
+  restartDialogOptions,
+  shouldAnnounce,
+  shouldCheckForUpdates,
+  updateFailedDialogOptions,
+  upToDateDialogOptions,
+} from './update.mjs'
 
 app.setName('December')
 
@@ -33,7 +43,68 @@ let serverProcess = null
 let quitting = false
 let serverOutput = ''
 let desktopPort = DESKTOP_PORT
+let downloadedVersion = null
+let updateCheckSource = 'launch'
 const baseUrl = () => `http://${DESKTOP_HOST}:${desktopPort}`
+
+function loadAutoUpdater() {
+  try {
+    return createRequire(import.meta.url)('electron-updater').autoUpdater
+  } catch {
+    return null
+  }
+}
+
+function askToRestart(version) {
+  showMain()
+  dialog.showMessageBox(mainWindow, restartDialogOptions(version)).then(({ response }) => {
+    if (response === 0) {
+      quitting = true
+      loadAutoUpdater()?.quitAndInstall(false, true)
+    }
+  })
+}
+
+function checkForDesktopUpdate(source = 'launch') {
+  updateCheckSource = source
+  if (!shouldCheckForUpdates({ packaged: app.isPackaged })) return
+  const updater = loadAutoUpdater()
+  if (!updater) {
+    if (shouldAnnounce({ source, kind: 'error' })) {
+      dialog.showMessageBox(mainWindow, updateFailedDialogOptions('updater is not available'))
+    }
+    return
+  }
+  if (downloadedVersion && shouldAnnounce({ source, kind: 'downloaded' })) {
+    askToRestart(downloadedVersion)
+    return
+  }
+  requestUpdateCheck(updater)
+}
+
+function wireDesktopUpdates() {
+  if (!shouldCheckForUpdates({ packaged: app.isPackaged })) return
+  const updater = loadAutoUpdater()
+  if (!updater) return
+  configureUpdater(updater)
+  updater.on('update-not-available', (info) => {
+    if (shouldAnnounce({ source: updateCheckSource, kind: 'not-available' })) {
+      dialog.showMessageBox(mainWindow, upToDateDialogOptions(info?.version || app.getVersion()))
+    }
+    updateCheckSource = 'launch'
+  })
+  updater.on('update-downloaded', (info) => {
+    downloadedVersion = info?.version || app.getVersion()
+    if (shouldAnnounce({ source: 'launch', kind: 'downloaded' })) askToRestart(downloadedVersion)
+  })
+  updater.on('error', (error) => {
+    if (shouldAnnounce({ source: updateCheckSource, kind: 'error' })) {
+      dialog.showMessageBox(mainWindow, updateFailedDialogOptions(error))
+    }
+    updateCheckSource = 'launch'
+  })
+  checkForDesktopUpdate('launch')
+}
 
 const rememberOutput = (chunk) => {
   serverOutput = (serverOutput + String(chunk)).slice(-2000)
@@ -168,12 +239,18 @@ function createTray() {
   const image = nativeImage.createFromPath(join(app.getAppPath(), 'electron', file))
   tray = new Tray(image)
   tray.setToolTip('December')
-  tray.setContextMenu(Menu.buildFromTemplate([
+  const menu = [
     { label: 'Open December', click: () => showMain() },
     { label: 'Capture', accelerator: 'CommandOrControl+Alt+D', click: () => showMain({ capture: true }) },
+  ]
+  if (app.isPackaged) {
+    menu.push({ label: 'Check for updates', click: () => checkForDesktopUpdate('manual') })
+  }
+  menu.push(
     { type: 'separator' },
     { label: 'Quit', click: () => { quitting = true; app.quit() } },
-  ]))
+  )
+  tray.setContextMenu(Menu.buildFromTemplate(menu))
   tray.on('click', () => showMain())
 }
 
@@ -192,6 +269,7 @@ if (lock) {
       await waitForServer()
       createWindow(firstRunUrl())
       createTray()
+      wireDesktopUpdates()
       const registered = globalShortcut.register('CommandOrControl+Alt+D', () => showMain({ capture: true }))
       if (!registered) {
         dialog.showMessageBox({

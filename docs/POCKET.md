@@ -224,8 +224,8 @@ content key. The desktop UI applies these constraints:
 
 1. Open December on the computer, select Settings, and choose **Connect
    phone** under Pocket.
-2. Open December Pocket on the phone and scan the QR code within five
-   minutes. The code works once.
+2. On the phone, open [app.getdecember.me](https://app.getdecember.me) and
+   scan the QR code within five minutes. The code works once.
 3. Close the pairing view. December removes the sensitive URL and QR
    immediately.
 4. Continue writing on either device. Desktop writes remain local-first and
