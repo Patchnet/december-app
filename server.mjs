@@ -14,6 +14,7 @@ import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, check, undo, undo
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
+import { startWatch } from './lib/watch.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
 import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
@@ -84,6 +85,12 @@ const scheduleSurfacing = () => {
 scheduleSurfacing()
 // captures caught mid-restart must not strand: settle whatever waited
 if (hasInbox()) scheduleSettle(5000)
+
+// The watch pass wakes with the app and then keeps its own slow clock. It
+// touches the network only for blocks a person tagged, and what it brings
+// back arrives as an ordinary capture, so the settle pass files it the way
+// it files everything else.
+const stopWatch = startWatch({ onCaptured: () => scheduleSettle() })
 
 async function pullPocketCaptures() {
   const result = await pocket.pullCaptures(({ id, text, at }) => addCapture(text, undefined, { id, at }))
@@ -693,6 +700,7 @@ export async function shutdown({ exit = true } = {}) {
   clearInterval(backupTimer)
   clearInterval(pocketTimer)
   clearInterval(newYearTimer)
+  stopWatch()
   const closed = new Promise((resolveClose) => server.close(resolveClose))
   let timeoutId
   const timeout = new Promise((resolveTimeout) => { timeoutId = setTimeout(resolveTimeout, 3000) })
