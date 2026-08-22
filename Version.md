@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.12.1
+current: 0.13.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.13.0 - 2026-08-22
+
+Add explicit web lookup on settle and Pocket protocol v2 on the desktop.
 
 ## 0.12.1 - 2026-08-20
 
