@@ -1,0 +1,103 @@
+/* Task focus — the page falls away and one thing is left.
+   Loaded by public/js/focus-task.js rather than styles.css, so the whole
+   surface lives in one place. Nothing here exists until a spotlight opens. */
+
+/* the words of an open task say, quietly, that they can be sat down with */
+.space .row:not(.done) > .row-text:hover,
+.focus-card .row:not(.done) > .row-text:hover {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+
+/* while one thing has the screen, the page beneath holds still */
+:root.task-focusing,
+:root.task-focusing body { overflow: hidden; }
+
+/* Not another card on top of the page: the page itself goes out of focus.
+   The scrim is the page's own paper, so the task stays in the ink it was
+   already written in. */
+.task-focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px) saturate(0.9);
+  -webkit-backdrop-filter: blur(10px) saturate(0.9);
+  animation: task-focus-fade var(--m-enter) var(--ease) both;
+}
+:root[data-theme="dark"] .task-focus-backdrop { background: rgba(26, 24, 21, 0.86); }
+
+@keyframes task-focus-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.task-focus-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 81;
+  display: grid;
+  place-items: center;
+  padding: 8vh var(--space-7);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.task-focus-card {
+  cursor: auto;
+  width: 100%;
+  max-width: 620px;
+  text-align: center;
+  outline: none;
+  animation: task-focus-rise var(--m-struct) var(--ease-expo) both;
+}
+
+@keyframes task-focus-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); filter: blur(3px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+.task-focus-space {
+  margin: 0 0 var(--space-5);
+  color: var(--text-3);
+  font-size: var(--fs-small);
+}
+
+/* the task itself, borrowing .row only so a double-click still rewords it */
+.row.task-focus-task {
+  display: block;
+  width: auto;
+  padding: 0;
+  cursor: text;
+  color: var(--text-1);
+  font-size: clamp(26px, 5vw, var(--fs-h3));
+  line-height: var(--lh-h3);
+  letter-spacing: var(--ls-h3);
+  overflow-wrap: anywhere;
+}
+.row.task-focus-task > .row-text { flex: none; }
+
+/* Counting up, never down, and never loudly: it is there if you look at it
+   and it is not asking for anything. */
+.task-focus-clock {
+  margin: var(--space-8) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.task-focus-hint {
+  margin: var(--space-4) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-small);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-focus-backdrop,
+  .task-focus-card { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .task-focus-wrap { padding: 6vh var(--space-6); }
+  .task-focus-clock { margin-top: var(--space-7); }
+}

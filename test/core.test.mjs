@@ -674,6 +674,119 @@ test('About Me survives year rollover', async () => {
   assert.equal(core.project().about.initial, 'L')
 })
 
+// ----------------------------------------------------------- focus spans
+
+test('a focus span writes one event and one line of history, and touches nothing else', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-focus-'))
+  const core = await isolatedCore(dir)
+  const year = new Date().getFullYear()
+  const space = await core.createSpace('Kitchen')
+  const list = await core.createBlock(space.id, {
+    type: 'list',
+    title: 'Splashback',
+    items: ['cut the tiles', 'grout'],
+    entities: [{ type: 'place', name: 'Kitchen' }],
+  })
+  const itemId = core.readBlock(list.blockId).block.items[0].id
+  const before = core.agentView().spaces.find((s) => s.id === space.id)
+
+  const out = await core.recordFocus({ blockId: list.blockId, itemId, ms: 45 * 60 * 1000 })
+  assert.equal(out.summary, '45m focused on: cut the tiles')
+  assert.equal(out.itemId, itemId)
+  assert.equal(out.duration, 45 * 60 * 1000)
+
+  const focusEvents = (await core.readEvents(year)).filter((e) => e.kind === 'focus')
+  assert.equal(focusEvents.length, 1, 'exactly one focus event per span')
+  assert.equal(focusEvents[0].blockId, list.blockId)
+  assert.equal(focusEvents[0].itemId, itemId)
+  assert.equal(focusEvents[0].spaceId, space.id)
+  assert.equal(focusEvents[0].duration, 45 * 60 * 1000)
+  assert.deepEqual(focusEvents[0].entities, [{ type: 'place', name: 'Kitchen' }])
+
+  const activity = core.project().activity
+  assert.equal(activity.filter((a) => a.summary.includes('focused on')).length, 1)
+  assert.equal(activity[0].space, 'Kitchen')
+  assert.equal(activity[0].summary, '45m focused on: cut the tiles')
+
+  // sitting with something is not editing it
+  const after = core.agentView().spaces.find((s) => s.id === space.id)
+  assert.equal(after.updatedAt, before.updatedAt)
+  assert.deepEqual(after.blocks, before.blocks)
+})
+
+test('a reminder is focused whole, and its own entities ride along', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-focus-reminder-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('People')
+  const made = await core.createBlock(space.id, {
+    type: 'reminder',
+    title: '',
+    text: 'Call the landlord',
+    entities: [{ type: 'person', name: 'Ana' }],
+  })
+
+  const out = await core.recordFocus({ blockId: made.blockId, ms: 20 * 60 * 1000 })
+  assert.equal(out.summary, '20m focused on: Call the landlord')
+  assert.equal(out.itemId, '')
+  const event = (await core.readEvents(new Date().getFullYear())).at(-1)
+  assert.equal(event.kind, 'focus')
+  assert.equal(Object.hasOwn(event, 'itemId'), false, 'a reminder span carries no itemId')
+  assert.deepEqual(event.entities, [{ type: 'person', name: 'Ana' }])
+
+  await assert.rejects(
+    core.recordFocus({ blockId: made.blockId, itemId: 'nope', ms: 60000 }),
+    /no items/
+  )
+})
+
+test('only a list item or a reminder can be focused, and only with real identifiers', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-focus-eligible-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Running')
+  const tracker = await core.createBlock(space.id, { type: 'tracker', title: 'Miles', current: 3, target: 100, unit: 'miles' })
+  const note = await core.createBlock(space.id, { type: 'note', title: 'Shoes', text: 'the blue ones' })
+  const list = await core.createBlock(space.id, { type: 'list', title: 'Kit', items: ['wash the socks'] })
+
+  await assert.rejects(core.recordFocus({ blockId: tracker.blockId, ms: 60000 }), /not a tracker/)
+  await assert.rejects(core.recordFocus({ blockId: note.blockId, ms: 60000 }), /not a note/)
+  await assert.rejects(core.recordFocus({ blockId: 'nothing', ms: 60000 }), /unknown blockId/)
+  await assert.rejects(core.recordFocus({ blockId: list.blockId, ms: 60000 }), /name the itemId/)
+  await assert.rejects(core.recordFocus({ blockId: list.blockId, itemId: 'ghost', ms: 60000 }), /unknown itemId/)
+  assert.equal((await core.readEvents(new Date().getFullYear())).some((e) => e.kind === 'focus'), false)
+})
+
+test('a focus span has to be a sitting: below the floor and above the ceiling are refused', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-focus-bounds-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Desk')
+  const made = await core.createBlock(space.id, { type: 'reminder', title: '', text: 'Write the letter' })
+
+  await assert.rejects(core.recordFocus({ blockId: made.blockId, ms: core.FOCUS_MIN_MS - 1 }), /too short/)
+  await assert.rejects(core.recordFocus({ blockId: made.blockId, ms: core.FOCUS_MAX_MS + 1 }), /too long/)
+  await assert.rejects(core.recordFocus({ blockId: made.blockId, ms: -5000 }), /too short/)
+  await assert.rejects(core.recordFocus({ blockId: made.blockId, ms: 'a while' }), /needs a duration/)
+  await assert.rejects(core.recordFocus({ blockId: made.blockId }), /needs a duration/)
+  assert.equal(core.project().activity.length, 0)
+
+  // the edges themselves are sittings
+  await core.recordFocus({ blockId: made.blockId, ms: core.FOCUS_MIN_MS })
+  await core.recordFocus({ blockId: made.blockId, ms: core.FOCUS_MAX_MS })
+  assert.deepEqual(core.project().activity.map((a) => a.summary), [
+    '8h focused on: Write the letter',
+    '20s focused on: Write the letter',
+  ])
+})
+
+test('a span says how long it took the way a person would', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-focus-words-'))
+  const core = await isolatedCore(dir)
+  assert.equal(core.focusPhrase(40000), '40s')
+  assert.equal(core.focusPhrase(45 * 60000), '45m')
+  assert.equal(core.focusPhrase(59.6 * 60000), '1h')
+  assert.equal(core.focusPhrase(80 * 60000), '1h 20m')
+  assert.equal(core.focusPhrase(120 * 60000), '2h')
+})
+
 test.after(() => {
   if (originalDataDir == null) delete process.env.DECEMBER_DATA_DIR
   else process.env.DECEMBER_DATA_DIR = originalDataDir
