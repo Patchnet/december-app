@@ -12,6 +12,8 @@ const pocket = read('public/js/pocket.js')
 const qrCode = read('public/js/qr-code.js')
 const connections = read('public/js/connections.js')
 const settingsCss = read('public/css/settings.css')
+const server = read('server.mjs')
+const desktop = read('electron/main.mjs')
 
 test('Pocket QR codes are constructed locally without a remote provider', () => {
   const pairingUrl = 'https://app.getdecember.me/#space=space_test&token=private_token&key=private_key'
@@ -83,4 +85,87 @@ test('Pocket pairing stays within a 390px viewport', () => {
   assert.match(settingsCss, /\.pocket-pairing \{ width: calc\(100vw - 24px\)/)
   assert.match(settingsCss, /\.pocket-qr \{ width: min\(232px, 72vw\)/)
   assert.match(settingsCss, /\.pocket-actions \{[^}]*flex-wrap: wrap/)
+})
+
+test('every Pocket action carries the capability the page alone can read', () => {
+  assert.match(pocket, /fetch\('\/api\/pocket\/capability'\)/)
+  assert.match(pocket, /'x-december-capability': capability \|\| ''/)
+  assert.match(pocket, /if \(response\.status === 403\) \{\s+await claimCapability\(\)/)
+  // Every acting route goes through the capability wrapper, never bare api().
+  assert.match(pocket, /const response = await pocketPost\(path\)/)
+  assert.doesNotMatch(pocket, /api\('\/api\/pocket\/(?:pair|rotate|sync|disconnect|revoke)'/)
+  // The capability is never written down anywhere it could outlive the run.
+  assert.doesNotMatch(pocket, /(?:localStorage|sessionStorage|document\.cookie)/)
+})
+
+test('replacing a phone rotates the key instead of adding a second device', () => {
+  assert.match(pocket, /connectButton\.addEventListener\('click',[\s\S]*?runAction\('pair', '\/api\/pocket\/rotate'\)/)
+  assert.match(pocket, /const replacing = !!status\?\.paired \|\| !!status\?\.requiresRepair/)
+  assert.match(pocket, /connectButton\.textContent = action === 'pair' \? 'Connecting…' : \(paired \|\| repairing\) \? 'Replace phone' : 'Connect phone'/)
+  assert.match(pocket, /disconnectButton\.hidden = !\(paired \|\| repairing\)/)
+})
+
+test('Pocket says plainly when this computer has no key store, and stays out of the way', () => {
+  assert.match(pocket, /status\?\.secretsPersisted === false/)
+  assert.match(pocket, /Pocket is unavailable on this computer/)
+  assert.match(pocket, /There is no secure key store here, so December will not save a phone connection\. Everything else works\./)
+  assert.match(pocket, /Reconnect your phone/)
+  assert.match(pocket, /December will finish deleting the relay copy when it can reach it\./)
+})
+
+test('the local server refuses anything that is not December reaching itself', () => {
+  // Loopback name and our own port; a name pointed at some other port is
+  // another server borrowing these answers.
+  assert.match(server, /if \(!LOCAL_HOSTS\.has\(parsed\.hostname\)\) return true\s+return parsed\.port !== '' && parsed\.port !== String\(port\)/)
+  assert.match(server, /const OWN_FETCH_SITES = new Set\(\['same-origin', 'none'\]\)/)
+  assert.match(server, /if \(foreignFetchSite\(req\.headers\)\) \{/)
+  // Acting on Pocket needs the capability; plain status does not.
+  assert.match(server, /path\.startsWith\('\/api\/pocket\/'\) && req\.method === 'POST' && !capabilityMatches\(req\.headers\['x-december-capability'\]\)/)
+  assert.match(server, /const POCKET_CAPABILITY = randomBytes\(32\)\.toString\('base64url'\)/)
+  assert.match(server, /timingSafeEqual/)
+  assert.match(server, /path === '\/api\/pocket\/rotate' && req\.method === 'POST'/)
+  assert.match(server, /path === '\/api\/pocket\/disconnect' && req\.method === 'POST'\) \{\s+return json\(res, 200, await pocket\.revoke\(\)\)/)
+})
+
+test('every answer carries the same refusals, and the page carries a computed policy', () => {
+  for (const header of [
+    "'x-content-type-options': 'nosniff'",
+    "'referrer-policy': 'no-referrer'",
+    "'cross-origin-opener-policy': 'same-origin'",
+    "'cross-origin-resource-policy': 'same-origin'",
+    "'x-frame-options': 'DENY'",
+  ]) {
+    assert.ok(server.includes(header), `server is missing ${header}`)
+  }
+  for (const directive of [
+    "default-src 'none'",
+    "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ]) {
+    assert.ok(server.includes(directive), `content security policy is missing ${directive}`)
+  }
+  // Inline scripts are allowed by hash, so an injected one is still refused.
+  assert.match(server, /sha256-\$\{createHash\('sha256'\)\.update\(match\[1\], 'utf8'\)\.digest\('base64'\)\}/)
+  assert.match(server, /headers\['content-security-policy'\] = contentSecurityPolicy/)
+  assert.doesNotMatch(server, /script-src[^;\n]*'unsafe-inline'/)
+  assert.doesNotMatch(server, /script-src[^;\n]*'unsafe-eval'/)
+})
+
+test('the desktop shell wraps the Pocket key and pins the window to December', () => {
+  assert.match(desktop, /const pocketSecret = await preparePocketSecret\(\{ userDataDir: app\.getPath\('userData'\), safeStorage \}\)/)
+  assert.match(desktop, /DECEMBER_POCKET_SECRET_BACKEND: pocketSecret\.backend/)
+  assert.match(desktop, /if \(pocketSecret\.key\) env\.DECEMBER_POCKET_SECRET_KEY = pocketSecret\.key\s+else delete env\.DECEMBER_POCKET_SECRET_KEY/)
+  assert.match(desktop, /app\.on\('web-contents-created', \(_event, contents\) => guardContents\(contents\)\)/)
+  for (const guard of ['will-navigate', 'will-redirect', 'will-attach-webview']) {
+    assert.ok(desktop.includes(`contents.on('${guard}'`), `desktop is missing the ${guard} guard`)
+  }
+  assert.match(desktop, /setPermissionRequestHandler\(\(_contents, _permission, callback\) => callback\(false\)\)/)
+  assert.match(desktop, /setPermissionCheckHandler\(\(\) => false\)/)
+  for (const preference of ['webviewTag: false', 'nodeIntegrationInSubFrames: false', 'allowRunningInsecureContent: false', 'sandbox: true']) {
+    assert.ok(desktop.includes(preference), `desktop is missing ${preference}`)
+  }
 })

@@ -13,6 +13,36 @@ let action = null
 let errorMessage = ''
 let restorePairingFocus = null
 let pairingRequest = 0
+let capability = null
+
+// Pocket's acting routes ask for a capability December only gives to a page
+// it served itself. Another tab can post to this port, but it cannot read
+// the reply that carries the value, so it cannot hold this header. The value
+// is minted per run, so a restarted server simply hands out a fresh one.
+async function claimCapability() {
+  const response = await fetch('/api/pocket/capability')
+  if (!response.ok) throw new Error('request failed')
+  capability = (await response.json()).capability
+}
+
+async function pocketPost(path, body = {}) {
+  const send = async () => {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-december-capability': capability || '' },
+      body: JSON.stringify(body),
+    })
+    return { response, data: await response.json().catch(() => ({})) }
+  }
+  if (!capability) await claimCapability()
+  let { response, data } = await send()
+  if (response.status === 403) {
+    await claimCapability()
+    ;({ response, data } = await send())
+  }
+  if (!response.ok) throw new Error(data.error || 'request failed')
+  return data
+}
 
 const pairingFocusables = () => [...pairingDialog.querySelectorAll('button:not(:disabled)')]
 const looksOffline = (message) => /offline|fetch failed|network|timed?\s*out|timeout|unreachable|econn|enotfound/i.test(message || '')
@@ -30,6 +60,23 @@ function relativeTime(value) {
 function viewState() {
   if (action === 'pair') return { key: 'pairing', title: 'Getting your code ready…', detail: 'December is making a private connection.' }
   if (action === 'sync') return { key: 'syncing', title: 'Syncing now…', detail: 'Your local page is still available.' }
+  // No key store means December will not write a phone pairing down here.
+  // The rest of the page is untouched and works exactly as it always did.
+  if (status?.secretsPersisted === false) return {
+    key: 'unavailable',
+    title: 'Pocket is unavailable on this computer',
+    detail: 'There is no secure key store here, so December will not save a phone connection. Everything else works.',
+  }
+  if (status?.requiresRepair) return {
+    key: 'repair',
+    title: 'Reconnect your phone',
+    detail: 'December improved how it protects Pocket. Choose Replace phone to scan a fresh code.',
+  }
+  if (status?.revokePending) return {
+    key: 'offline',
+    title: 'Finishing the disconnect',
+    detail: 'Your phone is off this computer. December is still asking the relay to delete its copy.',
+  }
   if (errorMessage) return {
     key: looksOffline(errorMessage) ? 'offline' : 'error',
     title: looksOffline(errorMessage) ? 'Pocket is offline' : 'Pocket needs attention',
@@ -56,9 +103,13 @@ function render() {
   $('#pocket-status').append(title, detail)
 
   const paired = !!status?.paired
-  connectButton.hidden = paired
+  const repairing = !!status?.requiresRepair
+  const usable = status?.secretsPersisted !== false
+  // A connected phone can still be replaced: that is the door for a phone
+  // that was lost, sold, or handed on.
+  connectButton.hidden = !usable
   syncButton.hidden = !paired
-  disconnectButton.hidden = !paired
+  disconnectButton.hidden = !(paired || repairing)
   const busy = action !== null
   $('#pocket-status').setAttribute('aria-busy', String(busy))
   connectButton.disabled = busy
@@ -66,7 +117,7 @@ function render() {
   disconnectButton.disabled = busy
   $('#pocket-disconnect-confirm').disabled = busy
   $('#pocket-disconnect-cancel').disabled = busy
-  connectButton.textContent = action === 'pair' ? 'Connecting…' : 'Connect phone'
+  connectButton.textContent = action === 'pair' ? 'Connecting…' : (paired || repairing) ? 'Replace phone' : 'Connect phone'
   syncButton.textContent = action === 'sync' ? 'Syncing…' : 'Sync now'
 }
 
@@ -139,7 +190,7 @@ async function runAction(name, path) {
   errorMessage = ''
   render()
   try {
-    const response = await api(path, {})
+    const response = await pocketPost(path)
     if (name === 'pair') {
       const { pairingUrl: sensitiveUrl, ...safeStatus } = response
       status = safeStatus
@@ -159,7 +210,12 @@ async function runAction(name, path) {
 connectButton.addEventListener('click', async () => {
   forgetPairingUrl()
   const request = ++pairingRequest
-  const result = await runAction('pair', '/api/pocket/pair')
+  // Replacing a phone rotates the key instead of adding a second device, so
+  // the phone that walked away is left holding something that opens nothing.
+  const replacing = !!status?.paired || !!status?.requiresRepair
+  const result = replacing
+    ? await runAction('pair', '/api/pocket/rotate')
+    : await runAction('pair', '/api/pocket/pair')
   if (!result?.pairingUrl || request !== pairingRequest) return
   try {
     openPairing(result.pairingUrl)
@@ -200,6 +256,11 @@ $('#pocket-disconnect-confirm').addEventListener('click', async () => {
   const result = await runAction('disconnect', '/api/pocket/disconnect')
   confirmRow.hidden = true
   if (result) connectButton.focus()
+  // Fixed copy either way. The phone is off this computer the moment the
+  // pairing is forgotten; the relay copy may take one more attempt.
+  if (result && result.revoked === false) {
+    $('#pocket-status span').textContent = 'Your phone is off this computer. December will finish deleting the relay copy when it can reach it.'
+  }
 })
 
 $('#pocket-pairing-close').addEventListener('click', () => closePocketPairing())
