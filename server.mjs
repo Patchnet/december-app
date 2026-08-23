@@ -93,6 +93,15 @@ if (hasInbox()) scheduleSettle(5000)
 const stopWatch = startWatch({ onCaptured: () => scheduleSettle() })
 
 async function pullPocketCaptures() {
+  if (pocket.status().movePending) {
+    try {
+      await pocket.finalizeMove()
+      const page = project(settleStatus())
+      pocketUploads.schedule(page, page.revision)
+    } catch (error) {
+      if (error?.status !== 409 && !/has not claimed/.test(String(error?.message || error))) throw error
+    }
+  }
   const result = await pocket.pullCaptures(({ id, text, at }) => addCapture(text, undefined, { id, at }))
   if (result.imported) scheduleSettle()
   return result
@@ -359,20 +368,100 @@ const server = createServer(async (req, res) => {
         const page = project(settleStatus())
         pocketUploads.schedule(page, page.revision)
         await pocketUploads.drain()
-        return json(res, 201, { ...pocket.status(), pairingUrl: paired.pairingUrl })
+        return json(res, 201, {
+          ...pocket.status(),
+          pairingUrl: paired.pairingUrl,
+          pairingCode: paired.pairingCode,
+          pairingExpiresAt: paired.pairingExpiresAt,
+        })
       } catch (e) {
         return json(res, 400, { error: e.message })
       }
     }
-    // The lost-phone door. A new key epoch opens, the relay drops what it
-    // held, and the phone that walked away can read nothing more.
+    // The settings page sends a named intent through this compatibility
+    // route. A move dispatches to staging and never to immediate rotation.
     if (path === '/api/pocket/rotate' && req.method === 'POST') {
       try {
-        const rotated = await pocket.rotate({ reason: (await readBody(req)).reason || 'replace-device' })
+        const reason = (await readBody(req)).reason
+        let rotated
+        if (reason === 'move-device') {
+          if (pocket.status().movePending) await pocket.cancelMove()
+          rotated = await pocket.beginMove()
+        } else {
+          rotated = reason === 'lost-phone' ? await pocket.lostPhone() : await pocket.reconnect()
+          const page = project(settleStatus())
+          pocketUploads.schedule(page, page.revision)
+          await pocketUploads.drain()
+        }
+        return json(res, 201, {
+          ...pocket.status(),
+          pairingUrl: rotated.pairingUrl,
+          pairingCode: rotated.pairingCode,
+          pairingExpiresAt: rotated.pairingExpiresAt,
+        })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if (path === '/api/pocket/reconnect' && req.method === 'POST') {
+      try {
+        const reconnected = await pocket.reconnect()
         const page = project(settleStatus())
         pocketUploads.schedule(page, page.revision)
         await pocketUploads.drain()
-        return json(res, 201, { ...pocket.status(), pairingUrl: rotated.pairingUrl })
+        return json(res, 201, {
+          ...pocket.status(),
+          pairingUrl: reconnected.pairingUrl,
+          pairingCode: reconnected.pairingCode,
+          pairingExpiresAt: reconnected.pairingExpiresAt,
+        })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if ((path === '/api/pocket/lost' || path === '/api/pocket/lost-phone') && req.method === 'POST') {
+      try {
+        const replaced = await pocket.lostPhone()
+        const page = project(settleStatus())
+        pocketUploads.schedule(page, page.revision)
+        await pocketUploads.drain()
+        return json(res, 201, {
+          ...pocket.status(),
+          pairingUrl: replaced.pairingUrl,
+          pairingCode: replaced.pairingCode,
+          pairingExpiresAt: replaced.pairingExpiresAt,
+        })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if ((path === '/api/pocket/move' || path === '/api/pocket/move/start') && req.method === 'POST') {
+      try {
+        const moved = await pocket.beginMove()
+        return json(res, 201, {
+          ...pocket.status(),
+          pairingUrl: moved.pairingUrl,
+          pairingCode: moved.pairingCode,
+          pairingExpiresAt: moved.pairingExpiresAt,
+        })
+      } catch (e) {
+        return json(res, 400, { error: e.message })
+      }
+    }
+    if (path === '/api/pocket/move/finalize' && req.method === 'POST') {
+      try {
+        await pocket.finalizeMove()
+        const page = project(settleStatus())
+        pocketUploads.schedule(page, page.revision)
+        await pocketUploads.drain()
+        return json(res, 200, pocket.status())
+      } catch (e) {
+        return json(res, 409, { error: e.message })
+      }
+    }
+    if (path === '/api/pocket/move/cancel' && req.method === 'POST') {
+      try {
+        return json(res, 200, await pocket.cancelMove())
       } catch (e) {
         return json(res, 400, { error: e.message })
       }

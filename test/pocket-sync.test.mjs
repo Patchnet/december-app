@@ -12,6 +12,7 @@ import {
   pocketCrypto,
   pocketSecrets,
 } from '../lib/pocket-sync.mjs'
+import { decryptPairingCapsule, parseManualCode } from '../lib/pocket-pairing-code.mjs'
 import { POCKET_KEY_FILE, navigationDecision, preparePocketSecret } from '../electron/runtime.mjs'
 
 const dataDir = (name) => mkdtemp(join(tmpdir(), `december-${name}-`))
@@ -19,6 +20,18 @@ const masterKey = () => randomBytes(32).toString('base64url')
 const protectedSecret = () => ({ key: masterKey(), backend: 'os' })
 const fragmentOf = (pairingUrl) => new URLSearchParams(new URL(pairingUrl).hash.slice(1))
 const keyOf = (pairingUrl) => Buffer.from(fragmentOf(pairingUrl).get('key'), 'base64url')
+const pairingBundleOf = (pairingUrl) => {
+  const fragment = fragmentOf(pairingUrl)
+  const [claimId, claimSecret] = fragment.get('claim').split('.')
+  return {
+    v: 1,
+    protocolVersion: Number(fragment.get('v')),
+    spaceId: fragment.get('space'),
+    claimId,
+    claimSecret,
+    rootKey: fragment.get('key'),
+  }
+}
 
 function relayFixture({
   claimTtlMs = POCKET_CLAIM_TTL_MS,
@@ -27,7 +40,17 @@ function relayFixture({
   desktopToken = 'desktop_test_token_1234567890',
 } = {}) {
   const requests = []
-  const relay = { page: null, captures: [], acknowledgedCursor: 0, revoked: false, epoch: 1, deleted: 0 }
+  const relay = {
+    page: null,
+    captures: [],
+    capsules: new Map(),
+    acknowledgedCursor: 0,
+    revoked: false,
+    epoch: 1,
+    deleted: 0,
+    move: null,
+    moveClaimed: false,
+  }
   const credentials = { spaceId, desktopToken }
   let claimSeed = 0
   const nextClaim = () => ({
@@ -44,14 +67,48 @@ function relayFixture({
     if (parsed.pathname === '/pair') {
       return Response.json({ ...credentials, deviceId: body.deviceId, claim: nextClaim() }, { status: 201 })
     }
+    if (parsed.pathname === '/move/finalize') {
+      if (options.headers?.authorization !== `Bearer ${relay.move?.moveToken}`) {
+        return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
+      }
+      if (!relay.moveClaimed) return Response.json({ finalized: false, epoch: body.epoch }, { status: 200 })
+      relay.epoch = body.epoch
+      relay.captures = []
+      relay.page = null
+      relay.deleted++
+      credentials.desktopToken = relay.move.desktopToken
+      return Response.json({ finalized: true, epoch: body.epoch, desktopToken: relay.move.desktopToken }, { status: 200 })
+    }
+    if (parsed.pathname === '/move/cancel') {
+      if (options.headers?.authorization !== `Bearer ${relay.move?.moveToken}`) {
+        return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
+      }
+      relay.move = null
+      return Response.json({ cancelled: true }, { status: 200 })
+    }
 
     if (options.headers?.authorization !== `Bearer ${credentials.desktopToken}`) {
       return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
+    }
+    if (parsed.pathname === '/pair/capsules') {
+      relay.capsules.set(body.selector, body)
+      return Response.json({ stored: true, expiresAt: new Date(Date.now() + POCKET_CLAIM_TTL_MS).toISOString() }, { status: 201 })
+    }
+    if (parsed.pathname === '/move/start') {
+      relay.move = {
+        moveId: 'move_test_1234567890',
+        moveToken: 'move_token_1234567890',
+        desktopToken: 'desktop_next_token_1234567890',
+        epoch: body.epoch,
+      }
+      relay.moveClaimed = false
+      return Response.json({ ...relay.move, claim: nextClaim() }, { status: 201 })
     }
     if (parsed.pathname === '/rotate') {
       relay.epoch = body.epoch
       relay.captures = []
       relay.page = null
+      relay.move = null
       relay.deleted++
       return Response.json({ epoch: body.epoch, claim: nextClaim() }, { status: 200 })
     }
@@ -91,14 +148,22 @@ async function paired(name, options = {}) {
     ...options.sync,
   })
   const result = await pocket.pair()
-  return { dir, fixture, pocket, pairingUrl: result.pairingUrl, key: keyOf(result.pairingUrl) }
+  return {
+    dir,
+    fixture,
+    pocket,
+    pairingUrl: result.pairingUrl,
+    pairingCode: result.pairingCode,
+    pairingExpiresAt: result.pairingExpiresAt,
+    key: keyOf(result.pairingUrl),
+  }
 }
 
 const captureEnvelope = (key, spaceId, epoch, captureId, value) =>
   pocketCrypto.encrypt(key, { spaceId, epoch, purpose: 'capture', sequence: captureId }, value)
 
 test('pairing keeps the content key in the fragment and publishes an encrypted page', async () => {
-  const { fixture, pocket, pairingUrl, key } = await paired('pocket-sync')
+  const { fixture, pocket, pairingUrl, pairingCode, key } = await paired('pocket-sync')
   const url = new URL(pairingUrl)
   assert.equal(url.search, '')
   assert.equal(url.origin, 'http://127.0.0.1:8787')
@@ -125,6 +190,15 @@ test('pairing keeps the content key in the fragment and publishes an encrypted p
   const pairRequest = fixture.requests.find((request) => request.path === '/pair')
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('key')), false)
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('claim')), false)
+  const capsuleRequest = fixture.requests.find((request) => request.path === '/pair/capsules')
+  assert.deepEqual(Object.keys(capsuleRequest.body).sort(), ['ciphertext', 'selector'])
+  assert.equal(capsuleRequest.method, 'POST')
+  assert.equal(capsuleRequest.headers.authorization, `Bearer ${fixture.credentials.desktopToken}`)
+  assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('key')), false)
+  assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('claim')), false)
+  const manualSecret = parseManualCode(pairingCode).secretBytes
+  assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('base64url')), false)
+  assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('hex')), false)
 })
 
 test('pending page revisions survive restart and retry', async () => {
@@ -198,15 +272,23 @@ test('core treats deterministic Pocket capture IDs as idempotent', async () => {
 
 // --- pairing claims -------------------------------------------------------
 
-test('a pairing claim is single-use and expires within five minutes', async () => {
-  const { pocket, pairingUrl } = await paired('pocket-claim')
+test('a pairing claim is single-use and presentation secrets are not persisted', async () => {
+  const { pocket, pairingUrl, pairingCode, pairingExpiresAt } = await paired('pocket-claim')
   const fragment = fragmentOf(pairingUrl)
   assert.match(fragment.get('claim'), /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)
-  const expiry = Date.parse(pocket.status().pairingExpiresAt)
+  assert.match(pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
+  const expiry = Date.parse(pairingExpiresAt)
   assert.ok(expiry - Date.now() <= POCKET_CLAIM_TTL_MS + 1000)
-  const persisted = JSON.parse(await readFile(pocket.filePath, 'utf8'))
-  // The half that opens the pairing is never written down.
-  assert.ok(persisted.claim.id)
+  const raw = await readFile(pocket.filePath, 'utf8')
+  const persisted = JSON.parse(raw)
+  assert.equal(persisted.claim, null)
+  assert.equal(raw.includes(pairingCode), false)
+  const manualSecret = parseManualCode(pairingCode).secretBytes
+  assert.equal(raw.includes(manualSecret.toString('base64url')), false)
+  assert.equal(raw.includes(manualSecret.toString('hex')), false)
+  assert.equal('pairingExpiresAt' in pocket.status(), false)
+  assert.equal('pairingCode' in pocket.status(), false)
+  assert.equal(JSON.stringify(persisted).includes(pairingCode), false)
   assert.equal(JSON.stringify(persisted).includes(fragment.get('claim').split('.')[1]), false)
 })
 
@@ -357,6 +439,221 @@ test('a relay that refuses the new epoch leaves the old one in place', async () 
   await assert.rejects(() => pocket.rotate(), /refused the new key epoch/)
   assert.equal(pocket.status().epoch, 1)
   assert.equal(pocket.status().paired, true)
+})
+
+test('reconnect is an explicit immediate rotation with a fresh presentation', async () => {
+  const { fixture, pocket, key } = await paired('pocket-reconnect')
+  const result = await pocket.reconnect()
+  assert.equal(pocket.status().epoch, 2)
+  assert.notEqual(keyOf(result.pairingUrl).toString('base64url'), key.toString('base64url'))
+  assert.match(result.pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
+  const request = fixture.requests.find((item) => item.path === '/rotate')
+  assert.equal(request.body.reason, 'reconnect')
+  assert.equal(request.body.revokeDevices, true)
+  assert.equal(request.body.deleteContent, true)
+})
+
+test('manual-code relay failure never transmits a secret and leaves initial pairing unadopted', async () => {
+  const dir = await dataDir('pocket-capsule-offline')
+  const fixture = relayFixture()
+  const failing = async (url, options) => {
+    if (new URL(url).pathname === '/pair/capsules') {
+      const body = JSON.parse(options.body)
+      fixture.requests.push({ path: '/pair-capsules-failed', body, headers: options.headers })
+      return Response.json({ error: { message: 'capsule storage unavailable' } }, { status: 503 })
+    }
+    return fixture.fetchImpl(url, options)
+  }
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: failing,
+    secret: protectedSecret(),
+  })
+  await assert.rejects(() => pocket.pair(), /could not store the manual pairing code/)
+  assert.equal(pocket.status().paired, false)
+  const request = fixture.requests.find((item) => item.path === '/pair-capsules-failed')
+  assert.deepEqual(Object.keys(request.body).sort(), ['ciphertext', 'selector'])
+  assert.match(request.headers.authorization, /^Bearer desktop_test_token_/)
+})
+
+test('a staged move keeps the old epoch until the new phone claims it', async () => {
+  const { fixture, pocket, pairingUrl } = await paired('pocket-move')
+  const oldKey = keyOf(pairingUrl)
+  const staged = await pocket.rotate({ reason: 'move-device' })
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(pocket.status().paired, true)
+  assert.equal(pocket.status().movePending, true)
+  assert.equal(fixture.relay.deleted, 0)
+  const request = fixture.requests.find((item) => item.path === '/move/start')
+  assert.equal(request.body.fromEpoch, 1)
+  assert.equal(request.body.epoch, 2)
+  assert.equal('revokeDevices' in request.body, false)
+
+  const capsule = fixture.relay.capsules.get(parseManualCode(staged.pairingCode).selector)
+  assert.deepEqual(decryptPairingCapsule({ manualCode: staged.pairingCode, capsule }), pairingBundleOf(staged.pairingUrl))
+  await assert.rejects(() => pocket.finalizeMove(), /has not claimed/)
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(pocket.secrets.contentKey, oldKey.toString('base64url'))
+
+  fixture.relay.moveClaimed = true
+  await pocket.finalizeMove()
+  assert.equal(pocket.status().epoch, 2)
+  assert.equal(pocket.status().movePending, false)
+  assert.equal(fixture.relay.deleted, 1)
+})
+
+test('manual-code failure cancels a staged move and leaves the old phone connected', async () => {
+  const dir = await dataDir('pocket-move-capsule-failure')
+  const fixture = relayFixture()
+  let moving = false
+  const failing = async (url, options) => {
+    const path = new URL(url).pathname
+    if (path === '/pair/capsules' && moving) {
+      const body = JSON.parse(options.body)
+      fixture.requests.push({ path: '/pair-capsules-move-failed', body })
+      return Response.json({ error: { message: 'capsule storage unavailable' } }, { status: 503 })
+    }
+    const response = await fixture.fetchImpl(url, options)
+    if (path === '/move/start') moving = true
+    return response
+  }
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: failing,
+    secret: protectedSecret(),
+  })
+  await pocket.pair()
+  await assert.rejects(() => pocket.beginMove(), /old phone is still connected/)
+  assert.equal(pocket.status().paired, true)
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(pocket.status().movePending, false)
+  assert.equal(fixture.relay.deleted, 0)
+  assert.equal(fixture.relay.move, null)
+  const request = fixture.requests.find((item) => item.path === '/pair-capsules-move-failed')
+  assert.deepEqual(Object.keys(request.body).sort(), ['ciphertext', 'selector'])
+})
+
+test('an interrupted move survives restart without revoking the old phone', async () => {
+  const dir = await dataDir('pocket-move-restart')
+  const fixture = relayFixture()
+  const secret = protectedSecret()
+  const first = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: fixture.fetchImpl,
+    secret,
+  })
+  await first.pair()
+  const staged = await first.beginMove()
+  const raw = await readFile(join(dir, 'pocket.json'), 'utf8')
+  assert.equal(raw.includes(fixture.relay.move.moveToken), false)
+  assert.equal(raw.includes(fixture.relay.move.desktopToken), false)
+  assert.equal(raw.includes(fragmentOf(staged.pairingUrl).get('key')), false)
+
+  const restarted = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: fixture.fetchImpl,
+    secret,
+  })
+  assert.equal(restarted.status().epoch, 1)
+  assert.equal(restarted.status().paired, true)
+  assert.equal(restarted.status().movePending, true)
+  assert.equal(fixture.relay.deleted, 0)
+  fixture.relay.moveClaimed = true
+  await restarted.finalizeMove()
+  assert.equal(restarted.status().epoch, 2)
+})
+
+test('move finalize retries safely when the relay finalized but its response was lost', async () => {
+  const dir = await dataDir('pocket-move-finalize-replay')
+  const fixture = relayFixture()
+  let loseFinalizeResponse = true
+  const flaky = async (url, options) => {
+    const response = await fixture.fetchImpl(url, options)
+    if (new URL(url).pathname === '/move/finalize' && loseFinalizeResponse) {
+      loseFinalizeResponse = false
+      throw new Error('response lost')
+    }
+    return response
+  }
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: flaky,
+    secret: protectedSecret(),
+  })
+  await pocket.pair()
+  await pocket.beginMove()
+  fixture.relay.moveClaimed = true
+
+  await assert.rejects(() => pocket.finalizeMove(), /response lost/)
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(pocket.status().movePending, true)
+  assert.equal(fixture.relay.epoch, 2)
+
+  await pocket.finalizeMove()
+  assert.equal(pocket.status().epoch, 2)
+  assert.equal(pocket.status().movePending, false)
+})
+
+test('an expired staged move clears safely and leaves the old phone connected', async () => {
+  const dir = await dataDir('pocket-move-expired')
+  const fixture = relayFixture()
+  const expired = async (url, options) => {
+    if (new URL(url).pathname === '/move/finalize') {
+      return Response.json({ error: { message: 'move expired' } }, { status: 410 })
+    }
+    return fixture.fetchImpl(url, options)
+  }
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: expired,
+    secret: protectedSecret(),
+  })
+  await pocket.pair()
+  await pocket.beginMove()
+  await assert.rejects(() => pocket.finalizeMove(), /old phone is still connected/)
+  assert.equal(pocket.status().movePending, false)
+  assert.equal(pocket.status().paired, true)
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(fixture.relay.deleted, 0)
+})
+
+test('lost-phone rotation overrides an interrupted move and revokes immediately', async () => {
+  const { fixture, pocket } = await paired('pocket-move-lost')
+  await pocket.beginMove()
+  const replacement = await pocket.lostPhone()
+  assert.equal(fragmentOf(replacement.pairingUrl).get('epoch'), '2')
+  assert.equal(pocket.status().movePending, false)
+  assert.equal(fixture.relay.deleted, 1)
+  const request = fixture.requests.find((item) => item.path === '/rotate')
+  assert.equal(request.body.reason, 'lost-phone')
+})
+
+test('a relay without staged movement fails closed and keeps the old phone connected', async () => {
+  const fixture = relayFixture()
+  const unsupported = async (url, options) => {
+    if (new URL(url).pathname === '/move/start') {
+      return Response.json({ error: { message: 'missing' } }, { status: 404 })
+    }
+    return fixture.fetchImpl(url, options)
+  }
+  const dir = await dataDir('pocket-move-unsupported')
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: unsupported,
+    secret: protectedSecret(),
+  })
+  await pocket.pair()
+  await assert.rejects(() => pocket.beginMove(), /Use Reconnect phone, or Phone lost or stolen/)
+  assert.equal(pocket.status().paired, true)
+  assert.equal(pocket.status().epoch, 1)
+  assert.equal(fixture.relay.deleted, 0)
 })
 
 // --- protocol v2: derived keys, bound data, rollback ----------------------

@@ -63,8 +63,8 @@ A pairing code is a claim, not a credential. The relay issues it with:
 
 The desktop refuses a relay that offers a reusable claim, a claim with no
 expiry, an already-expired claim, or one that lives longer than five minutes.
-Only the claim's identifier and expiry are written to `data/pocket.json`; the
-secret half exists in the pairing URL and nowhere else.
+No claim field or presentation expiry is written to `data/pocket.json`. The
+claim exists only in the pairing URL held by the open pairing surface.
 
 The desktop's own credential is device-specific. It sends a `deviceId` with
 the pair request and refuses a response issued to any other device. Every
@@ -77,10 +77,56 @@ Pairing URL fragment (the cross-repo contract with the phone client):
 https://<relay>/#v=2&space=<spaceId>&epoch=<n>&claim=<id>.<secret>&key=<base64url>
 ```
 
+### Manual pairing capsule
+
+The manual code carries an independent 128-bit selector and 128-bit secret.
+Its canonical form is `D2<26 selector characters><26 secret characters>` in
+Crockford Base32. ASCII spaces and hyphens may separate characters for
+display. No other character is ignored; `I`, `L`, `O`, `U`, and encodings
+with non-zero Base32 pad bits are refused.
+
+The encrypted plaintext contains exactly these fields, in this order:
+
+```json
+{
+  "v": 1,
+  "protocolVersion": 2,
+  "spaceId": "<space ID>",
+  "claimId": "<claim ID>",
+  "claimSecret": "<claim secret>",
+  "rootKey": "<base64url root key>"
+}
+```
+
+The selector sent to the relay is the canonical unpadded base64url encoding
+of the 16 selector bytes. The 16-byte manual secret is the HKDF-SHA-256 input.
+The salt is `december-relay/2|manual-capsule|salt|<selector>` and the info is
+`december-relay/2|manual-capsule|key|1`. Associated data is
+`december-relay/2|manual-capsule|aad|1|<selector>`. All three domain strings
+are UTF-8, and HKDF produces a 32-byte AES-256-GCM key.
+
+Ciphertext is unpadded base64url of a 12-byte nonce followed by the sealed
+JSON and its 16-byte GCM tag. December sends an authenticated
+`POST /pair/capsules` with exactly:
+
+```json
+{
+  "selector": "<base64url 128-bit selector>",
+  "ciphertext": "<opaque base64url capsule envelope>"
+}
+```
+
+The relay owns the exact five-minute expiry from upload. A phone fetches with
+`POST /pair/capsules/fetch` and a body containing exactly `selector`. Neither
+request contains the manual secret. Re-fetching a capsule cannot replay the
+underlying pairing claim because that claim remains single-use.
+
 ## Where the secrets rest
 
 `data/pocket.json` holds the desktop credential, the device identity, and the
-content key. In the desktop app these are sealed before they touch the disk:
+content key. A staged move also holds its next credential, content key, and
+idempotent finalize token there until it finishes or expires. In the desktop
+app these values are sealed before they touch the disk:
 
 | Situation | Backend | Behaviour |
 |---|---|---|
@@ -104,7 +150,7 @@ destroys a working pairing.
 key — is rewritten sealed in a single atomic write (temporary file, then
 rename). Because the phone on the other end still holds a version 1 key, the
 migrated pairing is marked as needing repair: it uploads nothing and imports
-nothing until **Replace phone** rotates it onto protocol v2. On a computer
+nothing until **Reconnect phone** rotates it onto protocol v2. On a computer
 with no key store, migration removes the plaintext secrets outright.
 
 ## Local API
@@ -114,10 +160,22 @@ with no key store, migration removes the plaintext secrets outright.
 - `GET /api/pocket/capability` — the per-run capability the acting routes
   require.
 - `POST /api/pocket/pair` — create a relay space, publish the current page,
-  and return a one-time pairing URL for the desktop UI to render as a QR code.
-- `POST /api/pocket/rotate` — replace the phone. Revokes the device
-  credentials at the relay, deletes the stored ciphertext, opens the next key
-  epoch, and returns a fresh pairing URL.
+  and return one short-lived presentation: QR URL, manual code, and expiry.
+- `POST /api/pocket/reconnect` — repair a phone by immediately revoking phone
+  credentials, deleting old ciphertext, opening the next epoch, and returning
+  a fresh presentation.
+- `POST /api/pocket/lost` — immediately perform the same safe rotation for a
+  lost or stolen phone.
+- `POST /api/pocket/move` — stage the next epoch and return a fresh
+  presentation without revoking the current phone.
+- `POST /api/pocket/move/finalize` — adopt the staged epoch only after the
+  relay confirms the new phone consumed the claim; the relay atomically
+  revokes old phones at finalize.
+- `POST /api/pocket/move/cancel` — cancel a staged move and keep the current
+  phone and epoch.
+- `POST /api/pocket/rotate` — compatibility route for older local pages;
+  dispatches `protocol-repair`, `move-device`, and `lost-phone` to their
+  distinct lifecycles. A move never falls through to immediate rotation.
 - `POST /api/pocket/sync` — force a page upload and capture pull.
 - `POST /api/pocket/disconnect` (and `POST /api/pocket/revoke`) — ask the
   relay to delete the space and everything in it, then forget the pairing
@@ -126,7 +184,16 @@ with no key store, migration removes the plaintext secrets outright.
 The configured relay is `DECEMBER_RELAY_URL`, defaulting to
 `https://app.getdecember.me`. Non-HTTPS relay URLs are accepted only for
 localhost development. The relay endpoints the desktop expects are `/pair`,
-`/rotate`, `/revoke`, `/page`, `/captures`, and `/captures/ack`.
+`/pair/capsules`, `/rotate`, `/move/start`, `/move/finalize`,
+`/move/cancel`, `/revoke`, `/page`, `/captures`, and `/captures/ack`.
+
+`/move/start` must return a claim, a move ID, an idempotent move token, and a
+staged desktop credential for the next epoch without changing the live epoch.
+`/move/finalize` authenticates with the move token and returns
+`finalized: true` only after the new phone claimed the bundle. It must be safe
+to repeat after a lost response. A relay without this contract returns a clear
+unsupported response; December keeps the old phone connected and directs the
+person to Reconnect phone or Phone lost or stolen.
 
 ## Loopback hardening
 
@@ -170,11 +237,15 @@ The Electron window is pinned to December's own loopback origin:
 Pocket is available from the desktop app's Settings panel. The section uses
 plain connection states instead of exposing protocol details:
 
-- **Connect phone** requests a one-time pairing URL and opens a locally
-  rendered QR code.
-- **Replace phone** appears once a phone is connected. It is the door for a
-  phone that was lost, sold, or handed on: it rotates the content key, so the
-  device that walked away is left holding something that opens nothing.
+- **Connect phone** requests a one-time pairing presentation and opens a
+  locally rendered QR code plus a manual code.
+- **Reconnect phone** repairs protocol or connection trouble. It confirms the
+  action, immediately rotates the epoch, and returns a fresh presentation.
+- **Move to a new phone** stages a new epoch. The old phone remains usable
+  until the new phone claims the presentation and finalize succeeds. A relay
+  that cannot do this safely fails closed and points to the supported choices.
+- **Phone lost or stolen** confirms the destructive action and immediately
+  revokes phone access before showing a fresh presentation.
 - A connected phone shows the last successful sync, or says that it is ready
   for its first sync.
 - A pending revision or unreachable relay is reported as waiting or offline.
@@ -199,15 +270,17 @@ content key. The desktop UI applies these constraints:
 
 - `public/js/qr-code.js` creates the QR symbol in the browser. It has no CDN,
   image service, tracking request, or runtime dependency.
-- The URL moves only from the local pair response into short-lived UI memory
-  and the generated SVG. It is not written to storage, inserted as text or
-  HTML, logged, or sent to a QR provider.
-- The pair response is split immediately. `pairingUrl` is excluded before the
-  remaining safe fields become status state.
-- Closing the pairing dialog clears both the in-memory URL and all QR DOM
-  children. This also happens when Settings closes, Escape or the close button
-  is used, the page hides, disconnect is confirmed, QR generation fails, or a
-  stale pair request completes after the view has closed.
+- The URL and manual code move only from the local pair response into
+  short-lived UI memory; the URL also enters the generated SVG. Neither is
+  written to storage, inserted as HTML, logged, or sent to a QR provider.
+- The pair response is split immediately. `pairingUrl`, `pairingCode`, and
+  `pairingExpiresAt` are excluded before the remaining safe fields become
+  status state. `GET /api/pocket` never returns them.
+- Closing the pairing dialog clears the in-memory URL, manual code, expiry,
+  timer, and all QR DOM children. This also happens when Settings closes,
+  Escape or the close button is used, the page hides, disconnect is confirmed,
+  QR generation fails, or a stale pairing request completes after the view has
+  closed.
 - Status and errors render with fixed, nontechnical copy through
   `textContent`. Relay error text and credentials are never rendered into HTML.
 - `GET /api/pocket`, sync, and disconnect responses contain status only. The
@@ -225,14 +298,16 @@ content key. The desktop UI applies these constraints:
 1. Open December on the computer, select Settings, and choose **Connect
    phone** under Pocket.
 2. On the phone, open [app.getdecember.me](https://app.getdecember.me) and
-   scan the QR code within five minutes. The code works once.
-3. Close the pairing view. December removes the sensitive URL and QR
-   immediately.
+   scan the QR code or enter the manual code within five minutes. The
+   underlying claim works once.
+3. Close the pairing view. December removes the sensitive URL, manual code,
+   expiry, and QR immediately.
 4. Continue writing on either device. Desktop writes remain local-first and
    sync retries in the background when the relay is unavailable.
 5. Use **Sync now** when an immediate upload and phone-capture pull is needed.
-6. If the phone is lost, choose **Replace phone**. The old phone stops being
-   able to read anything from that moment.
+6. For protocol trouble choose **Reconnect phone**. To keep using an old phone
+   until its successor connects, choose **Move to a new phone**. If the phone
+   is gone, choose **Phone lost or stolen**; its access is revoked immediately.
 7. To remove Pocket from this computer entirely, choose **Disconnect**, then
    **Yes, disconnect**.
 
@@ -255,7 +330,8 @@ The operator retains the final acceptance decision.
 - [ ] At a 390px viewport, open Settings and pairing. Confirm there is no
       horizontal overflow and every action remains visible and usable.
 - [ ] Complete pairing. Confirm Settings changes to the connected state and
-      offers **Sync now**, **Replace phone**, and **Disconnect**.
+      offers **Sync now**, **Reconnect phone**, **Move to a new phone**,
+      **Phone lost or stolen**, and **Disconnect**.
 - [ ] Leave a pairing code unscanned for six minutes. Confirm the relay
       refuses it and the desktop offers a fresh one.
 - [ ] Scan one pairing code from two phones. Confirm the second is refused.
@@ -264,9 +340,18 @@ The operator retains the final acceptance decision.
 - [ ] Make a desktop change while the relay is unreachable. Confirm the write
       succeeds locally, Pocket reports waiting/offline without raw error text,
       and sync succeeds after connectivity returns.
-- [ ] Choose **Replace phone**. Confirm the old phone can no longer read the
+- [ ] Choose **Reconnect phone**. Confirm the old phone can no longer read the
       page or send captures, and that a capture it queued before the rotation
       is refused rather than imported.
+- [ ] Start **Move to a new phone**, then close December before claiming it.
+      Reopen December and confirm the old phone remains connected. Retry or
+      finish the move and confirm the epoch changes only after the new claim.
+- [ ] Start a move against a relay without staged movement. Confirm December
+      names Reconnect phone and Phone lost or stolen, and does not revoke the
+      old phone.
+- [ ] Choose **Phone lost or stolen** during an unfinished move. Confirm the
+      old phone is revoked immediately and the new presentation uses a fresh
+      epoch.
 - [ ] Inspect `data/pocket.json` on Windows and macOS. Confirm no credential
       or content key appears in the clear.
 - [ ] Run the desktop app on a Linux session with no keyring. Confirm December
@@ -274,7 +359,7 @@ The operator retains the final acceptance decision.
       written to disk.
 - [ ] Upgrade over an existing version 1 pairing. Confirm `pocket.json` is
       rewritten sealed, Pocket asks for a reconnection, and nothing is
-      uploaded until **Replace phone** completes.
+      uploaded until **Reconnect phone** completes.
 - [ ] Start disconnect, select **Cancel**, and confirm the phone remains
       connected. Then confirm disconnect, verify the desktop returns to
       **Connect phone**, and verify from the phone that the relay space is
