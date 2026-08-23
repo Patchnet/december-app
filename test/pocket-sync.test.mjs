@@ -839,6 +839,7 @@ test('secrets found on a computer with no key store are taken off the disk', asy
 
 test('a version 1 file is sealed in one rewrite and marked for reconnection', async () => {
   const dir = await dataDir('pocket-migrate')
+  const secret = protectedSecret()
   const legacy = {
     version: 1,
     clientId: 'client-1234',
@@ -859,12 +860,14 @@ test('a version 1 file is sealed in one rewrite and marked for reconnection', as
     dataDir: dir,
     relayUrl: 'http://127.0.0.1:8787',
     fetchImpl: fixture.fetchImpl,
-    secret: protectedSecret(),
+    secret,
   })
   const raw = await readFile(join(dir, 'pocket.json'), 'utf8')
+  const persisted = JSON.parse(raw)
   assert.equal(raw.includes(legacy.connection.desktopToken), false)
   assert.equal(raw.includes(legacy.connection.contentKey), false)
-  assert.equal(JSON.parse(raw).version, 2)
+  assert.equal(persisted.version, 2)
+  assert.equal(JSON.parse(Buffer.from(persisted.secrets, 'base64url').toString('utf8')).p, 'aead')
   assert.equal(pocket.status().requiresRepair, true)
   assert.equal(pocket.status().paired, false)
   assert.equal(pocket.status().epoch, 0)
@@ -874,11 +877,68 @@ test('a version 1 file is sealed in one rewrite and marked for reconnection', as
   await pocket.flush()
   assert.equal(fixture.relay.page, null)
 
-  // Replacing the phone is what finishes the migration.
-  const repaired = await pocket.rotate()
-  assert.equal(pocket.status().requiresRepair, false)
-  assert.equal(pocket.status().paired, true)
+  // A restart must retain the sealed credential needed to finish migration.
+  const restarted = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: fixture.fetchImpl,
+    secret,
+  })
+  const repaired = await restarted.rotate()
+  assert.equal(restarted.status().requiresRepair, false)
+  assert.equal(restarted.status().paired, true)
   assert.equal(fragmentOf(repaired.pairingUrl).get('epoch'), '1')
+})
+
+test('an orphaned version 2 migration resets to a fresh phone connection', async () => {
+  const dir = await dataDir('pocket-migrate-orphan')
+  await writeFile(join(dir, 'pocket.json'), JSON.stringify({
+    version: 2,
+    clientId: 'client-1234',
+    space: { spaceId: 'space_orphan_1234567890', epoch: 0, pairedAt: null },
+    secrets: null,
+    claim: null,
+    nextPageRevision: 7,
+    pendingPage: { revision: 6, epoch: 0, payload: 'unrecoverable' },
+    captureCursor: 4,
+    lastSyncedAt: '2026-08-13T10:00:00.000Z',
+    lastError: null,
+    requiresRepair: true,
+    pendingRevocation: null,
+    pendingMove: null,
+  }))
+  const fixture = relayFixture()
+  const secret = protectedSecret()
+  const pocket = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: fixture.fetchImpl,
+    secret,
+  })
+
+  assert.equal(pocket.status().paired, false)
+  assert.equal(pocket.status().requiresRepair, false)
+  assert.equal(pocket.status().repairReset, true)
+  const reset = JSON.parse(await readFile(join(dir, 'pocket.json'), 'utf8'))
+  assert.equal(reset.space, null)
+  assert.equal(reset.secrets, null)
+  assert.equal(reset.pendingPage, null)
+  assert.equal(reset.captureCursor, 0)
+  assert.equal(reset.nextPageRevision, 1)
+
+  // The recovery notice and clean connection path also survive another restart.
+  const restarted = await createPocketSync({
+    dataDir: dir,
+    relayUrl: 'http://127.0.0.1:8787',
+    fetchImpl: fixture.fetchImpl,
+    secret,
+  })
+  assert.equal(restarted.status().repairReset, true)
+  const paired = await restarted.pair()
+  assert.match(paired.pairingUrl, /^http:\/\/127\.0\.0\.1:8787\/#/)
+  assert.match(paired.pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
+  assert.equal(restarted.status().paired, true)
+  assert.equal(restarted.status().repairReset, false)
 })
 
 test('a version 1 file on a computer with no key store loses its secrets outright', async () => {
