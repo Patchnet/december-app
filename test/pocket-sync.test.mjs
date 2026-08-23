@@ -22,13 +22,12 @@ const fragmentOf = (pairingUrl) => new URLSearchParams(new URL(pairingUrl).hash.
 const keyOf = (pairingUrl) => Buffer.from(fragmentOf(pairingUrl).get('key'), 'base64url')
 const pairingBundleOf = (pairingUrl) => {
   const fragment = fragmentOf(pairingUrl)
-  const [claimId, claimSecret] = fragment.get('claim').split('.')
   return {
     v: 1,
     protocolVersion: Number(fragment.get('v')),
     spaceId: fragment.get('space'),
-    claimId,
-    claimSecret,
+    claimId: fragment.get('claim'),
+    claimSecret: fragment.get('secret'),
     rootKey: fragment.get('key'),
   }
 }
@@ -50,14 +49,19 @@ function relayFixture({
     deleted: 0,
     move: null,
     moveClaimed: false,
+    claims: [],
   }
   const credentials = { spaceId, desktopToken }
   let claimSeed = 0
-  const nextClaim = () => ({
-    claimId: `claim_id_00000000000${++claimSeed}`,
-    claimSecret: `claim_secret_00000000000${claimSeed}`,
-    expiresAt: new Date(Date.now() + claimTtlMs).toISOString(),
-  })
+  const nextClaim = () => {
+    const claim = {
+      claimId: `claim_id_00000000000${++claimSeed}`,
+      claimSecret: `claim_secret_00000000000${claimSeed}`,
+      expiresAt: new Date(Date.now() + claimTtlMs).toISOString(),
+    }
+    relay.claims.push(claim)
+    return claim
+  }
 
   const fetchImpl = async (url, options = {}) => {
     const parsed = new URL(url)
@@ -189,12 +193,14 @@ test('pairing keeps the content key in the fragment and publishes an encrypted p
   const pairRequest = fixture.requests.find((request) => request.path === '/pair')
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('key')), false)
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('claim')), false)
+  assert.equal(JSON.stringify(pairRequest).includes(fragment.get('secret')), false)
   const capsuleRequest = fixture.requests.find((request) => request.path === '/pair/capsules')
   assert.deepEqual(Object.keys(capsuleRequest.body).sort(), ['ciphertext', 'selector'])
   assert.equal(capsuleRequest.method, 'POST')
   assert.equal(capsuleRequest.headers.authorization, `Bearer ${fixture.credentials.desktopToken}`)
   assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('key')), false)
   assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('claim')), false)
+  assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('secret')), false)
   const manualSecret = parseManualCode(pairingCode).secretBytes
   assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('base64url')), false)
   assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('hex')), false)
@@ -272,10 +278,17 @@ test('core treats deterministic Pocket capture IDs as idempotent', async () => {
 // --- pairing claims -------------------------------------------------------
 
 test('a canonical Relay v2 pair response produces QR-link data and a manual code', async () => {
-  const { fixture, pairingUrl, pairingCode } = await paired('pocket-canonical-claim')
+  const { fixture, pocket, pairingUrl, pairingCode } = await paired('pocket-canonical-claim')
   const fragment = fragmentOf(pairingUrl)
-  assert.equal(fragment.get('space'), fixture.credentials.spaceId)
-  assert.match(fragment.get('claim'), /^claim_id_[A-Za-z0-9_-]*\.claim_secret_[A-Za-z0-9_-]*$/)
+  const claim = fixture.relay.claims[0]
+  assert.deepEqual(Object.fromEntries(fragment), {
+    v: String(POCKET_PROTOCOL),
+    space: fixture.credentials.spaceId,
+    epoch: '1',
+    claim: claim.claimId,
+    secret: claim.claimSecret,
+    key: pocket.secrets.contentKey,
+  })
   assert.match(pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
   const capsule = fixture.relay.capsules.get(parseManualCode(pairingCode).selector)
   assert.deepEqual(decryptPairingCapsule({ manualCode: pairingCode, capsule }), pairingBundleOf(pairingUrl))
@@ -284,7 +297,8 @@ test('a canonical Relay v2 pair response produces QR-link data and a manual code
 test('pairing presentation secrets are not persisted', async () => {
   const { pocket, pairingUrl, pairingCode, pairingExpiresAt } = await paired('pocket-claim')
   const fragment = fragmentOf(pairingUrl)
-  assert.match(fragment.get('claim'), /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)
+  assert.match(fragment.get('claim'), /^[A-Za-z0-9_-]+$/)
+  assert.match(fragment.get('secret'), /^[A-Za-z0-9_-]+$/)
   assert.match(pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
   const expiry = Date.parse(pairingExpiresAt)
   assert.ok(expiry - Date.now() <= POCKET_CLAIM_TTL_MS + 1000)
@@ -298,7 +312,7 @@ test('pairing presentation secrets are not persisted', async () => {
   assert.equal('pairingExpiresAt' in pocket.status(), false)
   assert.equal('pairingCode' in pocket.status(), false)
   assert.equal(JSON.stringify(persisted).includes(pairingCode), false)
-  assert.equal(JSON.stringify(persisted).includes(fragment.get('claim').split('.')[1]), false)
+  assert.equal(JSON.stringify(persisted).includes(fragment.get('secret')), false)
 })
 
 test('a relay offering a long-lived pairing claim is refused', async () => {
