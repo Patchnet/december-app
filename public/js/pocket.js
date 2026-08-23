@@ -33,8 +33,8 @@ const intents = Object.freeze({
     pairing: true,
     mode: 'reconnect',
     buttonId: 'pocket-reconnect',
-    confirmCopy: 'Reconnect this phone? This repairs Pocket security and replaces its old connection.',
-    confirmLabel: 'Reconnect phone',
+    confirmCopy: 'Create a fresh pairing code? This repairs Pocket security and replaces the old phone connection.',
+    confirmLabel: 'Create fresh code',
   },
   move: {
     name: 'move',
@@ -154,6 +154,11 @@ function viewState() {
     title: looksOffline(errorMessage) ? 'Pocket is offline' : 'Pocket needs attention',
     detail: looksOffline(errorMessage) ? 'Check your connection, then retry.' : 'December could not finish that request. Retry when you are ready.',
   }
+  if (status?.repairReset) return {
+    key: 'disconnected',
+    title: 'Connect your phone again',
+    detail: 'December repaired an incomplete Pocket upgrade. Create a fresh code to reconnect.',
+  }
   if (status?.requiresRepair) return {
     key: 'repair',
     title: 'Reconnect phone',
@@ -188,14 +193,15 @@ function render() {
   const repairing = !!status?.requiresRepair
   const usable = status?.secretsPersisted !== false
   const busy = action !== null
-  const controlsLocked = busy || pendingIntent !== null
-  connectButton.hidden = !usable || paired || repairing
-  reconnectButton.hidden = !usable || !repairing
-  moveButton.hidden = !usable || !paired
-  lostButton.hidden = !usable || !paired
-  syncButton.hidden = !paired
-  disconnectButton.hidden = !(paired || repairing)
-  retryButton.hidden = !lastFailedIntent || busy
+  const confirming = pendingIntent !== null
+  const controlsLocked = busy || confirming
+  connectButton.hidden = !usable || paired || repairing || confirming
+  reconnectButton.hidden = !usable || !repairing || confirming
+  moveButton.hidden = !usable || !paired || confirming
+  lostButton.hidden = !usable || !paired || confirming
+  syncButton.hidden = !paired || confirming
+  disconnectButton.hidden = !(paired || repairing) || confirming
+  retryButton.hidden = !lastFailedIntent || busy || confirming
   $('#pocket-status').setAttribute('aria-busy', String(busy))
 
   for (const button of [connectButton, reconnectButton, moveButton, lostButton, syncButton, disconnectButton, retryButton]) {

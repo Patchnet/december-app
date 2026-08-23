@@ -110,6 +110,8 @@ test('every Pocket action carries the capability the page alone can read', () =>
 
 test('phone repair, movement, and loss are distinct confirmed actions', () => {
   assert.match(pocket, /reconnect:[\s\S]*?reason: 'protocol-repair'[\s\S]*?confirmCopy:/)
+  assert.match(pocket, /Create a fresh pairing code\? This repairs Pocket security and replaces the old phone connection\./)
+  assert.match(pocket, /confirmLabel: 'Create fresh code'/)
   assert.match(pocket, /move:[\s\S]*?reason: 'move-device'[\s\S]*?stays connected until the new phone claims the connection when that is safe/i)
   assert.match(pocket, /lost:[\s\S]*?reason: 'lost-phone'[\s\S]*?immediately revokes that phone and rotates the encryption key/)
   assert.match(pocket, /reconnectButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.reconnect\)\)/)
@@ -117,6 +119,9 @@ test('phone repair, movement, and loss are distinct confirmed actions', () => {
   assert.match(pocket, /lostButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.lost\)\)/)
   assert.doesNotMatch(pocket, /Replace phone/)
   assert.match(pocket, /title: 'Reconnect phone'/)
+  assert.doesNotMatch(pocket, /confirmLabel: 'Reconnect phone'/)
+  assert.match(pocket, /const confirming = pendingIntent !== null/)
+  assert.match(pocket, /reconnectButton\.hidden = !usable \|\| !repairing \|\| confirming/)
 })
 
 test('every request has progress, fixed failure copy, and an actionable retry', () => {
@@ -137,6 +142,8 @@ test('Pocket uses paired-device language and states the phone outcome', () => {
   assert.match(pocket, /No phone paired/)
   assert.match(pocket, /Phone paired/)
   assert.match(pocket, /Reconnect this paired device with a fresh code/)
+  assert.match(pocket, /Connect your phone again/)
+  assert.match(pocket, /December repaired an incomplete Pocket upgrade\. Create a fresh code to reconnect\./)
 })
 
 test('Pocket says plainly when this computer has no key store, and stays out of the way', () => {
