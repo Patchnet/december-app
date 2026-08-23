@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.14.0
+current: 0.15.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.0 - 2026-08-23
+
+Add secure manual Pocket pairing and guided phone replacement.
 
 ## 0.14.0 - 2026-08-22
 
