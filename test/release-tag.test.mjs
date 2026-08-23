@@ -13,7 +13,12 @@ test('release tags must exactly match the package version', () => {
 test('the release check reads the current package version', () => {
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const currentTag = `v${version}`
+  const [major, minor, patch] = version.split('.').map(Number)
+  const wrongTag = `v${major}.${minor}.${patch + 1}`
 
   assert.equal(checkReleaseTag({ tag: currentTag }), currentTag)
-  assert.throws(() => checkReleaseTag({ tag: 'v99.0.0' }), /v99\.0\.0 does not match package version/)
+  assert.throws(
+    () => checkReleaseTag({ tag: wrongTag }),
+    (error) => error.message === `release tag ${wrongTag} does not match package version ${currentTag}`,
+  )
 })
