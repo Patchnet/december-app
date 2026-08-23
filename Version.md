@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.15.0
+current: 0.15.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.1 - 2026-08-23
+
+Recover Pocket phone pairing after a migration restart and clarify the reconnect flow.
 
 ## 0.15.0 - 2026-08-23
 
