@@ -79,13 +79,35 @@ https://<relay>/#v=2&space=<spaceId>&epoch=<n>&claim=<id>.<secret>&key=<base64ur
 
 ### Manual pairing capsule
 
-The same exact pairing URL is available as a manual code. December generates
-an independent 128-bit selector and 128-bit manual secret, formats both as a
-Crockford-base32 `D2-<selector>.<secret>` code, derives a capsule key with HKDF-SHA256, and
-encrypts the URL with AES-256-GCM. The capsule expires with the pairing claim
-and never lasts more than five minutes.
+The manual code carries an independent 128-bit selector and 128-bit secret.
+Its canonical form is `D2<26 selector characters><26 secret characters>` in
+Crockford Base32. ASCII spaces and hyphens may separate characters for
+display. No other character is ignored; `I`, `L`, `O`, `U`, and encodings
+with non-zero Base32 pad bits are refused.
 
-December posts this versioned object to `POST /pairing-capsules`:
+The encrypted plaintext contains exactly these fields, in this order:
+
+```json
+{
+  "v": 1,
+  "protocolVersion": 2,
+  "spaceId": "<space ID>",
+  "claimId": "<claim ID>",
+  "claimSecret": "<claim secret>",
+  "rootKey": "<base64url root key>"
+}
+```
+
+The selector sent to the relay is the canonical unpadded base64url encoding
+of the 16 selector bytes. The 16-byte manual secret is the HKDF-SHA-256 input.
+The salt is `december-relay/2|manual-capsule|salt|<selector>` and the info is
+`december-relay/2|manual-capsule|key|1`. Associated data is
+`december-relay/2|manual-capsule|aad|1|<selector>`. All three domain strings
+are UTF-8, and HKDF produces a 32-byte AES-256-GCM key.
+
+Ciphertext is unpadded base64url of a 12-byte nonce followed by the sealed
+JSON and its 16-byte GCM tag. December sends an authenticated
+`POST /pair/capsules` with exactly:
 
 ```json
 {
@@ -94,14 +116,10 @@ December posts this versioned object to `POST /pairing-capsules`:
 }
 ```
 
-The opaque envelope carries the capsule version, expiry, `A256GCM`,
-`HKDF-SHA256`, and its 96-bit IV. Associated data binds the contract name,
-capsule version, selector, and expiry. The relay stores and retrieves by
-selector and applies a fixed five-minute retention window from upload. It
-receives exactly the selector and ciphertext fields: never the manual secret,
-root content key, claim secret, or plaintext pairing URL. Re-fetching a
-capsule cannot replay the underlying pairing claim because that claim remains
-single-use.
+The relay owns the exact five-minute expiry from upload. A phone fetches with
+`POST /pair/capsules/fetch` and a body containing exactly `selector`. Neither
+request contains the manual secret. Re-fetching a capsule cannot replay the
+underlying pairing claim because that claim remains single-use.
 
 ## Where the secrets rest
 
@@ -166,7 +184,7 @@ with no key store, migration removes the plaintext secrets outright.
 The configured relay is `DECEMBER_RELAY_URL`, defaulting to
 `https://app.getdecember.me`. Non-HTTPS relay URLs are accepted only for
 localhost development. The relay endpoints the desktop expects are `/pair`,
-`/pairing-capsules`, `/rotate`, `/move/start`, `/move/finalize`,
+`/pair/capsules`, `/rotate`, `/move/start`, `/move/finalize`,
 `/move/cancel`, `/revoke`, `/page`, `/captures`, and `/captures/ack`.
 
 `/move/start` must return a claim, a move ID, an idempotent move token, and a

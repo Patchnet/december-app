@@ -20,6 +20,18 @@ const masterKey = () => randomBytes(32).toString('base64url')
 const protectedSecret = () => ({ key: masterKey(), backend: 'os' })
 const fragmentOf = (pairingUrl) => new URLSearchParams(new URL(pairingUrl).hash.slice(1))
 const keyOf = (pairingUrl) => Buffer.from(fragmentOf(pairingUrl).get('key'), 'base64url')
+const pairingBundleOf = (pairingUrl) => {
+  const fragment = fragmentOf(pairingUrl)
+  const [claimId, claimSecret] = fragment.get('claim').split('.')
+  return {
+    v: 1,
+    protocolVersion: Number(fragment.get('v')),
+    spaceId: fragment.get('space'),
+    claimId,
+    claimSecret,
+    rootKey: fragment.get('key'),
+  }
+}
 
 function relayFixture({
   claimTtlMs = POCKET_CLAIM_TTL_MS,
@@ -55,10 +67,6 @@ function relayFixture({
     if (parsed.pathname === '/pair') {
       return Response.json({ ...credentials, deviceId: body.deviceId, claim: nextClaim() }, { status: 201 })
     }
-    if (parsed.pathname === '/pairing-capsules') {
-      relay.capsules.set(body.selector, body)
-      return Response.json({ stored: true, expiresAt: body.expiresAt }, { status: 201 })
-    }
     if (parsed.pathname === '/move/finalize') {
       if (options.headers?.authorization !== `Bearer ${relay.move?.moveToken}`) {
         return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
@@ -81,6 +89,10 @@ function relayFixture({
 
     if (options.headers?.authorization !== `Bearer ${credentials.desktopToken}`) {
       return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
+    }
+    if (parsed.pathname === '/pair/capsules') {
+      relay.capsules.set(body.selector, body)
+      return Response.json({ stored: true, expiresAt: new Date(Date.now() + POCKET_CLAIM_TTL_MS).toISOString() }, { status: 201 })
     }
     if (parsed.pathname === '/move/start') {
       relay.move = {
@@ -151,7 +163,7 @@ const captureEnvelope = (key, spaceId, epoch, captureId, value) =>
   pocketCrypto.encrypt(key, { spaceId, epoch, purpose: 'capture', sequence: captureId }, value)
 
 test('pairing keeps the content key in the fragment and publishes an encrypted page', async () => {
-  const { fixture, pocket, pairingUrl, key } = await paired('pocket-sync')
+  const { fixture, pocket, pairingUrl, pairingCode, key } = await paired('pocket-sync')
   const url = new URL(pairingUrl)
   assert.equal(url.search, '')
   assert.equal(url.origin, 'http://127.0.0.1:8787')
@@ -178,10 +190,15 @@ test('pairing keeps the content key in the fragment and publishes an encrypted p
   const pairRequest = fixture.requests.find((request) => request.path === '/pair')
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('key')), false)
   assert.equal(JSON.stringify(pairRequest).includes(fragment.get('claim')), false)
-  const capsuleRequest = fixture.requests.find((request) => request.path === '/pairing-capsules')
+  const capsuleRequest = fixture.requests.find((request) => request.path === '/pair/capsules')
   assert.deepEqual(Object.keys(capsuleRequest.body).sort(), ['ciphertext', 'selector'])
+  assert.equal(capsuleRequest.method, 'POST')
+  assert.equal(capsuleRequest.headers.authorization, `Bearer ${fixture.credentials.desktopToken}`)
   assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('key')), false)
   assert.equal(JSON.stringify(capsuleRequest).includes(fragment.get('claim')), false)
+  const manualSecret = parseManualCode(pairingCode).secretBytes
+  assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('base64url')), false)
+  assert.equal(JSON.stringify(capsuleRequest).includes(manualSecret.toString('hex')), false)
 })
 
 test('pending page revisions survive restart and retry', async () => {
@@ -259,11 +276,16 @@ test('a pairing claim is single-use and presentation secrets are not persisted',
   const { pocket, pairingUrl, pairingCode, pairingExpiresAt } = await paired('pocket-claim')
   const fragment = fragmentOf(pairingUrl)
   assert.match(fragment.get('claim'), /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/)
-  assert.match(pairingCode, /^D2-[A-Z0-9-]+\.[A-Z0-9-]+$/)
+  assert.match(pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
   const expiry = Date.parse(pairingExpiresAt)
   assert.ok(expiry - Date.now() <= POCKET_CLAIM_TTL_MS + 1000)
-  const persisted = JSON.parse(await readFile(pocket.filePath, 'utf8'))
+  const raw = await readFile(pocket.filePath, 'utf8')
+  const persisted = JSON.parse(raw)
   assert.equal(persisted.claim, null)
+  assert.equal(raw.includes(pairingCode), false)
+  const manualSecret = parseManualCode(pairingCode).secretBytes
+  assert.equal(raw.includes(manualSecret.toString('base64url')), false)
+  assert.equal(raw.includes(manualSecret.toString('hex')), false)
   assert.equal('pairingExpiresAt' in pocket.status(), false)
   assert.equal('pairingCode' in pocket.status(), false)
   assert.equal(JSON.stringify(persisted).includes(pairingCode), false)
@@ -424,7 +446,7 @@ test('reconnect is an explicit immediate rotation with a fresh presentation', as
   const result = await pocket.reconnect()
   assert.equal(pocket.status().epoch, 2)
   assert.notEqual(keyOf(result.pairingUrl).toString('base64url'), key.toString('base64url'))
-  assert.match(result.pairingCode, /^D2-/)
+  assert.match(result.pairingCode, /^D2[0-9A-HJKMNP-TV-Z]{52}$/)
   const request = fixture.requests.find((item) => item.path === '/rotate')
   assert.equal(request.body.reason, 'reconnect')
   assert.equal(request.body.revokeDevices, true)
@@ -435,9 +457,9 @@ test('manual-code relay failure never transmits a secret and leaves initial pair
   const dir = await dataDir('pocket-capsule-offline')
   const fixture = relayFixture()
   const failing = async (url, options) => {
-    if (new URL(url).pathname === '/pairing-capsules') {
+    if (new URL(url).pathname === '/pair/capsules') {
       const body = JSON.parse(options.body)
-      fixture.requests.push({ path: '/pairing-capsules-failed', body })
+      fixture.requests.push({ path: '/pair-capsules-failed', body, headers: options.headers })
       return Response.json({ error: { message: 'capsule storage unavailable' } }, { status: 503 })
     }
     return fixture.fetchImpl(url, options)
@@ -450,8 +472,9 @@ test('manual-code relay failure never transmits a secret and leaves initial pair
   })
   await assert.rejects(() => pocket.pair(), /could not store the manual pairing code/)
   assert.equal(pocket.status().paired, false)
-  const request = fixture.requests.find((item) => item.path === '/pairing-capsules-failed')
+  const request = fixture.requests.find((item) => item.path === '/pair-capsules-failed')
   assert.deepEqual(Object.keys(request.body).sort(), ['ciphertext', 'selector'])
+  assert.match(request.headers.authorization, /^Bearer desktop_test_token_/)
 })
 
 test('a staged move keeps the old epoch until the new phone claims it', async () => {
@@ -468,7 +491,7 @@ test('a staged move keeps the old epoch until the new phone claims it', async ()
   assert.equal('revokeDevices' in request.body, false)
 
   const capsule = fixture.relay.capsules.get(parseManualCode(staged.pairingCode).selector)
-  assert.equal(decryptPairingCapsule({ manualCode: staged.pairingCode, capsule }), staged.pairingUrl)
+  assert.deepEqual(decryptPairingCapsule({ manualCode: staged.pairingCode, capsule }), pairingBundleOf(staged.pairingUrl))
   await assert.rejects(() => pocket.finalizeMove(), /has not claimed/)
   assert.equal(pocket.status().epoch, 1)
   assert.equal(pocket.secrets.contentKey, oldKey.toString('base64url'))
@@ -486,9 +509,9 @@ test('manual-code failure cancels a staged move and leaves the old phone connect
   let moving = false
   const failing = async (url, options) => {
     const path = new URL(url).pathname
-    if (path === '/pairing-capsules' && moving) {
+    if (path === '/pair/capsules' && moving) {
       const body = JSON.parse(options.body)
-      fixture.requests.push({ path: '/pairing-capsules-move-failed', body })
+      fixture.requests.push({ path: '/pair-capsules-move-failed', body })
       return Response.json({ error: { message: 'capsule storage unavailable' } }, { status: 503 })
     }
     const response = await fixture.fetchImpl(url, options)
@@ -508,7 +531,7 @@ test('manual-code failure cancels a staged move and leaves the old phone connect
   assert.equal(pocket.status().movePending, false)
   assert.equal(fixture.relay.deleted, 0)
   assert.equal(fixture.relay.move, null)
-  const request = fixture.requests.find((item) => item.path === '/pairing-capsules-move-failed')
+  const request = fixture.requests.find((item) => item.path === '/pair-capsules-move-failed')
   assert.deepEqual(Object.keys(request.body).sort(), ['ciphertext', 'selector'])
 })
 

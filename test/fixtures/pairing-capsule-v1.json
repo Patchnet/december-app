@@ -1,0 +1,17 @@
+{
+  "description": "Synthetic December Relay protocol-v2 manual pairing capsule",
+  "selectorBytesHex": "000102030405060708090a0b0c0d0e0f",
+  "manualSecretBytesHex": "101112131415161718191a1b1c1d1e1f",
+  "nonceBytesHex": "202122232425262728292a2b",
+  "canonicalCode": "D2000G40R40M30E209185GR38E1W208H44RM2MB1E60S38DHR78Y3W",
+  "selector": "AAECAwQFBgcICQoLDA0ODw",
+  "plaintext": {
+    "v": 1,
+    "protocolVersion": 2,
+    "spaceId": "space_synthetic_0001",
+    "claimId": "claim_synthetic_0001",
+    "claimSecret": "claim_secret_synthetic_0001",
+    "rootKey": "MDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk8"
+  },
+  "expectedCiphertext": "ICEiIyQlJicoKSoreeTHq7EaiRWeUrvs1-HsBWBKb2zW1yGhSQn8zNc6Y1a6sd_zlA_mGrw2RM48ZPaK7I17CnBMo001ckdEYL873cJY05bCIlUZYcJVddn3jhrWygT1Ngny67Aozp925HnsdaqExOeT1JtxessJQZIGvkzjuafOSCsUeFIvkwdsw-EC8tpT2o-9MfzY2u7-EnUwoQxMr8naw8SKRgZfOCjQTznOwB_5jMC88CdNrAu7oCkOSZ9qqq8rDBTFEAUhGAN59loVS07_INu5vqViqWlm3X4"
+}
