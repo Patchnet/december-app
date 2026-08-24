@@ -1,11 +1,16 @@
 ---
 enabled: true
-current: 0.15.2
+current: 0.15.3
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.3 - 2026-08-24
+
+Restore December Pocket interoperability with Relay v0.4.0 by aligning the
+shared encrypted page and capture contract.
 
 ## 0.15.2 - 2026-08-24
 
