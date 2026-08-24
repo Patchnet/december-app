@@ -1,0 +1,39 @@
+{
+  "description": "Golden vectors shared by December Desktop and Relay protocol v2",
+  "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "page": {
+    "context": {
+      "spaceId": "c3BhY2VfZ29sZGVuX3Yy",
+      "epoch": 3,
+      "revision": 7,
+      "deviceId": "desktop-golden"
+    },
+    "value": {
+      "version": 2,
+      "page": {
+        "spaces": [
+          {
+            "name": "Golden",
+            "blocks": []
+          }
+        ]
+      }
+    },
+    "payload": "eyJ2IjoyLCJwIjoyLCJhbGciOiJBMjU2R0NNIiwia2RmIjoiSEtERi1TSEEtMjU2IiwiZXBvY2giOjMsIml2IjoiSUNFaUl5UWxKaWNvS1NvciIsImNpcGhlcnRleHQiOiIwZ2ZoR0x1dlBGVldrMUZrZWtNRzFtTDN3d19JVFFzcF9FZjZ2REFjSjRXZHQwQm9oWXRoaWRybWVQX1VYdTJQZ09DMERiUDN4ajVJZ1ZaM0RNYkVvWUZYTkpOdHV6VFA5NTNvR1NRYWhRIn0"
+  },
+  "capture": {
+    "context": {
+      "spaceId": "c3BhY2VfZ29sZGVuX3Yy",
+      "epoch": 3,
+      "captureId": "capture-golden",
+      "deviceId": "phone-golden"
+    },
+    "value": {
+      "v": 2,
+      "type": "capture",
+      "text": "Golden note",
+      "createdAt": "2026-08-24T12:00:00.000Z"
+    },
+    "payload": "eyJ2IjoyLCJwIjoyLCJhbGciOiJBMjU2R0NNIiwia2RmIjoiSEtERi1TSEEtMjU2IiwiZXBvY2giOjMsIml2IjoiUUVGQ1EwUkZSa2RJU1VwTCIsImNpcGhlcnRleHQiOiJGOFZSOGtsQ0VlTnJtVVMzNkp0X2RJYXpIZ1pRX1BFV19JdmNSR0V5NFlNUUxjd1h5QzZFOFljNFFZN19iZDgtTEtQZzBxM3ZRdjBBNWZVZk5qMGIzcllaVVpBaTV1MjhMa3M4eVNjUXN0UnVXdG5oR2tJX1FrYkl2c0pqek1TRnhsblhWQSJ9"
+  }
+}

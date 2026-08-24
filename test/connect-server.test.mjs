@@ -439,6 +439,7 @@ test('shutdown drains the latest coalesced Pocket page', async (t) => {
     minEpoch: 1,
     purpose: 'page',
     sequence: uploaded.revision,
+    deviceId: 'device_fixture_123456',
   })
   assert.equal(decrypted.page.captures[0].text, 'survive shutdown')
   const [exitCode, exitSignal] = await childExit
