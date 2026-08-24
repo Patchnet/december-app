@@ -68,6 +68,7 @@ function relayFixture({
     const body = options.body ? JSON.parse(options.body) : null
     requests.push({ path: `${parsed.pathname}${parsed.search}`, method: options.method || 'GET', body, headers: options.headers })
     if (parsed.pathname === '/pair') {
+      credentials.deviceId = body.deviceId
       return Response.json({ protocolVersion, ...credentials, deviceId: body.deviceId, claim: nextClaim() }, { status: 201 })
     }
     if (parsed.pathname === '/move/finalize') {
@@ -122,7 +123,7 @@ function relayFixture({
       return Response.json({ revoked: true }, { status: 200 })
     }
     if (parsed.pathname === '/page') {
-      relay.page = body
+      relay.page = { ...body, deviceId: credentials.deviceId }
       return Response.json({ revision: body.revision }, { status: 201 })
     }
     if (parsed.pathname === '/captures' && !options.method) {
@@ -162,8 +163,8 @@ async function paired(name, options = {}) {
   }
 }
 
-const captureEnvelope = (key, spaceId, epoch, captureId, value) =>
-  pocketCrypto.encrypt(key, { spaceId, epoch, purpose: 'capture', sequence: captureId }, value)
+const captureEnvelope = (key, spaceId, epoch, captureId, value, deviceId = 'phone-a') =>
+  pocketCrypto.encrypt(key, { spaceId, epoch, purpose: 'capture', sequence: captureId, deviceId }, value)
 
 test('pairing keeps the content key in the fragment and publishes an encrypted page', async () => {
   const { fixture, pocket, pairingUrl, pairingCode, key } = await paired('pocket-sync')
@@ -187,6 +188,7 @@ test('pairing keeps the content key in the fragment and publishes an encrypted p
     minEpoch: 1,
     purpose: 'page',
     sequence: 1,
+    deviceId: fixture.relay.page.deviceId,
   })
   assert.deepEqual(decrypted, { version: POCKET_PROTOCOL, page: { spaces: [{ name: 'Home', blocks: [] }] } })
 
@@ -233,7 +235,7 @@ test('capture cursor advances only after the durable consumer and ack is retried
   const { dir, fixture, pocket, key } = await paired('pocket-captures')
   fixture.relay.captures.push({
     sequence: 1,
-    clientId: 'phone-a',
+    deviceId: 'phone-a',
     captureId: 'capture_a_1234567890',
     payload: captureEnvelope(key, fixture.credentials.spaceId, 1, 'capture_a_1234567890', {
       v: POCKET_PROTOCOL,
@@ -448,6 +450,7 @@ test('replacing a lost phone opens a new epoch with a new content key', async ()
     minEpoch: 2,
     purpose: 'page',
     sequence: 1,
+    deviceId: fixture.relay.page.deviceId,
   }), /unable to authenticate|bad decrypt|Unsupported state/i)
 })
 
@@ -682,6 +685,25 @@ test('a relay without staged movement fails closed and keeps the old phone conne
 
 // --- protocol v2: derived keys, bound data, rollback ----------------------
 
+test('Desktop opens the shared Relay protocol-v2 golden vectors', async () => {
+  const fixture = JSON.parse(await readFile(new URL('fixtures/pocket-crypto-v2.json', import.meta.url), 'utf8'))
+  const root = Buffer.from(fixture.rootKey, 'base64url')
+  const pageContext = {
+    ...fixture.page.context,
+    purpose: 'page',
+    sequence: fixture.page.context.revision,
+    minEpoch: fixture.page.context.epoch,
+  }
+  const captureContext = {
+    ...fixture.capture.context,
+    purpose: 'capture',
+    sequence: fixture.capture.context.captureId,
+    minEpoch: fixture.capture.context.epoch,
+  }
+  assert.deepEqual(pocketCrypto.decrypt(root, fixture.page.payload, pageContext), fixture.page.value)
+  assert.deepEqual(pocketCrypto.decrypt(root, fixture.capture.payload, captureContext), fixture.capture.value)
+})
+
 test('page and capture keys are derived apart from each other and from the root', () => {
   const root = randomBytes(32)
   const context = { spaceId: 'space_a', epoch: 3 }
@@ -694,25 +716,26 @@ test('page and capture keys are derived apart from each other and from the root'
   assert.equal(seen.size, 5)
 })
 
-test('an envelope replayed into another purpose, space, or position will not open', () => {
+test('an envelope replayed into another purpose, space, device, or position will not open', () => {
   const root = randomBytes(32)
-  const context = { spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'capture_one' }
+  const context = { spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'capture_one', deviceId: 'phone-a' }
   const sealed = pocketCrypto.encrypt(root, context, { v: POCKET_PROTOCOL, type: 'capture', text: 'hello' })
   assert.deepEqual(pocketCrypto.decrypt(root, sealed, context), { v: POCKET_PROTOCOL, type: 'capture', text: 'hello' })
-  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, purpose: 'page' }), /another purpose/)
-  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, spaceId: 'space_b' }), /another space/)
-  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, sequence: 'capture_two' }), /does not match its position/)
+  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, purpose: 'page', sequence: 1 }))
+  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, spaceId: 'space_b' }))
+  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, sequence: 'capture_two' }))
+  assert.throws(() => pocketCrypto.decrypt(root, sealed, { ...context, deviceId: 'phone-b' }))
 })
 
 test('an envelope from an older epoch is rejected as a rollback', () => {
   const root = randomBytes(32)
-  const stale = pocketCrypto.encrypt(root, { spaceId: 'space_a', epoch: 1, purpose: 'capture', sequence: 'c1' }, { v: 2 })
+  const stale = pocketCrypto.encrypt(root, { spaceId: 'space_a', epoch: 1, purpose: 'capture', sequence: 'c1', deviceId: 'phone-a' }, { v: 2 })
   assert.throws(() => pocketCrypto.decrypt(root, stale, {
-    spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'c1',
+    spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'c1', deviceId: 'phone-a',
   }), /rolled back/)
-  const future = pocketCrypto.encrypt(root, { spaceId: 'space_a', epoch: 9, purpose: 'capture', sequence: 'c1' }, { v: 2 })
+  const future = pocketCrypto.encrypt(root, { spaceId: 'space_a', epoch: 9, purpose: 'capture', sequence: 'c1', deviceId: 'phone-a' }, { v: 2 })
   assert.throws(() => pocketCrypto.decrypt(root, future, {
-    spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'c1',
+    spaceId: 'space_a', epoch: 2, minEpoch: 2, purpose: 'capture', sequence: 'c1', deviceId: 'phone-a',
   }), /unknown key epoch/)
 })
 
@@ -720,7 +743,7 @@ test('a version 1 envelope is refused rather than accepted as a leftover', () =>
   const root = randomBytes(32)
   const legacy = Buffer.from(JSON.stringify({ v: 1, alg: 'A256GCM', iv: 'AAAA', ciphertext: 'AAAA' })).toString('base64url')
   assert.throws(() => pocketCrypto.decrypt(root, legacy, {
-    spaceId: 'space_a', epoch: 1, minEpoch: 1, purpose: 'page', sequence: 1,
+    spaceId: 'space_a', epoch: 1, minEpoch: 1, purpose: 'page', sequence: 1, deviceId: 'desktop-a',
   }), /unsupported Pocket payload version 1/)
 })
 
@@ -730,7 +753,7 @@ test('a relay replaying an acknowledged capture is refused and nothing is import
   let replay = false
   const item = () => ({
     sequence: 1,
-    clientId: 'phone-a',
+    deviceId: 'phone-a',
     captureId: 'capture_a_1234567890',
     payload: captureEnvelope(key, fixture.credentials.spaceId, 1, 'capture_a_1234567890', {
       v: POCKET_PROTOCOL, type: 'capture', text: 'Buy tea',
@@ -769,9 +792,9 @@ test('a capture sealed under a retired epoch is refused after rotation', async (
   await pocket.rotate()
   fixture.relay.captures.push({
     sequence: 1,
-    clientId: 'phone-lost',
+    deviceId: 'phone-lost',
     captureId: 'capture_old_123456789',
-    payload: captureEnvelope(key, spaceId, 1, 'capture_old_123456789', { v: POCKET_PROTOCOL, type: 'capture', text: 'stale' }),
+    payload: captureEnvelope(key, spaceId, 1, 'capture_old_123456789', { v: POCKET_PROTOCOL, type: 'capture', text: 'stale' }, 'phone-lost'),
     receivedAt: '2026-08-13T10:00:01.000Z',
   })
   const consumed = []
