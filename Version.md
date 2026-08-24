@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.15.1
+current: 0.15.2
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.2 - 2026-08-24
+
+Fix Pocket phone pairing with Relay v0.4.0 by using the current claim response and pairing-link contract.
 
 ## 0.15.1 - 2026-08-23
 
