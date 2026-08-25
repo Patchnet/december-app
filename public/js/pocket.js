@@ -6,6 +6,9 @@ const qr = $('#pocket-qr')
 const pairingCodeOutput = $('#pocket-pairing-code')
 const pairingExpiryOutput = $('#pocket-pairing-expiry')
 const pairingRetryButton = $('#pocket-pairing-retry')
+const pairingPrepare = $('#pocket-pairing-prepare')
+const pairingOptions = $('#pocket-pairing-options')
+const pairingBeginButton = $('#pocket-pairing-begin')
 const connectButton = $('#pocket-connect')
 const reconnectButton = $('#pocket-reconnect')
 const moveButton = $('#pocket-move')
@@ -85,11 +88,14 @@ let pairingUrl = null
 let pairingCode = null
 let pairingExpiresAt = null
 let pairingTimer = null
+let pairingPollTimer = null
 let pairingMode = null
+let preparedIntent = null
 let action = null
 let errorMessage = ''
 let restorePairingFocus = null
 let pairingRequest = 0
+let pairingPollBusy = false
 let capability = null
 let pendingIntent = null
 let lastFailedIntent = null
@@ -176,6 +182,7 @@ function viewState() {
     detail: looksOffline(status.lastError) ? 'Your changes are safe here. Sync will try again.' : 'December could not finish the last sync. Try again.',
   }
   if (status.pendingRevision != null) return { key: 'offline', title: 'Waiting to sync', detail: 'Your changes are safe here and will retry.' }
+  if (!status.phoneReady) return { key: 'pairing', title: 'Waiting for your phone', detail: 'Open the installed December Pocket app and scan the QR code.' }
   return { key: 'connected', title: 'Phone paired', detail: status.lastSyncedAt ? relativeTime(status.lastSyncedAt) : 'Ready for the first phone sync.' }
 }
 
@@ -219,7 +226,9 @@ function render() {
 
 function clearPairingTimer() {
   if (pairingTimer != null) window.clearInterval(pairingTimer)
+  if (pairingPollTimer != null) window.clearInterval(pairingPollTimer)
   pairingTimer = null
+  pairingPollTimer = null
 }
 
 function forgetPairingSecrets() {
@@ -265,10 +274,46 @@ export function closePocketPairing(restoreFocus = true) {
   pairingDialog.hidden = true
   forgetPairingSecrets()
   pairingMode = null
+  preparedIntent = null
   restorePairingFocus = null
   $('#settings-pop').inert = false
   $('#settings-pop').removeAttribute('aria-hidden')
   target?.focus()
+}
+
+function preparePairing(intent) {
+  if (action || !intent?.pairing) return
+  pairingMode = intent.mode
+  preparedIntent = intent
+  restorePairingFocus = returnTargetFor(intent.mode)
+  pairingDialog.hidden = true
+  forgetPairingSecrets()
+  pairingPrepare.hidden = false
+  pairingOptions.hidden = true
+  pairingBeginButton.disabled = false
+  $('#pocket-pairing-title').textContent = pairingTitles[intent.mode] || pairingTitles.connect
+  $('#pocket-pairing-copy').textContent = 'Install December Pocket first. Open it from your Home Screen before creating the five-minute QR code.'
+  $('#settings-pop').inert = true
+  $('#settings-pop').setAttribute('aria-hidden', 'true')
+  pairingDialog.hidden = false
+  pairingBeginButton.focus()
+}
+
+async function pollPairingStatus() {
+  if (pairingDialog.hidden || !pairingUrl || action || pairingPollBusy) return
+  const request = pairingRequest
+  pairingPollBusy = true
+  try {
+    const next = await pocketPost('/api/pocket/pairing-status')
+    if (pairingDialog.hidden || request !== pairingRequest) return
+    status = next
+    render()
+    if (status.phoneReady) {
+      pairingExpiryOutput.textContent = 'Phone connected.'
+      closePocketPairing(false)
+    }
+  } catch { /* the normal status surface reports relay connectivity */ }
+  finally { pairingPollBusy = false }
 }
 
 function returnTargetFor(mode) {
@@ -292,15 +337,20 @@ function openPairing({ pairingUrl: url, pairingCode: code, pairingExpiresAt: exp
     pairingCode = code
     pairingExpiresAt = expiresAt
     pairingMode = mode
+    preparedIntent = null
     qr.replaceChildren(createQrSvg(pairingUrl))
     pairingCodeOutput.textContent = pairingCode
     $('#pocket-pairing-title').textContent = pairingTitles[mode] || pairingTitles.connect
+    $('#pocket-pairing-copy').textContent = 'In the installed December Pocket app, choose Scan QR code and point your phone at this code.'
+    pairingPrepare.hidden = true
+    pairingOptions.hidden = false
     restorePairingFocus = returnTargetFor(mode)
     $('#settings-pop').inert = true
     $('#settings-pop').setAttribute('aria-hidden', 'true')
     pairingDialog.hidden = false
     updatePairingCountdown()
     if (pairingExpiresAt != null) pairingTimer = window.setInterval(updatePairingCountdown, 1000)
+    pairingPollTimer = window.setInterval(() => void pollPairingStatus(), 2000)
     $('#pocket-pairing-close').focus()
   } catch (error) {
     pairingDialog.hidden = true
@@ -398,6 +448,7 @@ async function executePairing(intent) {
   const result = await runAction(intent)
   if (!result || request !== pairingRequest) {
     if (request !== pairingRequest) forgetPairingSecrets()
+    if (!result) closePocketPairing(false)
     return
   }
   try {
@@ -437,7 +488,7 @@ async function executeIntent(intent) {
   }
 }
 
-connectButton.addEventListener('click', () => executePairing(intents.connect))
+connectButton.addEventListener('click', () => preparePairing(intents.connect))
 reconnectButton.addEventListener('click', () => showConfirmation(intents.reconnect))
 moveButton.addEventListener('click', () => showConfirmation(intents.move))
 lostButton.addEventListener('click', () => showConfirmation(intents.lost))
@@ -450,7 +501,15 @@ confirmButton.addEventListener('click', async () => {
   const intent = pendingIntent
   hideConfirmation()
   if (intent?.name === 'disconnect') closePocketPairing(false)
-  await executeIntent(intent)
+  if (intent?.pairing) preparePairing(intent)
+  else await executeIntent(intent)
+})
+
+pairingBeginButton.addEventListener('click', async () => {
+  const intent = preparedIntent
+  if (!intent) return
+  pairingBeginButton.disabled = true
+  await executePairing(intent)
 })
 
 pairingRetryButton.addEventListener('click', async () => {

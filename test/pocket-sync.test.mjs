@@ -50,6 +50,8 @@ function relayFixture({
     move: null,
     moveClaimed: false,
     claims: [],
+    phoneReadyAt: null,
+    devicesOffline: false,
   }
   const credentials = { spaceId, desktopToken }
   let claimSeed = 0
@@ -97,6 +99,19 @@ function relayFixture({
     if (parsed.pathname === '/pair/capsules') {
       relay.capsules.set(body.selector, body)
       return Response.json({ stored: true, expiresAt: new Date(Date.now() + POCKET_CLAIM_TTL_MS).toISOString() }, { status: 201 })
+    }
+    if (parsed.pathname === '/devices') {
+      if (relay.devicesOffline) throw new Error('relay offline')
+      return Response.json({
+        keyEpoch: relay.epoch,
+        items: relay.phoneReadyAt ? [{
+          deviceId: 'pocket-1',
+          role: 'pocket',
+          readyAt: relay.phoneReadyAt,
+          readyEpoch: relay.epoch,
+          revokedAt: null,
+        }] : []
+      })
     }
     if (parsed.pathname === '/move/start') {
       relay.move = {
@@ -315,6 +330,29 @@ test('pairing presentation secrets are not persisted', async () => {
   assert.equal('pairingCode' in pocket.status(), false)
   assert.equal(JSON.stringify(persisted).includes(pairingCode), false)
   assert.equal(JSON.stringify(persisted).includes(fragment.get('secret')), false)
+})
+
+test('desktop reports a phone only after Relay confirms the current epoch is ready', async () => {
+  const { fixture, pocket } = await paired('pocket-ready')
+  assert.equal(pocket.status().phoneReady, false)
+  assert.equal(pocket.status().phoneReadyAt, null)
+
+  await pocket.checkPhoneReady()
+  assert.equal(pocket.status().phoneReady, false)
+
+  fixture.relay.phoneReadyAt = '2026-08-24T20:00:00.000Z'
+  const ready = await pocket.checkPhoneReady()
+  assert.equal(ready.phoneReady, true)
+  assert.equal(ready.phoneReadyAt, fixture.relay.phoneReadyAt)
+
+  const persisted = JSON.parse(await readFile(pocket.filePath, 'utf8'))
+  assert.equal(persisted.phoneReadyAt, fixture.relay.phoneReadyAt)
+
+  fixture.relay.devicesOffline = true
+  const offline = await pocket.checkPhoneReady()
+  assert.equal(offline.phoneReady, true, 'a transient Relay failure keeps the last confirmed readiness')
+  assert.equal(offline.phoneReadyAt, fixture.relay.phoneReadyAt)
+  assert.equal(fixture.requests.filter((request) => request.path === '/devices').length, 3)
 })
 
 test('a relay offering a long-lived pairing claim is refused', async () => {

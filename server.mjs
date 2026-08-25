@@ -360,7 +360,10 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { capability: POCKET_CAPABILITY })
     }
     if (path === '/api/pocket' && req.method === 'GET') {
-      return json(res, 200, pocket.status())
+      return json(res, 200, await pocket.checkPhoneReady())
+    }
+    if (path === '/api/pocket/pairing-status' && req.method === 'POST') {
+      return json(res, 200, await pocket.checkPhoneReady())
     }
     if (path === '/api/pocket/pair' && req.method === 'POST') {
       try {

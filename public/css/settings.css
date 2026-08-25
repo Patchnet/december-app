@@ -285,6 +285,11 @@
   font-size: 11.5px;
   cursor: pointer;
 }
+.pocket-install-steps { margin: var(--space-4) 0; padding-left: 20px; color: var(--text-2); font-size: 12.5px; line-height: 1.55; text-align: left; }
+.pocket-install-steps li + li { margin-top: 7px; }
+.pocket-pairing-begin { min-height: 42px; border: 1px solid var(--accent-edge); border-radius: 999px; padding: 0 18px; background: var(--accent-soft); color: var(--accent-ink); }
+#pocket-pairing-options { display: grid; justify-items: center; }
+#pocket-pairing-options[hidden] { display: none; }
 .pocket-actions button:hover:not(:disabled),
 .pocket-confirm button:hover:not(:disabled),
 .pocket-pairing-retry:hover:not(:disabled) { border-color: var(--accent-edge); color: var(--accent-ink); }
