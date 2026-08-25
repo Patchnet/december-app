@@ -93,15 +93,6 @@ if (hasInbox()) scheduleSettle(5000)
 const stopWatch = startWatch({ onCaptured: () => scheduleSettle() })
 
 async function pullPocketCaptures() {
-  if (pocket.status().movePending) {
-    try {
-      await pocket.finalizeMove()
-      const page = project(settleStatus())
-      pocketUploads.schedule(page, page.revision)
-    } catch (error) {
-      if (error?.status !== 409 && !/has not claimed/.test(String(error?.message || error))) throw error
-    }
-  }
   const result = await pocket.pullCaptures(({ id, text, at }) => addCapture(text, undefined, { id, at }))
   if (result.imported) scheduleSettle()
   return result
@@ -386,16 +377,10 @@ const server = createServer(async (req, res) => {
     if (path === '/api/pocket/rotate' && req.method === 'POST') {
       try {
         const reason = (await readBody(req)).reason
-        let rotated
-        if (reason === 'move-device') {
-          if (pocket.status().movePending) await pocket.cancelMove()
-          rotated = await pocket.beginMove()
-        } else {
-          rotated = reason === 'lost-phone' ? await pocket.lostPhone() : await pocket.reconnect()
-          const page = project(settleStatus())
-          pocketUploads.schedule(page, page.revision)
-          await pocketUploads.drain()
-        }
+        const rotated = await pocket.rotate({ reason })
+        const page = project(settleStatus())
+        pocketUploads.schedule(page, page.revision)
+        await pocketUploads.drain()
         return json(res, 201, {
           ...pocket.status(),
           pairingUrl: rotated.pairingUrl,
@@ -434,37 +419,6 @@ const server = createServer(async (req, res) => {
           pairingCode: replaced.pairingCode,
           pairingExpiresAt: replaced.pairingExpiresAt,
         })
-      } catch (e) {
-        return json(res, 400, { error: e.message })
-      }
-    }
-    if ((path === '/api/pocket/move' || path === '/api/pocket/move/start') && req.method === 'POST') {
-      try {
-        const moved = await pocket.beginMove()
-        return json(res, 201, {
-          ...pocket.status(),
-          pairingUrl: moved.pairingUrl,
-          pairingCode: moved.pairingCode,
-          pairingExpiresAt: moved.pairingExpiresAt,
-        })
-      } catch (e) {
-        return json(res, 400, { error: e.message })
-      }
-    }
-    if (path === '/api/pocket/move/finalize' && req.method === 'POST') {
-      try {
-        await pocket.finalizeMove()
-        const page = project(settleStatus())
-        pocketUploads.schedule(page, page.revision)
-        await pocketUploads.drain()
-        return json(res, 200, pocket.status())
-      } catch (e) {
-        return json(res, 409, { error: e.message })
-      }
-    }
-    if (path === '/api/pocket/move/cancel' && req.method === 'POST') {
-      try {
-        return json(res, 200, await pocket.cancelMove())
       } catch (e) {
         return json(res, 400, { error: e.message })
       }

@@ -47,8 +47,6 @@ function relayFixture({
     revoked: false,
     epoch: 1,
     deleted: 0,
-    move: null,
-    moveClaimed: false,
     claims: [],
     phoneReadyAt: null,
     devicesOffline: false,
@@ -73,26 +71,6 @@ function relayFixture({
       credentials.deviceId = body.deviceId
       return Response.json({ protocolVersion, ...credentials, deviceId: body.deviceId, claim: nextClaim() }, { status: 201 })
     }
-    if (parsed.pathname === '/move/finalize') {
-      if (options.headers?.authorization !== `Bearer ${relay.move?.moveToken}`) {
-        return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
-      }
-      if (!relay.moveClaimed) return Response.json({ finalized: false, epoch: body.epoch }, { status: 200 })
-      relay.epoch = body.epoch
-      relay.captures = []
-      relay.page = null
-      relay.deleted++
-      credentials.desktopToken = relay.move.desktopToken
-      return Response.json({ finalized: true, epoch: body.epoch, desktopToken: relay.move.desktopToken }, { status: 200 })
-    }
-    if (parsed.pathname === '/move/cancel') {
-      if (options.headers?.authorization !== `Bearer ${relay.move?.moveToken}`) {
-        return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
-      }
-      relay.move = null
-      return Response.json({ cancelled: true }, { status: 200 })
-    }
-
     if (options.headers?.authorization !== `Bearer ${credentials.desktopToken}`) {
       return Response.json({ error: { message: 'forbidden' } }, { status: 403 })
     }
@@ -113,21 +91,10 @@ function relayFixture({
         }] : []
       })
     }
-    if (parsed.pathname === '/move/start') {
-      relay.move = {
-        moveId: 'move_test_1234567890',
-        moveToken: 'move_token_1234567890',
-        desktopToken: 'desktop_next_token_1234567890',
-        epoch: body.epoch,
-      }
-      relay.moveClaimed = false
-      return Response.json({ protocolVersion, ...relay.move, claim: nextClaim() }, { status: 201 })
-    }
     if (parsed.pathname === '/rotate') {
       relay.epoch = body.epoch
       relay.captures = []
       relay.page = null
-      relay.move = null
       relay.deleted++
       return Response.json({ protocolVersion, epoch: body.epoch, claim: nextClaim() }, { status: 200 })
     }
@@ -542,183 +509,27 @@ test('manual-code relay failure never transmits a secret and leaves initial pair
   assert.match(request.headers.authorization, /^Bearer desktop_test_token_/)
 })
 
-test('a staged move keeps the old epoch until the new phone claims it', async () => {
+test('moving to a new phone rotates immediately and returns a fresh presentation', async () => {
   const { fixture, pocket, pairingUrl } = await paired('pocket-move')
   const oldKey = keyOf(pairingUrl)
-  const staged = await pocket.rotate({ reason: 'move-device' })
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(pocket.status().paired, true)
-  assert.equal(pocket.status().movePending, true)
-  assert.equal(fixture.relay.deleted, 0)
-  const request = fixture.requests.find((item) => item.path === '/move/start')
-  assert.equal(request.body.fromEpoch, 1)
-  assert.equal(request.body.epoch, 2)
-  assert.equal('revokeDevices' in request.body, false)
-
-  const capsule = fixture.relay.capsules.get(parseManualCode(staged.pairingCode).selector)
-  assert.deepEqual(decryptPairingCapsule({ manualCode: staged.pairingCode, capsule }), pairingBundleOf(staged.pairingUrl))
-  await assert.rejects(() => pocket.finalizeMove(), /has not claimed/)
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(pocket.secrets.contentKey, oldKey.toString('base64url'))
-
-  fixture.relay.moveClaimed = true
-  await pocket.finalizeMove()
+  await pocket.queuePage({ spaces: [{ name: 'Before move' }] })
+  await pocket.flush()
+  const moved = await pocket.rotate({ reason: 'move-device' })
   assert.equal(pocket.status().epoch, 2)
-  assert.equal(pocket.status().movePending, false)
-  assert.equal(fixture.relay.deleted, 1)
-})
-
-test('manual-code failure cancels a staged move and leaves the old phone connected', async () => {
-  const dir = await dataDir('pocket-move-capsule-failure')
-  const fixture = relayFixture()
-  let moving = false
-  const failing = async (url, options) => {
-    const path = new URL(url).pathname
-    if (path === '/pair/capsules' && moving) {
-      const body = JSON.parse(options.body)
-      fixture.requests.push({ path: '/pair-capsules-move-failed', body })
-      return Response.json({ error: { message: 'capsule storage unavailable' } }, { status: 503 })
-    }
-    const response = await fixture.fetchImpl(url, options)
-    if (path === '/move/start') moving = true
-    return response
-  }
-  const pocket = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: failing,
-    secret: protectedSecret(),
-  })
-  await pocket.pair()
-  await assert.rejects(() => pocket.beginMove(), /old phone is still connected/)
   assert.equal(pocket.status().paired, true)
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(pocket.status().movePending, false)
-  assert.equal(fixture.relay.deleted, 0)
-  assert.equal(fixture.relay.move, null)
-  const request = fixture.requests.find((item) => item.path === '/pair-capsules-move-failed')
-  assert.deepEqual(Object.keys(request.body).sort(), ['ciphertext', 'selector'])
-})
-
-test('an interrupted move survives restart without revoking the old phone', async () => {
-  const dir = await dataDir('pocket-move-restart')
-  const fixture = relayFixture()
-  const secret = protectedSecret()
-  const first = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: fixture.fetchImpl,
-    secret,
-  })
-  await first.pair()
-  const staged = await first.beginMove()
-  const raw = await readFile(join(dir, 'pocket.json'), 'utf8')
-  assert.equal(raw.includes(fixture.relay.move.moveToken), false)
-  assert.equal(raw.includes(fixture.relay.move.desktopToken), false)
-  assert.equal(raw.includes(fragmentOf(staged.pairingUrl).get('key')), false)
-
-  const restarted = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: fixture.fetchImpl,
-    secret,
-  })
-  assert.equal(restarted.status().epoch, 1)
-  assert.equal(restarted.status().paired, true)
-  assert.equal(restarted.status().movePending, true)
-  assert.equal(fixture.relay.deleted, 0)
-  fixture.relay.moveClaimed = true
-  await restarted.finalizeMove()
-  assert.equal(restarted.status().epoch, 2)
-})
-
-test('move finalize retries safely when the relay finalized but its response was lost', async () => {
-  const dir = await dataDir('pocket-move-finalize-replay')
-  const fixture = relayFixture()
-  let loseFinalizeResponse = true
-  const flaky = async (url, options) => {
-    const response = await fixture.fetchImpl(url, options)
-    if (new URL(url).pathname === '/move/finalize' && loseFinalizeResponse) {
-      loseFinalizeResponse = false
-      throw new Error('response lost')
-    }
-    return response
-  }
-  const pocket = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: flaky,
-    secret: protectedSecret(),
-  })
-  await pocket.pair()
-  await pocket.beginMove()
-  fixture.relay.moveClaimed = true
-
-  await assert.rejects(() => pocket.finalizeMove(), /response lost/)
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(pocket.status().movePending, true)
-  assert.equal(fixture.relay.epoch, 2)
-
-  await pocket.finalizeMove()
-  assert.equal(pocket.status().epoch, 2)
-  assert.equal(pocket.status().movePending, false)
-})
-
-test('an expired staged move clears safely and leaves the old phone connected', async () => {
-  const dir = await dataDir('pocket-move-expired')
-  const fixture = relayFixture()
-  const expired = async (url, options) => {
-    if (new URL(url).pathname === '/move/finalize') {
-      return Response.json({ error: { message: 'move expired' } }, { status: 410 })
-    }
-    return fixture.fetchImpl(url, options)
-  }
-  const pocket = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: expired,
-    secret: protectedSecret(),
-  })
-  await pocket.pair()
-  await pocket.beginMove()
-  await assert.rejects(() => pocket.finalizeMove(), /old phone is still connected/)
-  assert.equal(pocket.status().movePending, false)
-  assert.equal(pocket.status().paired, true)
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(fixture.relay.deleted, 0)
-})
-
-test('lost-phone rotation overrides an interrupted move and revokes immediately', async () => {
-  const { fixture, pocket } = await paired('pocket-move-lost')
-  await pocket.beginMove()
-  const replacement = await pocket.lostPhone()
-  assert.equal(fragmentOf(replacement.pairingUrl).get('epoch'), '2')
-  assert.equal(pocket.status().movePending, false)
   assert.equal(fixture.relay.deleted, 1)
   const request = fixture.requests.find((item) => item.path === '/rotate')
-  assert.equal(request.body.reason, 'lost-phone')
-})
+  assert.equal(request.body.epoch, 2)
+  assert.equal(request.body.reason, 'move-device')
+  assert.equal(request.body.revokeDevices, true)
+  assert.equal(request.body.deleteContent, true)
 
-test('a relay without staged movement fails closed and keeps the old phone connected', async () => {
-  const fixture = relayFixture()
-  const unsupported = async (url, options) => {
-    if (new URL(url).pathname === '/move/start') {
-      return Response.json({ error: { message: 'missing' } }, { status: 404 })
-    }
-    return fixture.fetchImpl(url, options)
-  }
-  const dir = await dataDir('pocket-move-unsupported')
-  const pocket = await createPocketSync({
-    dataDir: dir,
-    relayUrl: 'http://127.0.0.1:8787',
-    fetchImpl: unsupported,
-    secret: protectedSecret(),
-  })
-  await pocket.pair()
-  await assert.rejects(() => pocket.beginMove(), /Use Reconnect phone, or Phone lost or stolen/)
-  assert.equal(pocket.status().paired, true)
-  assert.equal(pocket.status().epoch, 1)
-  assert.equal(fixture.relay.deleted, 0)
+  const capsule = fixture.relay.capsules.get(parseManualCode(moved.pairingCode).selector)
+  assert.deepEqual(decryptPairingCapsule({ manualCode: moved.pairingCode, capsule }), pairingBundleOf(moved.pairingUrl))
+  assert.notEqual(pocket.secrets.contentKey, oldKey.toString('base64url'))
+  await pocket.queuePage({ spaces: [{ name: 'After move' }] })
+  await pocket.flush()
+  assert.deepEqual(fixture.requests.filter((item) => item.path === '/page').map((item) => item.body.revision), [1, 2])
 })
 
 // --- protocol v2: derived keys, bound data, rollback ----------------------
@@ -990,7 +801,6 @@ test('an orphaned version 2 migration resets to a fresh phone connection', async
     lastError: null,
     requiresRepair: true,
     pendingRevocation: null,
-    pendingMove: null,
   }))
   const fixture = relayFixture()
   const secret = protectedSecret()
