@@ -1,11 +1,16 @@
 ---
 enabled: true
-current: 0.15.3
+current: 0.15.4
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.4 - 2026-08-25
+
+Guide people through install-first Pocket pairing and confirm the phone only
+after the installed app verifies its live Relay connection.
 
 ## 0.15.3 - 2026-08-24
 
