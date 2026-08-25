@@ -113,7 +113,7 @@ test('phone repair, movement, and loss are distinct confirmed actions', () => {
   assert.match(pocket, /reconnect:[\s\S]*?reason: 'protocol-repair'[\s\S]*?confirmCopy:/)
   assert.match(pocket, /Create a fresh pairing code\? This repairs Pocket security and replaces the old phone connection\./)
   assert.match(pocket, /confirmLabel: 'Create fresh code'/)
-  assert.match(pocket, /move:[\s\S]*?reason: 'move-device'[\s\S]*?stays connected until the new phone claims the connection when that is safe/i)
+  assert.match(pocket, /move:[\s\S]*?reason: 'move-device'[\s\S]*?disconnects the old phone and rotates the encryption key/i)
   assert.match(pocket, /lost:[\s\S]*?reason: 'lost-phone'[\s\S]*?immediately revokes that phone and rotates the encryption key/)
   assert.match(pocket, /reconnectButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.reconnect\)\)/)
   assert.match(pocket, /moveButton\.addEventListener\('click', \(\) => showConfirmation\(intents\.move\)\)/)
@@ -133,6 +133,8 @@ test('every request has progress, fixed failure copy, and an actionable retry', 
   assert.match(pocket, /lastFailedIntent = intent/)
   assert.match(pocket, /retryButton\.addEventListener\('click', \(\) => executeIntent\(lastFailedIntent\)\)/)
   assert.match(pocket, /pairingRetryButton\.addEventListener[\s\S]*?executePairing\(intent\)/)
+  assert.match(pocket, /pairingBeginButton\.textContent = 'Try creating the code again'/)
+  assert.match(pocket, /pairingFailureCopy\(errorMessage\)/)
   assert.doesNotMatch(pocket, /textContent\s*=\s*(?:errorMessage|status\.lastError)/)
 })
 

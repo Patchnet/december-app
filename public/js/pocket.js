@@ -46,8 +46,8 @@ const intents = Object.freeze({
     pairing: true,
     mode: 'move',
     buttonId: 'pocket-move',
-    confirmCopy: 'Move to a new phone? Keep the old phone nearby. It stays connected until the new phone claims the connection when that is safe; otherwise December stops the move.',
-    confirmLabel: 'Prepare new phone',
+    confirmCopy: 'Move to a new phone? Creating the new code disconnects the old phone and rotates the encryption key. Install Pocket on the new phone first.',
+    confirmLabel: 'Disconnect old phone',
   },
   lost: {
     name: 'lost',
@@ -132,6 +132,14 @@ const pairingFocusables = () =>
     .filter((element) => !element.closest('[hidden]'))
 const looksOffline = (message) => /offline|fetch failed|network|timed?\s*out|timeout|unreachable|econn|enotfound/i.test(message || '')
 
+function pairingFailureCopy(message) {
+  if (looksOffline(message)) return 'December could not reach the relay. Check the connection and try again.'
+  if (/relay cannot|route not found|not found/i.test(message || '')) {
+    return 'December and its relay need matching Pocket versions. Update both, then try again.'
+  }
+  return 'December could not create the pairing code. Try again.'
+}
+
 function relativeTime(value) {
   const time = Date.parse(value)
   if (!Number.isFinite(time)) return 'Sync time unavailable'
@@ -145,7 +153,7 @@ function relativeTime(value) {
 function viewState() {
   if (action === 'pair') return { key: 'pairing', title: 'Getting your pairing options ready…', detail: 'December is creating a private five-minute connection.' }
   if (action === 'reconnect') return { key: 'pairing', title: 'Preparing a secure reconnection…', detail: 'The phone action is in progress.' }
-  if (action === 'move') return { key: 'pairing', title: 'Preparing your new phone…', detail: 'The old phone stays connected while December prepares the move.' }
+  if (action === 'move') return { key: 'pairing', title: 'Preparing your new phone…', detail: 'December is revoking the old phone and creating a fresh connection.' }
   if (action === 'lost') return { key: 'pairing', title: 'Revoking the missing phone now…', detail: 'December is rotating the encryption key before showing a new code.' }
   if (action === 'sync') return { key: 'syncing', title: 'Syncing now…', detail: 'Your local page is still available.' }
   if (action === 'disconnect') return { key: 'pairing', title: 'Disconnecting phone…', detail: 'December is removing this phone connection.' }
@@ -291,6 +299,7 @@ function preparePairing(intent) {
   pairingPrepare.hidden = false
   pairingOptions.hidden = true
   pairingBeginButton.disabled = false
+  pairingBeginButton.textContent = 'The installed app is open'
   $('#pocket-pairing-title').textContent = pairingTitles[intent.mode] || pairingTitles.connect
   $('#pocket-pairing-copy').textContent = 'Install December Pocket first. Open it from your Home Screen before creating the five-minute QR code.'
   $('#settings-pop').inert = true
@@ -448,7 +457,14 @@ async function executePairing(intent) {
   const result = await runAction(intent)
   if (!result || request !== pairingRequest) {
     if (request !== pairingRequest) forgetPairingSecrets()
-    if (!result) closePocketPairing(false)
+    if (!result && request === pairingRequest) {
+      pairingPrepare.hidden = false
+      pairingOptions.hidden = true
+      pairingBeginButton.disabled = false
+      pairingBeginButton.textContent = 'Try creating the code again'
+      $('#pocket-pairing-copy').textContent = pairingFailureCopy(errorMessage)
+      pairingBeginButton.focus()
+    }
     return
   }
   try {

@@ -124,9 +124,8 @@ underlying pairing claim because that claim remains single-use.
 ## Where the secrets rest
 
 `data/pocket.json` holds the desktop credential, the device identity, and the
-content key. A staged move also holds its next credential, content key, and
-idempotent finalize token there until it finishes or expires. In the desktop
-app these values are sealed before they touch the disk:
+content key. In the desktop app these values are sealed before they touch the
+disk:
 
 | Situation | Backend | Behaviour |
 |---|---|---|
@@ -166,16 +165,9 @@ with no key store, migration removes the plaintext secrets outright.
   a fresh presentation.
 - `POST /api/pocket/lost` — immediately perform the same safe rotation for a
   lost or stolen phone.
-- `POST /api/pocket/move` — stage the next epoch and return a fresh
-  presentation without revoking the current phone.
-- `POST /api/pocket/move/finalize` — adopt the staged epoch only after the
-  relay confirms the new phone consumed the claim; the relay atomically
-  revokes old phones at finalize.
-- `POST /api/pocket/move/cancel` — cancel a staged move and keep the current
-  phone and epoch.
 - `POST /api/pocket/rotate` — compatibility route for older local pages;
   dispatches `protocol-repair`, `move-device`, and `lost-phone` to their
-  distinct lifecycles. A move never falls through to immediate rotation.
+  atomic rotation lifecycle.
 - `POST /api/pocket/sync` — force a page upload and capture pull.
 - `POST /api/pocket/disconnect` (and `POST /api/pocket/revoke`) — ask the
   relay to delete the space and everything in it, then forget the pairing
@@ -184,16 +176,11 @@ with no key store, migration removes the plaintext secrets outright.
 The configured relay is `DECEMBER_RELAY_URL`, defaulting to
 `https://app.getdecember.me`. Non-HTTPS relay URLs are accepted only for
 localhost development. The relay endpoints the desktop expects are `/pair`,
-`/pair/capsules`, `/rotate`, `/move/start`, `/move/finalize`,
-`/move/cancel`, `/revoke`, `/page`, `/captures`, and `/captures/ack`.
-
-`/move/start` must return a claim, a move ID, an idempotent move token, and a
-staged desktop credential for the next epoch without changing the live epoch.
-`/move/finalize` authenticates with the move token and returns
-`finalized: true` only after the new phone claimed the bundle. It must be safe
-to repeat after a lost response. A relay without this contract returns a clear
-unsupported response; December keeps the old phone connected and directs the
-person to Reconnect phone or Phone lost or stolen.
+`/pair/capsules`, `/rotate`, `/revoke`, `/page`, `/captures`, and
+`/captures/ack`. `/rotate` atomically advances the epoch, revokes active phone
+credentials, deletes ciphertext sealed under the old key, and issues a fresh
+one-time claim. A retry at the new epoch returns a fresh claim without rotating
+or deleting twice.
 
 ## Loopback hardening
 
@@ -241,9 +228,9 @@ plain connection states instead of exposing protocol details:
   locally rendered QR code plus a manual code.
 - **Reconnect phone** repairs protocol or connection trouble. It confirms the
   action, immediately rotates the epoch, and returns a fresh presentation.
-- **Move to a new phone** stages a new epoch. The old phone remains usable
-  until the new phone claims the presentation and finalize succeeds. A relay
-  that cannot do this safely fails closed and points to the supported choices.
+- **Move to a new phone** confirms that the old phone will be disconnected,
+  then atomically rotates the epoch and returns a fresh presentation for the
+  installed Pocket app on the new phone.
 - **Phone lost or stolen** confirms the destructive action and immediately
   revokes phone access before showing a fresh presentation.
 - A connected phone shows the last successful sync, or says that it is ready
@@ -305,9 +292,10 @@ content key. The desktop UI applies these constraints:
 4. Continue writing on either device. Desktop writes remain local-first and
    sync retries in the background when the relay is unavailable.
 5. Use **Sync now** when an immediate upload and phone-capture pull is needed.
-6. For protocol trouble choose **Reconnect phone**. To keep using an old phone
-   until its successor connects, choose **Move to a new phone**. If the phone
-   is gone, choose **Phone lost or stolen**; its access is revoked immediately.
+6. For protocol trouble choose **Reconnect phone**. To replace a phone, install
+   Pocket on the new phone first, then choose **Move to a new phone**. Creating
+   the new code revokes the old phone immediately. If the phone is gone, choose
+   **Phone lost or stolen**.
 7. To remove Pocket from this computer entirely, choose **Disconnect**, then
    **Yes, disconnect**.
 
@@ -343,15 +331,12 @@ The operator retains the final acceptance decision.
 - [ ] Choose **Reconnect phone**. Confirm the old phone can no longer read the
       page or send captures, and that a capture it queued before the rotation
       is refused rather than imported.
-- [ ] Start **Move to a new phone**, then close December before claiming it.
-      Reopen December and confirm the old phone remains connected. Retry or
-      finish the move and confirm the epoch changes only after the new claim.
-- [ ] Start a move against a relay without staged movement. Confirm December
-      names Reconnect phone and Phone lost or stolen, and does not revoke the
-      old phone.
-- [ ] Choose **Phone lost or stolen** during an unfinished move. Confirm the
-      old phone is revoked immediately and the new presentation uses a fresh
-      epoch.
+- [ ] Install Pocket on the replacement phone, then choose **Move to a new
+      phone**. Confirm the old phone is revoked before the fresh QR appears,
+      and the new phone loads the current page after pairing.
+- [ ] Interrupt the first rotation response and retry. Confirm the relay keeps
+      the same epoch, invalidates the unseen claim, and returns one usable
+      replacement claim without deleting twice.
 - [ ] Inspect `data/pocket.json` on Windows and macOS. Confirm no credential
       or content key appears in the clear.
 - [ ] Run the desktop app on a Linux session with no keyring. Confirm December
