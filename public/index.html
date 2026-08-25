@@ -105,13 +105,23 @@
       aria-labelledby="pocket-pairing-title" aria-describedby="pocket-pairing-copy" tabindex="-1" hidden>
       <button class="pocket-pairing-close" type="button" id="pocket-pairing-close" aria-label="Close phone pairing">&times;</button>
       <h2 id="pocket-pairing-title">Connect your phone</h2>
-      <p id="pocket-pairing-copy">On your phone, open <a href="https://app.getdecember.me" target="_blank" rel="noopener noreferrer">app.getdecember.me</a>. Choose <strong>Scan QR</strong> or <strong>Enter pairing code</strong>.</p>
-      <div class="pocket-qr" id="pocket-qr" aria-label="Pairing QR code"></div>
-      <div class="pocket-code-choice" aria-hidden="true"><span>or enter pairing code</span></div>
-      <output class="pocket-pairing-code" id="pocket-pairing-code" aria-label="Pairing code"></output>
-      <p class="pocket-pairing-expiry" id="pocket-pairing-expiry" aria-live="off"></p>
-      <button class="pocket-pairing-retry" type="button" id="pocket-pairing-retry" hidden>Get a new code</button>
-      <p class="pocket-pairing-note">The relay cannot read your page. The QR and pairing code work once and stay only in this window.</p>
+      <p id="pocket-pairing-copy">Install December Pocket on your phone before creating the five-minute QR code.</p>
+      <div id="pocket-pairing-prepare">
+        <ol class="pocket-install-steps">
+          <li>On your phone, open <a href="https://app.getdecember.me" target="_blank" rel="noopener noreferrer">app.getdecember.me</a>.</li>
+          <li>Choose <strong>Add to Home Screen</strong> or <strong>Install app</strong>.</li>
+          <li>Open December from its new Home Screen icon.</li>
+        </ol>
+        <button class="pocket-pairing-begin" type="button" id="pocket-pairing-begin">The installed app is open</button>
+      </div>
+      <div id="pocket-pairing-options" hidden>
+        <div class="pocket-qr" id="pocket-qr" aria-label="Pairing QR code"></div>
+        <div class="pocket-code-choice" aria-hidden="true"><span>or use the recovery code</span></div>
+        <output class="pocket-pairing-code" id="pocket-pairing-code" aria-label="Pairing recovery code"></output>
+        <p class="pocket-pairing-expiry" id="pocket-pairing-expiry" aria-live="off"></p>
+        <button class="pocket-pairing-retry" type="button" id="pocket-pairing-retry" hidden>Get a new code</button>
+      </div>
+      <p class="pocket-pairing-note">The relay cannot read your page. The QR and recovery code work once and stay only in this window.</p>
     </section>
 
     <div class="dropzone" id="dropzone" hidden>drop to add to your page</div>
