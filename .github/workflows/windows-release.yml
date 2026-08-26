@@ -33,20 +33,93 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
 
-      - name: Publish unsigned Windows installer
-        run: npm run dist:win:publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build unsigned Windows installer
+        run: npm run dist:win
 
-      - name: Publish updater metadata deterministically
+      - name: Publish release assets deterministically
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if (-not (Test-Path -LiteralPath 'release/latest.yml')) {
-            throw 'electron-builder did not create release/latest.yml'
+          $version = (Get-Content -Raw -LiteralPath 'package.json' | ConvertFrom-Json).version
+          $installer = "release/December-Setup-$version-x64.exe"
+          $assets = @($installer, "$installer.blockmap", 'release/latest.yml')
+          foreach ($asset in $assets) {
+            if (-not (Test-Path -LiteralPath $asset)) {
+              throw "release build did not create $asset"
+            }
           }
-          gh release upload '${{ github.ref_name }}' 'release/latest.yml' --clobber
+
+          $localAssets = @($assets | ForEach-Object {
+            $item = Get-Item -LiteralPath $_
+            [pscustomobject]@{
+              path = $item.FullName
+              name = $item.Name
+              size = [long]$item.Length
+              digest = "sha256:$((Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+            }
+          })
+          function Test-AssetHealthy {
+            param($RemoteAsset, $LocalAsset)
+            if ($null -eq $RemoteAsset) { return $false }
+            return (
+              $RemoteAsset.state -eq 'uploaded' -and
+              [long]$RemoteAsset.size -eq $LocalAsset.size -and
+              [string]$RemoteAsset.digest -eq $LocalAsset.digest
+            )
+          }
+
+          $releaseJson = gh release view '${{ github.ref_name }}' --json isDraft,assets 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create '${{ github.ref_name }}' @assets `
+              --draft --verify-tag --title "December $version" --generate-notes
+            if ($LASTEXITCODE -ne 0) {
+              throw 'could not create the draft release with all required assets'
+            }
+          } else {
+            $release = $releaseJson | ConvertFrom-Json
+            foreach ($localAsset in $localAssets) {
+              $remoteAsset = @($release.assets | Where-Object {
+                $_.name -eq $localAsset.name
+              }) | Select-Object -First 1
+              if (Test-AssetHealthy $remoteAsset $localAsset) { continue }
+
+              if ($null -ne $remoteAsset) {
+                if (-not $release.isDraft) {
+                  throw "published release has an unhealthy asset: $($localAsset.name)"
+                }
+                gh api --method DELETE $remoteAsset.apiUrl
+                if ($LASTEXITCODE -ne 0) {
+                  throw "could not remove unhealthy draft asset: $($localAsset.name)"
+                }
+              }
+
+              gh release upload '${{ github.ref_name }}' $localAsset.path
+              if ($LASTEXITCODE -ne 0) {
+                throw "could not upload release asset: $($localAsset.name)"
+              }
+            }
+          }
+
+          $release = gh release view '${{ github.ref_name }}' --json isDraft,assets | ConvertFrom-Json
+          $unhealthyNames = @($localAssets | Where-Object {
+            $localAsset = $_
+            $remoteAsset = @($release.assets | Where-Object {
+              $_.name -eq $localAsset.name
+            }) | Select-Object -First 1
+            -not (Test-AssetHealthy $remoteAsset $localAsset)
+          } | ForEach-Object {
+            $_.name
+          })
+          if ($unhealthyNames.Count -gt 0) {
+            throw "release has missing or unhealthy assets: $($unhealthyNames -join ', ')"
+          }
+          if ($release.isDraft) {
+            gh release edit '${{ github.ref_name }}' --draft=false
+            if ($LASTEXITCODE -ne 0) {
+              throw 'could not publish the verified draft release'
+            }
+          }
 
       - name: Verify published release assets
         run: node scripts/verify-release-assets.mjs
