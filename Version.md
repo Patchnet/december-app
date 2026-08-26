@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.15.4
+current: 0.15.5
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.15.5 - 2026-08-25
+
+Restore reliable Pocket phone replacement and page synchronization with Relay.
 
 ## 0.15.4 - 2026-08-25
 
