@@ -37,3 +37,19 @@ jobs:
         run: npm run dist:win:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish updater metadata deterministically
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (-not (Test-Path -LiteralPath 'release/latest.yml')) {
+            throw 'electron-builder did not create release/latest.yml'
+          }
+          gh release upload '${{ github.ref_name }}' 'release/latest.yml' --clobber
+
+      - name: Verify published release assets
+        run: node scripts/verify-release-assets.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
