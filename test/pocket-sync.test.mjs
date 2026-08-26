@@ -242,6 +242,63 @@ test('capture cursor advances only after the durable consumer and ack is retried
   assert.equal(persisted.captureCursor, 1)
 })
 
+test('encrypted Pocket check actions are validated and delivered as typed messages', async () => {
+  const { fixture, pocket, key } = await paired('pocket-actions')
+  const captureId = 'action_1234567890abcdef'
+  fixture.relay.captures.push({
+    sequence: 1,
+    deviceId: 'phone-a',
+    captureId,
+    payload: captureEnvelope(key, fixture.credentials.spaceId, 1, captureId, {
+      v: POCKET_PROTOCOL,
+      type: 'action',
+      id: captureId,
+      action: 'check',
+      blockId: 'block_123',
+      itemId: 'item_456',
+      done: true,
+      expectedWhen: null,
+      createdAt: '2026-08-25T12:00:00.000Z',
+    }),
+    receivedAt: '2026-08-25T12:00:01.000Z',
+  })
+
+  const messages = []
+  const result = await pocket.pullCaptures((message) => messages.push(message))
+  assert.equal(result.imported, 1)
+  assert.deepEqual(messages, [{
+    id: captureId,
+    type: 'action',
+    action: 'check',
+    blockId: 'block_123',
+    itemId: 'item_456',
+    done: true,
+    expectedWhen: null,
+    at: '2026-08-25T12:00:00.000Z',
+  }])
+})
+
+test('Pocket refuses action envelopes that an independently updated client must not send', async () => {
+  const { fixture, pocket, key } = await paired('pocket-action-capability')
+  const captureId = 'action_false_1234567890'
+  fixture.relay.captures.push({
+    sequence: 1,
+    deviceId: 'phone-a',
+    captureId,
+    payload: captureEnvelope(key, fixture.credentials.spaceId, 1, captureId, {
+      v: POCKET_PROTOCOL, type: 'action', id: captureId, action: 'check',
+      blockId: 'block_123', itemId: 'item_456', done: false, expectedWhen: null,
+    }),
+    receivedAt: '2026-08-25T12:00:01.000Z',
+  })
+
+  const messages = []
+  const result = await pocket.pullCaptures((message) => messages.push(message))
+  assert.equal(result.imported, 0)
+  assert.equal(messages.length, 0)
+  assert.match(pocket.status().lastError, /invalid Pocket action/)
+})
+
 test('core treats deterministic Pocket capture IDs as idempotent', async () => {
   const dir = await dataDir('pocket-core')
   const previous = process.env.DECEMBER_DATA_DIR

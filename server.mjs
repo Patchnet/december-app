@@ -10,7 +10,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
@@ -93,8 +93,13 @@ if (hasInbox()) scheduleSettle(5000)
 const stopWatch = startWatch({ onCaptured: () => scheduleSettle() })
 
 async function pullPocketCaptures() {
-  const result = await pocket.pullCaptures(({ id, text, at }) => addCapture(text, undefined, { id, at }))
-  if (result.imported) scheduleSettle()
+  let captured = 0
+  const result = await pocket.pullCaptures(async (message) => {
+    if (message.type === 'action') return applyPocketAction(message.id, message)
+    captured++
+    return addCapture(message.text, undefined, { id: message.id, at: message.at })
+  })
+  if (captured) scheduleSettle()
   return result
 }
 

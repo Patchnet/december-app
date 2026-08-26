@@ -561,6 +561,51 @@ test('checking the last open item archives a do-only space and keeps items', asy
   assert.equal(page.blocks[0].items.length, 2)
 })
 
+test('Pocket checks apply once, publish receipts, and do not double-count a tracker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-pocket-action-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Routine')
+  const list = await core.createBlock(space.id, { type: 'list', title: 'Steps', items: ['stretch', 'walk'] })
+  await core.createBlock(space.id, { type: 'tracker', title: 'Progress', current: 0, target: 2, unit: 'steps' })
+  const item = core.readBlock(list.blockId).block.items[0]
+  const action = { action: 'check', blockId: list.blockId, itemId: item.id, done: true }
+
+  const first = await core.applyPocketAction('phone-action-1', action)
+  const duplicate = await core.applyPocketAction('phone-action-1', action)
+  const anotherTap = await core.applyPocketAction('phone-action-2', action)
+  const page = core.project()
+  const projected = page.spaces.find((candidate) => candidate.id === space.id)
+
+  assert.equal(first.status, 'applied')
+  assert.equal(duplicate.duplicate, true)
+  assert.equal(anotherTap.status, 'applied')
+  assert.equal(projected.blocks.find((block) => block.type === 'tracker').current, 1)
+  assert.equal(page.pocketActions.length, 2)
+  assert.deepEqual(page.pocketCapabilities, { checkActions: 1 })
+
+  await core.undoManual()
+  assert.equal(core.project().spaces.find((candidate) => candidate.id === space.id)
+    .blocks.find((block) => block.type === 'tracker').current, 0)
+  await assert.rejects(core.undoManual(), /nothing of yours to undo/)
+})
+
+test('a stale Pocket reminder action is acknowledged without advancing its recurrence', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-pocket-stale-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('Routine')
+  const reminder = await core.createBlock(space.id, {
+    type: 'reminder', title: '', text: 'Take vitamins', when: '2026-08-25', repeat: 'daily',
+  })
+
+  const receipt = await core.applyPocketAction('phone-action-stale', {
+    action: 'check', blockId: reminder.blockId, itemId: null, done: true, expectedWhen: '2026-08-24',
+  })
+  assert.equal(receipt.status, 'stale')
+  assert.equal(core.readBlock(reminder.blockId).block.when, '2026-08-25')
+  assert.deepEqual(core.project().pocketActions.at(-1), receipt)
+  assert.equal(core.canUndoManual(), false)
+})
+
 test('a keep space stays on the page after its nested list is complete', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-keep-'))
   const core = await isolatedCore(dir)
