@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -604,6 +604,26 @@ test('a stale Pocket reminder action is acknowledged without advancing its recur
   assert.equal(core.readBlock(reminder.blockId).block.when, '2026-08-25')
   assert.deepEqual(core.project().pocketActions.at(-1), receipt)
   assert.equal(core.canUndoManual(), false)
+})
+
+test('a Pocket action retry persists a receipt left volatile by the first disk failure', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-pocket-durable-'))
+  let core = await isolatedCore(dir)
+  const space = await core.createSpace('Routine')
+  const list = await core.createBlock(space.id, { type: 'list', title: 'Steps', items: ['stretch'] })
+  const item = core.readBlock(list.blockId).block.items[0]
+  const writingPath = join(dir, 'state.json.writing')
+  await mkdir(writingPath)
+
+  const action = { action: 'check', blockId: list.blockId, itemId: item.id, done: true }
+  await assert.rejects(core.applyPocketAction('phone-action-disk-retry', action))
+  await rm(writingPath, { recursive: true })
+
+  const retry = await core.applyPocketAction('phone-action-disk-retry', action)
+  assert.equal(retry.duplicate, true)
+  core = await isolatedCore(dir)
+  assert.equal(core.readBlock(list.blockId).block.items[0].done, true)
+  assert.equal(core.project().pocketActions.at(-1).id, 'phone-action-disk-retry')
 })
 
 test('a keep space stays on the page after its nested list is complete', async () => {
