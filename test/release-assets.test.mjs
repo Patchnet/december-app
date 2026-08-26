@@ -1,10 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   assertLatestMetadata,
   expectedReleaseAssets,
   verifyReleaseAssets,
 } from '../scripts/verify-release-assets.mjs'
+
+const { version: packageVersion } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+)
 
 const metadata = (version) => [
   `version: ${version}`,
@@ -31,7 +36,7 @@ test('release verification requires the installer, blockmap, and updater metadat
 })
 
 test('release verification retries an incomplete release and opens published latest.yml', async () => {
-  const version = '0.16.0'
+  const version = packageVersion
   const assets = expectedReleaseAssets(version)
   let releaseRequests = 0
   let waits = 0
@@ -64,7 +69,7 @@ test('release verification retries an incomplete release and opens published lat
 })
 
 test('release verification fails when updater metadata never becomes visible', async () => {
-  const version = '0.16.0'
+  const version = packageVersion
   const visible = expectedReleaseAssets(version).slice(0, 2)
   await assert.rejects(
     verifyReleaseAssets({

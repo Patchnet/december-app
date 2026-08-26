@@ -1,11 +1,16 @@
 ---
 enabled: true
-current: 0.16.0
+current: 0.16.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.16.1 - 2026-08-26
+
+Make Windows release publishing idempotent and verify the public installer,
+blockmap, and updater metadata before release CI succeeds.
 
 ## 0.16.0 - 2026-08-26
 
