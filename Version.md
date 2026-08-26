@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.15.5
+current: 0.16.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.16.0 - 2026-08-26
+
+Add interactive Pocket task and reminder actions with durable receipts and cross-version capability gating.
 
 ## 0.15.5 - 2026-08-25
 
