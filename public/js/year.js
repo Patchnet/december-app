@@ -73,11 +73,10 @@ function buildYear() {
       const nowM = !past && m === y.month
       const bits = []
       if (data.events) bits.push(`${data.events}`)
-      // "due", not "ahead": two lines up, ahead is a pace word. What lands
-      // in a month is due in it — a flight on the 14th, a goal by the 31st.
-      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} due</span>`)
+      if (data.overdue) bits.push(`<span class="overdue">${data.overdue} overdue</span>`)
+      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} scheduled</span>`)
       const body = bits.length ? bits.join(' · ') : future || nowM ? (m === 11 ? `in ${daysLeft} days` : '') : ''
-      const has = data.events || data.scheduled
+      const has = data.events || data.overdue || data.scheduled
       const cls = `yr-mo${nowM ? ' now' : ''}${future && !has ? ' quiet' : ''}`
       const inner = `<span class="yr-mo-name">${name.slice(0, 3)}</span><span class="yr-mo-n">${body || '·'}</span>`
       return openable && has
@@ -145,11 +144,11 @@ async function openMonth(ym) {
     .join('')
   const day = (d) => Number(d.slice(8, 10))
   const line = (l) =>
-    `<div class="mo-line${l.ahead ? ' ahead' : ''}"><span class="mo-day">${day(l.day)}</span><span class="mo-text">${esc(l.text)}</span>${
+    `<div class="mo-line${l.ahead ? ' ahead' : ''}${l.overdue ? ' overdue' : ''}"><span class="mo-day">${day(l.day)}</span><span class="mo-text">${esc(l.text)}</span>${
       l.at ? `<span class="mo-at">${esc(clockOf(l.at))}</span>` : ''
     }${l.repeat ? `<span class="mo-at">${esc(l.repeat)}</span>` : ''}${
       l.amount != null ? `<span class="mo-amt">${esc(fmtAmount(l.amount, l.unit))}</span>` : ''
-    }</div>`
+    }${l.overdue ? '<span class="mo-status">overdue</span>' : ''}</div>`
   const body = m.spaces.length
     ? m.spaces
         .map(
@@ -167,9 +166,10 @@ async function openMonth(ym) {
         .join('')
     : `<div class="ym-quiet">${future ? 'nothing scheduled yet' : 'nothing was written down this month'}</div>`
   // one honest count: what happened, what is coming, or both
-  const past = m.total - m.ahead
+  const recorded = m.total - m.ahead - m.overdue
   const counts = [
-    past ? `${past} moment${past === 1 ? '' : 's'}` : '',
+    recorded ? `${recorded} recorded` : '',
+    m.overdue ? `${m.overdue} overdue` : '',
     m.ahead ? `${m.ahead} scheduled` : '',
   ].filter(Boolean).join(' · ') || (future ? 'open' : '0 moments')
   // the month walks: one stepper pair, top right, January to December.
