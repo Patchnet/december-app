@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.17.1
+current: 0.17.2
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.17.2 - 2026-08-27
+
+Publish the attention click-routing hotfix in a verified Windows release.
 
 ## 0.17.1 - 2026-08-27
 
