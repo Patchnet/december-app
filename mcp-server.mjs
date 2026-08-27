@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 // December MCP adapter — stdio, zero dependencies, and deliberately thin.
 // It holds NO state and touches no files: every page tool call forwards over
-// loopback HTTP to the running December server, the one writer. Two
-// adapters share that seam: the page's routes and this one.
-//
-// The two lookup tools are the exception, and answered here: they write
-// nothing, so they need no writer, and living in this process is what makes
-// them harness-neutral — every engine that speaks MCP gets the same two.
+// loopback HTTP to the running December server, the one writer. The adapter
+// contributes only the page's organization tools; retrieval belongs to the
+// connected agent's native capabilities and configured permissions.
 //
 // Connect from Claude Code:    claude mcp add december -- node <this file>
 // Connect from Claude Desktop: add the same command under mcpServers.
 
 import { createInterface } from 'node:readline'
-import { WEB_TOOLS, isWebTool, callWebTool } from './lib/web-lookup.mjs'
 
 const BASE = process.env.DECEMBER_URL || 'http://localhost:3008'
 const SERVER_INFO = { name: 'december', version: '0.1.0' }
@@ -21,7 +17,7 @@ let toolsCache = null
 async function fetchTools() {
   if (toolsCache) return toolsCache
   const res = await fetch(`${BASE}/api/tools`)
-  toolsCache = [...(await res.json()).tools, ...WEB_TOOLS]
+  toolsCache = (await res.json()).tools
   return toolsCache
 }
 
@@ -94,7 +90,7 @@ rl.on('line', async (line) => {
     } else if (method === 'tools/call') {
       try {
         const args = params.arguments || {}
-        const result = isWebTool(params.name) ? await callWebTool(params.name, args) : await forwardTool(params.name, args)
+        const result = await forwardTool(params.name, args)
         send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(result) }] } })
       } catch (err) {
         send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: `error: ${err.message}` }], isError: true } })

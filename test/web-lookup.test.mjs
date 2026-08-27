@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -275,9 +276,8 @@ test('dispatch answers only its own two tools', async () => {
 })
 
 // ------------------------------------------------------------ the adapter
-// The lookup tools have to arrive over the same stdio server both engines
-// already run, or "harness-neutral" is only a claim. This drives the real
-// adapter against a stand-in December server, so no page state is touched.
+// The adapter contributes only December's organization tools. Watch still
+// owns its scheduled lookup internally through this module.
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -325,20 +325,18 @@ async function adapter(t) {
     })
 }
 
-test('the MCP adapter advertises the lookup tools and answers them itself', async (t) => {
+test('the MCP adapter advertises only December organization tools', async (t) => {
   const call = await adapter(t)
   const listed = (await call('tools/list', {})).result.tools.map((tool) => tool.name)
-  assert.deepEqual(listed, ['december_view', 'december_web_search', 'december_web_fetch'])
+  assert.deepEqual(listed, ['december_view'])
 
-  // A page tool still crosses to the server; the lookup tool never does.
   const forwarded = await call('tools/call', { name: 'december_view', arguments: {} })
   assert.match(forwarded.result.content[0].text, /"forwarded":true/)
+})
 
-  const refused = await call('tools/call', {
-    name: 'december_web_fetch',
-    arguments: { url: 'http://127.0.0.1:3008/api/tool' },
-  })
-  assert.equal(refused.result.isError, true)
-  assert.match(refused.result.content[0].text, /not on the open web/)
-  assert.match(refused.result.content[0].text, /file a look-up task/)
+test('Watch keeps web lookup as an internal scheduled dependency', async () => {
+  const watchSource = await readFile(join(ROOT, 'lib', 'watch.mjs'), 'utf8')
+  assert.match(watchSource, /from '\.\/web-lookup\.mjs'/)
+  assert.match(watchSource, /searchWeb: deps\.searchWeb \|\| realSearchWeb/)
+  assert.match(watchSource, /fetchPage: deps\.fetchPage \|\| realFetchPage/)
 })
