@@ -105,15 +105,16 @@ const spaceNameOf = (blockId) =>
 
 export const focusIsOpen = () => !!span
 
-/** A card row is eligible; the attention strip, the year, the demo and the
+/** A card row is eligible; attention views, the year, the demo and the
     onboarding ghosts are not — those are places you look, not places you
     work. */
-function eligibleRow(text) {
+export function eligibleRow(text) {
   if (!text || text.isContentEditable) return null
   const row = text.closest('.row[data-block]')
   if (!row) return null
   if (!row.closest('.space, .focus-card')) return null
   if (row.closest('#today, .year-card, .demo-card, .ghost')) return null
+  if (row.closest('.attention-card')) return null
   return row
 }
 
