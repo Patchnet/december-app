@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.17.0
+current: 0.17.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.17.1 - 2026-08-27
+
+Make attention-strip task clicks open focused task mode reliably.
 
 ## 0.17.0 - 2026-08-27
 
