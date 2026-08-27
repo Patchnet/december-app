@@ -91,6 +91,40 @@ test('Year Close carries every supported open structure faithfully and only from
   assert.equal((await readdir(join(dir, 'years'))).some((name) => name.endsWith('.writing')), false)
 })
 
+test('Year Close preserves every unfinished list item beyond the ordinary creation cap', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-year-close-long-list-'))
+  const unfinished = Array.from({ length: 35 }, (_, index) => ({
+    id: `old-${index + 1}`,
+    text: `carry item ${String(index + 1).padStart(2, '0')}`,
+    done: false,
+    src: `capture-${index + 1}`,
+  }))
+  const source = baseState(2024, [{
+    id: 'long-list-space', name: 'Long list', blocks: [
+      { id: 'long-list', type: 'list', title: 'Every item', items: unfinished },
+    ],
+  }])
+  await writeFile(join(dir, 'state.json'), JSON.stringify(source))
+  const core = await isolatedCore(dir)
+
+  await core.rolloverIfNeeded(new Date('2025-01-01T00:05:00'))
+  const archivePath = join(dir, 'years', '2024.json')
+  const archiveBeforeCarryover = await readFile(archivePath, 'utf8')
+  const pending = core.project().carryover
+  await core.applyCarryover(pending.items.map((item) => item.id))
+
+  const carried = core.project().spaces[0].blocks[0]
+  assert.deepEqual(
+    carried.items.map(({ text, src }) => ({ text, src })),
+    unfinished.map(({ text, src }) => ({ text, src })),
+  )
+  assert.equal(await readFile(archivePath, 'utf8'), archiveBeforeCarryover)
+
+  const ordinaryItems = Array.from({ length: 35 }, (_, index) => `ordinary item ${index + 1}`)
+  const ordinary = await core.createBlock('Ordinary list', { type: 'list', title: 'Capped', items: ordinaryItems })
+  assert.deepEqual(core.readBlock(ordinary.blockId).block.items.map((item) => item.text), ordinaryItems.slice(0, 30))
+})
+
 test('rollover refuses a non-identical archive without changing either year', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-year-close-conflict-'))
   const live = baseState(2024, [{ id: 'live', name: 'Live year', blocks: [] }])
