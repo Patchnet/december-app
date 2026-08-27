@@ -5,7 +5,7 @@ import { goalOnly } from './goals.js'
 
 // ------------------------------------------------------------ focus view
 
-
+let attentionItems = [], attentionReturn = null
 function buildFocus() {
   const wrap = $('#focus')
   const space = page.focusId && page.state.spaces.find((s) => s.id === page.focusId)
@@ -46,6 +46,8 @@ function buildFocus() {
 }
 
 function closeFocus() {
+  const returnTo = attentionReturn
+  attentionReturn = null
   document.documentElement.classList.remove('modal-open')
   $('#focus').dataset.confirm = ''
   page.focusId = null
@@ -54,6 +56,10 @@ function closeFocus() {
   $('#focus').innerHTML = ''
   $('#focus').dataset.u = ''
   $('#focus').dataset.help = ''
+  if (returnTo) {
+    const target = returnTo.isConnected ? returnTo : document.querySelector('[data-attention-open]') || page.field
+    target?.focus?.({ preventScroll: true })
+  }
 }
 
 // ---------------------------------------------------------------- render
@@ -667,6 +673,77 @@ function weekdayOf(iso) {
   return `${dt.toLocaleString('en', { weekday: 'short' }).toLowerCase()} ${dt.getDate()}`
 }
 
+function attentionRow(i) {
+  const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
+  if (i.kind === 'ahead') {
+    return `<button class="today-row ahead" aria-label="${esc(i.label)}, ${esc(i.sub)}"><span class="tick-slot"></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
+  }
+  if (i.kind === 'surfaced') {
+    return `<button class="today-row plain"><span class="tick-slot"></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
+  }
+  return `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}"><span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
+}
+function attentionBand(label, rows, hidden = 0) {
+  if (!rows.length) return ''
+  return `<div class="band"><span class="band-label">${label}</span><div class="band-body">${rows
+    .map((i, n) => `<div class="today-item" data-sid="${i.sid || ''}">${attentionRow(i)}${
+      hidden && n === rows.length - 1
+        ? `<button class="today-more" data-attention-open aria-haspopup="dialog" aria-controls="focus" aria-label="Show all ${attentionItems.length} Today and This week items; ${hidden} more hidden">View ${hidden} more</button>`
+        : ''
+    }</div>`)
+    .join('')}</div></div>`
+}
+function openAttention() {
+  if (!attentionItems.length) return
+  attentionReturn = document.activeElement
+  const now = attentionItems.filter((i) => i.kind !== 'ahead')
+  const week = attentionItems.filter((i) => i.kind === 'ahead')
+  const wrap = $('#focus')
+  wrap.innerHTML = `
+    <div class="focus-backdrop" data-close></div>
+    <div class="focus-wrap" data-close>
+      <article class="focus-card attention-card" role="dialog" aria-modal="true" aria-labelledby="attention-title">
+        <div class="attention-head">
+          <h2 class="space-name" id="attention-title">Today and this week</h2>
+          <button class="btn-quiet attention-close" data-close data-attention-close>Close and return</button>
+        </div>
+        <div class="attention-list">
+          ${attentionBand('today', now)}
+          ${attentionBand('this week', week)}
+        </div>
+      </article>
+    </div>`
+  document.documentElement.classList.add('modal-open')
+  wrap.querySelector('[data-attention-close]')?.focus({ preventScroll: true })
+}
+
+// Task-focus gets first say in capture; the rest keep strip navigation.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-attention-open]')) {
+    e.stopImmediatePropagation(); openAttention(); return
+  }
+  const row = e.target.closest('#focus .attention-list .today-row')
+  const keyboardCheck = row?.matches('.row[data-block]') && e.detail === 0
+  if (!row || e.target.closest('.tick') || keyboardCheck) return
+  const sid = row.closest('.today-item')?.dataset.sid
+  if (!sid) return
+  e.stopImmediatePropagation()
+  closeFocus()
+  hooks.jumpToSpace(sid)
+})
+
+document.addEventListener('keydown', (e) => {
+  const card = document.querySelector('.attention-card')
+  if (e.key !== 'Tab' || !card) return
+  const controls = [...card.querySelectorAll('button:not([disabled])')]
+  const [first, last] = [controls[0], controls.at(-1)]
+  if (e.shiftKey && (document.activeElement === first || !card.contains(document.activeElement))) {
+    e.preventDefault(); last?.focus()
+  } else if (!e.shiftKey && (document.activeElement === last || !card.contains(document.activeElement))) {
+    e.preventDefault(); first?.focus()
+  }
+})
+
 /** What needs you, in two bands: what is due now, and what is coming.
     The horizon used to stop at tomorrow, so a page holding eight dated
     things could tell you about none of them — everything you had written
@@ -724,45 +801,13 @@ function renderToday() {
   page.attentionCount = now.length + week.length
   maybeNotify(now)
   const all = [...now, ...week]
+  attentionItems = all
   const key = all.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
   if (box.dataset.key === key) return
   // rows animate in only on the strip's first appearance; later reshuffles
   // must not replay entrances
   if (box.dataset.key !== undefined) box.classList.add('norise')
   box.dataset.key = key
-
-  // Today is where you act: it keeps the tick. The week ahead is a look
-  // forward, so a row there carries its day instead and opens the card.
-  const rowFor = (i) => {
-    const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
-    if (i.kind === 'ahead') {
-      return `<button class="today-row ahead" aria-label="${esc(i.label)}, ${esc(i.sub)}">
-          <span class="tick-slot"></span>
-          <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-    }
-    if (i.kind === 'surfaced') {
-      return `<button class="today-row plain">
-          <span class="tick-slot"></span>
-          <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-    }
-    return `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}">
-        <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
-        <span class="row-text">${esc(i.label)}</span>${sub}</button>`
-  }
-  // The overflow count rides on the right of the last row rather than
-  // taking a line to itself. A line of its own cost 24px in a region that
-  // has none spare, and pushed everything else down for six characters.
-  const band = (label, rows, tail) =>
-    rows.length
-      ? `<div class="band"><span class="band-label">${label}</span><div class="band-body">${rows
-          .map(
-            (i, n) =>
-              `<div class="today-item" data-sid="${i.sid || ''}">${rowFor(i)}${
-                tail && n === rows.length - 1 ? `<span class="today-more">${tail}</span>` : ''
-              }</div>`
-          )
-          .join('')}</div></div>`
-      : ''
 
   // How much fits is a question about pixels, and pixels are something the
   // page can measure. Three times now this was a hand-picked number that
@@ -774,9 +819,12 @@ function renderToday() {
     const a = now.slice(0, nCount)
     const b = week.slice(0, wCount)
     const left = now.length - a.length + (week.length - b.length)
-    const tail = left > 0 ? `+${left} more` : ''
     box.innerHTML =
-      band('today', a, b.length ? '' : tail) + band('this week', b, tail)
+      attentionBand('today', a, b.length ? 0 : left) +
+      attentionBand('this week', b, left) +
+      (!a.length && !b.length && left
+        ? `<div class="band attention-overflow-only"><span class="band-label">attention</span><button class="today-more" data-attention-open aria-haspopup="dialog" aria-controls="focus" aria-label="Show all ${left} Today and This week items">View all ${left} items</button></div>`
+        : '')
   }
   const floor = () => document.querySelector('.moment')?.getBoundingClientRect().bottom ?? 0
   const overflows = () => {

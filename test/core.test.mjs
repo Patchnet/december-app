@@ -886,7 +886,7 @@ test('a month faces forward: scheduled reminders and goal horizons appear in it'
   assert.equal(nov.ahead, 2)
   const trips = nov.spaces.find((s) => s.name === 'Trips')
   assert.ok(trips.lines.some((l) => l.ahead && l.text === 'Flight to Denver' && l.at === '09:30'))
-  assert.match(trips.headline, /1 due/)
+  assert.match(trips.headline, /1 scheduled/)
   assert.ok(nov.spaces.find((s) => s.name === 'Running')?.lines.some((l) => l.goal && /goal: 100 miles/.test(l.text)))
 
   // the year counts them for the month rows
@@ -896,4 +896,44 @@ test('a month faces forward: scheduled reminders and goal horizons appear in it'
   const st = core.agentView().spaces.find((s) => s.name === 'Trips')
   await core.check(st.blocks[0].id, null, true)
   assert.equal(core.project().year.months[10].scheduled, 1)
+})
+
+test('a month separates overdue reminders, future reminders, and completed history', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'december-month-truth-'))
+  const core = await isolatedCore(dir)
+  const space = await core.createSpace('House')
+  const pastMonth = '2000-03'
+  const futureYear = new Date().getFullYear() + 1
+  const futureMonth = `${futureYear}-10`
+
+  await core.createBlock(space.id, {
+    type: 'reminder', title: '', text: 'Return the old keys', when: `${pastMonth}-04`, at: '09:00',
+  })
+  const completed = await core.createBlock(space.id, {
+    type: 'reminder', title: '', text: 'Renew the old permit', when: `${pastMonth}-08`,
+  })
+  await core.check(completed.blockId, null, true)
+  await core.createBlock(space.id, {
+    type: 'reminder', title: '', text: 'Book the inspection', when: `${futureMonth}-12`, at: '14:30',
+  })
+
+  const past = core.readMonth(pastMonth)
+  const housePast = past.spaces.find((s) => s.name === 'House')
+  const overdue = housePast.lines.find((l) => l.text === 'Return the old keys')
+  const done = housePast.lines.find((l) => l.text === 'Renew the old permit')
+  assert.deepEqual({ overdue: overdue.overdue, ahead: overdue.ahead }, { overdue: true, ahead: undefined })
+  assert.equal(done.overdue, undefined, 'completed history stays neutral')
+  assert.equal(done.ahead, undefined, 'completed history is not scheduled')
+  assert.equal(housePast.lines.filter((l) => l.text === 'Renew the old permit').length, 1, 'history is not duplicated')
+  assert.equal(past.overdue, 1)
+  assert.equal(past.ahead, 0)
+  assert.match(housePast.headline, /1 thing done/)
+  assert.match(housePast.headline, /1 overdue/)
+
+  const future = core.readMonth(futureMonth)
+  const scheduled = future.spaces.find((s) => s.name === 'House').lines[0]
+  assert.deepEqual({ ahead: scheduled.ahead, overdue: scheduled.overdue }, { ahead: true, overdue: undefined })
+  assert.equal(future.ahead, 1)
+  assert.equal(future.overdue, 0)
+  assert.match(future.spaces[0].headline, /1 scheduled/)
 })
