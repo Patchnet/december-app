@@ -24,6 +24,11 @@ test('unknown engine is rejected before anything persists', async () => {
   await assert.rejects(() => updateSettings({ engine: 'skynet' }), /unknown engine/)
 })
 
+test('model settings keep the existing trim and length boundary', () => {
+  const source = readFileSync(new URL('../lib/settings.mjs', import.meta.url), 'utf8')
+  assert.match(source, /if \(patch\.model !== undefined\) settings\.model = String\(patch\.model\)\.trim\(\)\.slice\(0, 80\)/)
+})
+
 test('both engines carry a label and a binary', () => {
   for (const [key, e] of Object.entries(ENGINES)) {
     assert.ok(e.label, `${key} has a label`)
