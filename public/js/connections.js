@@ -24,7 +24,7 @@ const organizingEngines = [
 // Model picker: pure state start
 export const MODEL_SEEDS = Object.freeze({
   claude: Object.freeze(['', 'sonnet', 'opus', 'haiku']),
-  codex: Object.freeze(['', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+  codex: Object.freeze(['', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
 })
 
 export const CUSTOM_MODEL_VALUE = '__december_custom_model__'

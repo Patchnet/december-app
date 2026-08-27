@@ -23,7 +23,7 @@ const {
 
 test('model choices are seeded once with the supported values for each engine', () => {
   assert.deepEqual(MODEL_SEEDS.claude, ['', 'sonnet', 'opus', 'haiku'])
-  assert.deepEqual(MODEL_SEEDS.codex, ['', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+  assert.deepEqual(MODEL_SEEDS.codex, ['', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
   assert.ok(Object.isFrozen(MODEL_SEEDS))
   assert.ok(Object.values(MODEL_SEEDS).every(Object.isFrozen))
 })
