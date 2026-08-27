@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ALLOWED, PROMPT, parseSurfaceReply, runEnginePrompt } from '../lib/settle.mjs'
-import { WEB_TOOLS } from '../lib/web-lookup.mjs'
 
 test('surface reply parsing extracts a fenced array and validates items', () => {
   const raw = 'Here you go:\n```json\n[{"label":"Call Ana","reason":"waiting","space":"People","until":"2026-08-15"}]\n```\n'
@@ -77,32 +76,32 @@ test('Claude and Codex prompts use stdin and never argv', async (t) => {
   }
 })
 
-test('lookup reaches the settle agent as December MCP tools, not engine builtins', () => {
+test('Claude pre-approves only December organization tools without restricting native capabilities', () => {
   const tools = ALLOWED.split(',')
-  for (const tool of WEB_TOOLS) {
-    assert.ok(tools.includes(`mcp__december__${tool.name}`), `${tool.name} must be allowed during a settle`)
-  }
-  // Claude's own web tools would give Codex settles a different page, and a
-  // shell or an editor has no business in someone's page at all.
-  for (const banned of ['WebSearch', 'WebFetch', 'Bash', 'Write', 'Edit', 'Glob', 'Grep', 'Task']) {
-    assert.ok(!tools.includes(banned), `${banned} must never be allowed during a settle`)
-  }
-  assert.ok(tools.every((t) => t === 'Read' || t.startsWith('mcp__december__december_')))
+  assert.ok(tools.length > 0)
+  assert.ok(tools.every((tool) => tool.startsWith('mcp__december__december_')))
+  assert.ok(!tools.includes('mcp__december__december_web_search'))
+  assert.ok(!tools.includes('mcp__december__december_web_fetch'))
+  assert.ok(!tools.includes('Read'), 'native file access must use the person\'s agent permissions')
 })
 
-test('the standing instructions gate lookup on an explicit ask and forbid inventing', () => {
+test('the standing instructions use native retrieval only on an explicit ask and forbid inventing', () => {
   const prompt = PROMPT()
-  assert.match(prompt, /december_web_search/)
-  assert.match(prompt, /december_web_fetch/)
+  assert.doesNotMatch(prompt, /december_web_search/)
+  assert.doesNotMatch(prompt, /december_web_fetch/)
+  assert.doesNotMatch(prompt, /Use only your december_\* tools/)
+  assert.match(prompt, /native retrieval capabilities/)
+  assert.match(prompt, /configured permissions/)
+  assert.match(prompt, /native file, PDF, image, or document access/)
   assert.match(prompt, /only when a capture explicitly asks/i)
   assert.match(prompt, /Milk stays milk/i)
-  assert.match(prompt, /Never invent a date, a time, a score, a price, or a name/)
+  assert.match(prompt, /Never invent a date, a time, a score, a price, or a name the source does not state/)
   assert.match(prompt, /file a look-up task instead/)
   assert.match(prompt, /an ordinary capture is never looked up/)
-  assert.match(prompt, /a search snippet is never a fact/)
+  assert.match(prompt, /naming the source/)
 })
 
-test('a codex settle gets the same December MCP surface as the Claude agent', async (t) => {
+test('a Codex settle adds December MCP without overriding native sandbox configuration', async (t) => {
   const fixture = await fakeCli(t)
   await runEnginePrompt('codex', 'sentinel', {
     binary: process.execPath,
@@ -114,7 +113,7 @@ test('a codex settle gets the same December MCP surface as the Claude agent', as
   const { argv } = JSON.parse(await readFile(fixture.record, 'utf8'))
   assert.ok(argv.includes('mcp_servers.december.command="node"'), 'codex must run December\'s own MCP server')
   assert.ok(argv.some((a) => /mcp_servers\.december\.args=.*mcp-server\.mjs/.test(a)))
-  assert.ok(argv.includes('sandbox_mode="read-only"'), 'lookup must not come with a writable sandbox')
+  assert.ok(!argv.some((arg) => /sandbox_mode/.test(arg)), 'Codex must inherit the person\'s sandbox configuration')
 })
 
 test('one-shot engine process failures stay bounded and controlled', async (t) => {

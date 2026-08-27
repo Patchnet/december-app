@@ -21,6 +21,79 @@ const organizingEngines = [
   { key: 'codex', label: 'Codex', logo: 'codex.png' },
 ]
 
+// Model picker: pure state start
+export const MODEL_SEEDS = Object.freeze({
+  claude: Object.freeze(['', 'sonnet', 'opus', 'haiku']),
+  codex: Object.freeze(['', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+})
+
+export const CUSTOM_MODEL_VALUE = '__december_custom_model__'
+
+export function modelPickerState(engine, savedModel) {
+  const models = MODEL_SEEDS[engine] || MODEL_SEEDS.claude
+  const model = String(savedModel || '')
+  const custom = !models.includes(model)
+  return {
+    models,
+    model,
+    custom,
+    selected: custom ? CUSTOM_MODEL_VALUE : model,
+  }
+}
+
+export function modelPickerSelection(selected) {
+  return selected === CUSTOM_MODEL_VALUE
+    ? { custom: true }
+    : { custom: false, model: selected }
+}
+
+export function customModelValue(value) {
+  return String(value).trim()
+}
+// Model picker: pure state end
+
+const modelInput = $('#model-input')
+const modelSourceRow = modelInput.closest('.set-row')
+const modelRow = document.createElement('div')
+modelRow.className = modelSourceRow.className
+modelSourceRow.replaceWith(modelRow)
+while (modelSourceRow.firstChild) modelRow.append(modelSourceRow.firstChild)
+const modelLabel = modelRow.querySelector('.set-label')
+const modelPicker = document.createElement('span')
+const modelSelect = document.createElement('select')
+
+modelLabel.id = 'model-label'
+modelPicker.className = 'model-picker'
+modelSelect.id = 'model-select'
+modelSelect.className = 'set-input set-select'
+modelSelect.setAttribute('aria-labelledby', modelLabel.id)
+modelInput.setAttribute('aria-label', 'Custom model')
+modelInput.placeholder = 'model ID or alias'
+modelInput.classList.add('model-custom-input')
+modelInput.hidden = true
+modelInput.remove()
+modelPicker.append(modelSelect, modelInput)
+modelRow.append(modelPicker)
+
+function modelOption(value) {
+  const option = document.createElement('option')
+  option.value = value
+  option.textContent = value || 'Engine default'
+  return option
+}
+
+function renderModelPicker(settings) {
+  const state = modelPickerState(settings.engine, settings.model)
+  modelSelect.replaceChildren(
+    ...state.models.map(modelOption),
+    modelOption(CUSTOM_MODEL_VALUE)
+  )
+  modelSelect.lastElementChild.textContent = 'Custom…'
+  modelSelect.value = state.selected
+  modelInput.hidden = !state.custom
+  if (document.activeElement !== modelInput) modelInput.value = state.model
+}
+
 const connectionClients = [
   { key: 'claude-code', label: 'Claude Code', logo: 'claude-code.png', guidance: 'Install Claude Code and sign in once.' },
   { key: 'claude-desktop', label: 'Claude Desktop', logo: 'claude.png', guidance: 'Open Claude Desktop once so its local config exists.' },
@@ -90,7 +163,7 @@ async function connectClient(client, button) {
 }
 
 const settingsFocusables = () =>
-  [...settingsPop.querySelectorAll('button:not(:disabled), input:not(:disabled), a[href]')]
+  [...settingsPop.querySelectorAll('button:not(:disabled), select:not(:disabled), input:not(:disabled), a[href]')]
     .filter((element) => !element.closest('[hidden]'))
 
 function closeSettings(restoreFocus = true) {
@@ -115,11 +188,14 @@ function renderSettings(s) {
     b.setAttribute('aria-checked', String(s.engine === key))
     b.disabled = !s.engines[key]
     b.title = s.engines[key] ? '' : `${label} CLI not found on this machine`
-    b.addEventListener('click', () => saveSettings({ engine: key }))
+    b.addEventListener('click', async () => {
+      const previous = currentSettings
+      renderModelPicker({ ...currentSettings, engine: key })
+      if (!await saveSettings({ engine: key })) renderModelPicker(previous)
+    })
     seg.appendChild(b)
   }
-  const input = $('#model-input')
-  if (document.activeElement !== input) input.value = s.model || ''
+  renderModelPicker(s)
   for (const key of ['claude', 'codex']) {
     const pathInput = $(`#${key}-path`)
     if (document.activeElement !== pathInput) pathInput.value = s.enginePaths?.[key] || ''
@@ -163,8 +239,19 @@ $('#open-can').addEventListener('click', () => {
   showIntro()
 })
 
-$('#model-input').addEventListener('change', (e) => saveSettings({ model: e.target.value }))
-$('#model-input').addEventListener('keydown', (e) => {
+modelSelect.addEventListener('change', async (event) => {
+  const selection = modelPickerSelection(event.target.value)
+  if (selection.custom) {
+    modelInput.hidden = false
+    modelInput.focus()
+    return
+  }
+  modelInput.hidden = true
+  await saveSettings({ model: selection.model })
+})
+
+modelInput.addEventListener('change', (event) => saveSettings({ model: customModelValue(event.target.value) }))
+modelInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') e.target.blur()
 })
 
