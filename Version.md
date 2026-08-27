@@ -1,11 +1,15 @@
 ---
 enabled: true
-current: 0.16.1
+current: 0.17.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.17.0 - 2026-08-27
+
+Add Year Close with immutable annual archives, selective carryover, safe recovery, and lossless unfinished-list restoration.
 
 ## 0.16.1 - 2026-08-26
 
