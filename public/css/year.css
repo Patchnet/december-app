@@ -304,3 +304,19 @@ button.ym.future .ym-name { color: var(--text-2); }
 .mo-step:hover:not(:disabled) { opacity: 1; color: var(--text-1); background: var(--surface-1); }
 .mo-step:disabled { opacity: 0.18; cursor: default; }
 .mo-step:focus-visible { outline: none; box-shadow: var(--focus-ring-field); opacity: 1; }
+
+/* Clean Slate owns the page while it asks a question. Native `inert` stops
+   pointer and keyboard interaction in the shell; these rules make the
+   reduced-motion version settle immediately without changing focus order. */
+.co-card[role="dialog"]:focus { outline: none; }
+.co-card .co-item-label { margin-top: 0; font-weight: 400; }
+@media (prefers-reduced-motion: reduce) {
+  .co-card,
+  .co-card.co-exit-kept,
+  .co-card.co-exit-left {
+    animation: none;
+    transition: none;
+    transform: none;
+    opacity: 1;
+  }
+}

@@ -10,7 +10,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
@@ -126,39 +126,6 @@ function backup() {
 }
 backup()
 const backupTimer = setInterval(backup, 6 * 3600 * 1000)
-
-/** The year as a document you keep. */
-function exportMarkdown() {
-  const p = project()
-  const y = p.year.year
-  const lines = [`# December ${y}`, '', `_Exported ${new Date().toISOString().slice(0, 10)}_`, '']
-  if (p.about?.markdown) lines.push('## About Me', '', p.about.markdown, '')
-  for (const s of p.spaces) {
-    lines.push(`## ${s.name}`, '')
-    for (const b of s.blocks) {
-      if (b.type === 'tracker') lines.push(`**${b.title || 'Progress'}**: ${b.current} of ${b.target}${b.unit ? ` ${b.unit}` : ''}`, '')
-      if (b.type === 'ledger') {
-        lines.push(`**${b.title || 'Ledger'}**: total ${b.unit === '$' ? '$' : ''}${b.total}${b.unit && b.unit !== '$' ? ` ${b.unit}` : ''}`, '')
-        for (const e of b.entries) lines.push(`- ${e.at?.slice(0, 10) || ''} ${e.label}: ${b.unit === '$' ? '$' : ''}${e.amount}`)
-        lines.push('')
-      }
-      if (b.type === 'list') {
-        if (b.title) lines.push(`**${b.title}**`, '')
-        for (const i of b.items) lines.push(`- [${i.done ? 'x' : ' '}] ${i.text}${i.doneAt ? ` _(${i.doneAt.slice(0, 10)})_` : ''}`)
-        lines.push('')
-      }
-      if (b.type === 'streak') lines.push(`**${b.title}**: ${b.dates.length} days`, '')
-      if (b.type === 'note') lines.push(...(b.title ? [`**${b.title}**`, ''] : []), b.text, '')
-      if (b.type === 'reminder') lines.push(`- [${b.done ? 'x' : ' '}] ${b.text}${b.when ? ` _(${b.when}${b.repeat ? `, ${b.repeat}` : ''})_` : ''}`, '')
-    }
-  }
-  const names = ['January','February','March','April','May','June','July','August','September','October','November','December']
-  lines.push('## The year, month by month', '')
-  p.year.months.forEach((m, i) => {
-    if (m.events || m.highlights.length) lines.push(`- **${names[i]}**: ${m.events} moments${m.highlights.length ? ` — ${m.highlights.join('; ')}` : ''}`)
-  })
-  return lines.join('\n')
-}
 
 // Every answer carries the same small set of refusals: don't guess the type,
 // don't leak the address, don't let another document frame or open into this
@@ -618,6 +585,21 @@ const server = createServer(async (req, res) => {
         'content-disposition': `attachment; filename="december-${new Date().getFullYear()}.md"`,
       })
       return res.end(md)
+    }
+    const archivedExport = /^\/api\/export\/(\d{4})\.md$/.exec(path)
+    if (archivedExport && req.method === 'GET') {
+      try {
+        const year = Number(archivedExport[1])
+        const md = exportMarkdown(year)
+        res.writeHead(200, {
+          ...SECURITY_HEADERS,
+          'content-type': 'text/markdown; charset=utf-8',
+          'content-disposition': `attachment; filename="december-${year}.md"`,
+        })
+        return res.end(md)
+      } catch (e) {
+        return json(res, 404, { error: e.message })
+      }
     }
 
     // Run the surfacing sense on demand.
