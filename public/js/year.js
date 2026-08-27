@@ -21,7 +21,6 @@ function buildYear() {
   const wrap = $('#focus')
   const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
   const past = !!page.yearShown
-  const openable = !past
 
   // ---- the year's rhythm: one strip, week by week — what happened in
   // ink, what is scheduled in outline. One graphic instead of a ladder
@@ -79,7 +78,7 @@ function buildYear() {
       const has = data.events || data.overdue || data.scheduled
       const cls = `yr-mo${nowM ? ' now' : ''}${future && !has ? ' quiet' : ''}`
       const inner = `<span class="yr-mo-name">${name.slice(0, 3)}</span><span class="yr-mo-n">${body || '·'}</span>`
-      return openable && has
+      return has
         ? `<button class="${cls} has" data-month="${y.year}-${String(m + 1).padStart(2, '0')}">${inner}</button>`
         : `<div class="${cls}">${inner}</div>`
     })
@@ -111,7 +110,7 @@ function buildYear() {
         <div class="yr-months">${cells}</div>
         ${hl && !past ? `<div class="yr-hl">${esc(trim(hl, 96))}</div>` : ''}
         ${held}
-        ${past ? '' : `<a class="retire-link" href="/api/export.md" download>download the year</a>`}
+        <a class="retire-link" href="${past ? `/api/export/${y.year}.md` : '/api/export.md'}" download>download the year</a>
       </article>
     </div>`
   page.yearOpen = true
@@ -216,14 +215,91 @@ document.addEventListener('keydown', (e) => {
 
 
 const coCount = () => page.state.carryover?.items.length || 0
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+let carryoverReturn = null
 
-function renderCarryover() {
+function carryoverDialog() {
+  return document.querySelector('.co-card[role="dialog"]')
+}
+
+function setCarryoverModal(open) {
+  document.documentElement.classList.toggle('modal-open', open)
+  const shell = $('#shell')
+  if (shell) shell.inert = open
+}
+
+function activateCarryoverDialog() {
+  const wrap = $('#focus')
+  const dialog = carryoverDialog()
+  if (!dialog) return
+  if (!carryoverReturn || !carryoverReturn.isConnected) {
+    const active = document.activeElement
+    carryoverReturn = active && !wrap.contains(active) ? active : page.field
+  }
+  setCarryoverModal(true)
+  const target = dialog.querySelector('[data-co-next], [data-co-yes], [data-co-no], [data-co-park]') || dialog.querySelector(FOCUSABLE) || dialog
+  target.focus({ preventScroll: true })
+}
+
+function deactivateCarryoverDialog({ restore = true } = {}) {
+  setCarryoverModal(false)
+  const target = carryoverReturn?.isConnected ? carryoverReturn : page.field
+  carryoverReturn = null
+  if (restore) target?.focus?.({ preventScroll: true })
+}
+
+function parkCarryover({ restore = true } = {}) {
+  page.coParked = true
+  renderCarryover({ restore })
+  renderCarryoverNudge()
+}
+
+function trapCarryoverFocus(e) {
+  const dialog = carryoverDialog()
+  if (!dialog || e.key !== 'Tab') return false
+  const controls = [...dialog.querySelectorAll(FOCUSABLE)]
+  if (!controls.length) {
+    e.preventDefault()
+    dialog.focus({ preventScroll: true })
+    return true
+  }
+  const first = controls[0]
+  const last = controls[controls.length - 1]
+  const active = document.activeElement
+  if (e.shiftKey && (active === first || !dialog.contains(active))) {
+    e.preventDefault()
+    last.focus({ preventScroll: true })
+  } else if (!e.shiftKey && (active === last || !dialog.contains(active))) {
+    e.preventDefault()
+    first.focus({ preventScroll: true })
+  }
+  return true
+}
+
+function handleCarryoverKeydown(e) {
+  if (!page.state?.carryover || page.coParked || !carryoverDialog()) return false
+  if (e.key === 'Tab') return trapCarryoverFocus(e)
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    parkCarryover()
+    return true
+  }
+  if (page.coIndex > 0 && (e.key === 'y' || e.key === 'n')) {
+    e.preventDefault()
+    coAnswer(e.key === 'y', document.querySelector(e.key === 'y' ? '[data-co-yes]' : '[data-co-no]'))
+    return true
+  }
+  return false
+}
+
+function renderCarryover({ restore = true } = {}) {
   const co = page.state.carryover
   const wrap = $('#focus')
   if (!co || page.coParked) {
     if (wrap.dataset.co) {
       wrap.dataset.co = ''
       wrap.innerHTML = ''
+      deactivateCarryoverDialog({ restore })
     }
     return
   }
@@ -240,8 +316,8 @@ function renderCarryover() {
       ? `<div class="co-words">${f.highlights.map((h) => `<div class="co-word">${esc(h)}</div>`).join('')}</div>`
       : ''
     card = `
-      <h2 class="space-name">Clean slate.</h2>
-      <p class="co-read">${co.fromYear} is a full page now: <b>${f.done}</b> thing${f.done === 1 ? '' : 's'} finished, <b>${f.met}</b> goal${f.met === 1 ? '' : 's'} met, <b>${f.moments}</b> moment${f.moments === 1 ? '' : 's'} written.</p>
+      <h2 class="space-name" id="co-title">Clean slate.</h2>
+      <p class="co-read" id="co-description">${co.fromYear} is a full page now: <b>${f.done}</b> thing${f.done === 1 ? '' : 's'} finished, <b>${f.met}</b> goal${f.met === 1 ? '' : 's'} met, <b>${f.moments}</b> moment${f.moments === 1 ? '' : 's'} written.</p>
       ${words}
       <p class="co-read">It stays whole. <button class="co-link" data-co-look>Look through ${co.fromYear}</button> anytime.</p>
       ${n ? `<p class="co-read"><b>${n}</b> thread${n === 1 ? ' was' : 's were'} still open when the page turned. One at a time: keep it, or leave it.</p>` : '<p class="co-read">Nothing was left open. The new page is yours.</p>'}
@@ -252,6 +328,7 @@ function renderCarryover() {
   } else {
     const it = co.items[page.coIndex - 1]
     const answered = page.coAnswered.get(it.id)
+    const itemName = it.title || it.text || `${kinds[it.kind] || 'thread'} from ${it.space}`
     const dots = co.items
       .map((x, i) => {
         const cls = i === page.coIndex - 1 ? 'now' : page.coAnswered.has(x.id) ? (page.coAnswered.get(x.id) ? 'kept' : 'left') : ''
@@ -269,8 +346,8 @@ function renderCarryover() {
     card = `
       <div class="co-ghost" aria-hidden="true">${co.fromYear}</div>
       <div class="co-dots">${dots}</div>
-      <div class="co-item-label">${esc(it.title || it.text || '')}</div>
-      <div class="when-sub" style="margin:0 0 18px">${esc(it.space)} · ${kinds[it.kind]}${it.note ? ` · ${esc(it.note)}` : ''}</div>
+      <h2 class="co-item-label" id="co-title">${esc(itemName)}</h2>
+      <div class="when-sub" id="co-description" style="margin:0 0 18px">${esc(it.space)} · ${kinds[it.kind]}${it.note ? ` · ${esc(it.note)}` : ''}</div>
       <div class="chips">
         <button class="chip-btn ${answered === true ? 'chosen' : ''}" data-co-yes>bring it in</button>
         <button class="chip-btn ${answered === false ? 'chosen' : ''}" data-co-no>leave it with ${co.fromYear}</button>
@@ -281,9 +358,9 @@ function renderCarryover() {
   wrap.innerHTML = `
     <div class="focus-backdrop"></div>
     <div class="focus-wrap">
-      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-label="Clean slate">${card}</article>
+      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-labelledby="co-title" aria-describedby="co-description" tabindex="-1">${card}</article>
     </div>`
-  if (!reduced) wrap.querySelector('.chip-btn')?.focus()
+  activateCarryoverDialog()
 }
 
 /** Answer the current card; when every thread has an answer, commit. */
@@ -318,11 +395,12 @@ async function coCommit() {
   wrap.innerHTML = `
     <div class="focus-backdrop"></div>
     <div class="focus-wrap">
-      <article class="focus-card co-card" role="dialog" aria-modal="true">
-        <h2 class="space-name">The new page is yours.</h2>
-        ${ids.length ? `<p class="co-read">${ids.length} thread${ids.length === 1 ? '' : 's'} carried over. The rest stays with the old year.</p>` : '<p class="co-read">Nothing carried. All of it stays with the old year.</p>'}
+      <article class="focus-card co-card" role="dialog" aria-modal="true" aria-labelledby="co-title" aria-describedby="co-description" tabindex="-1">
+        <h2 class="space-name" id="co-title">The new page is yours.</h2>
+        ${ids.length ? `<p class="co-read" id="co-description">${ids.length} thread${ids.length === 1 ? '' : 's'} carried over. The rest stays with the old year.</p>` : '<p class="co-read" id="co-description">Nothing carried. All of it stays with the old year.</p>'}
       </article>
     </div>`
+  activateCarryoverDialog()
   try {
     page.state = await api('/api/carryover', ids.length ? { ids } : { dismiss: true })
     page.coIndex = 0
@@ -331,6 +409,7 @@ async function coCommit() {
     setTimeout(() => {
       wrap.dataset.co = ''
       wrap.innerHTML = ''
+      deactivateCarryoverDialog()
       page.spaceEls.forEach(({ el }) => el.remove())
       page.spaceEls.clear()
       hooks.render()
@@ -351,4 +430,10 @@ function renderCarryoverNudge() {
     ? `<button class="co-nudge-btn" data-co-resume>clean slate waiting · ${coCount()} thread${coCount() === 1 ? '' : 's'} from ${page.state.carryover.fromYear}</button>`
     : ''
 }
-export { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount }
+document.addEventListener('keydown', handleCarryoverKeydown)
+
+export {
+  openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge,
+  coAnswer, coCommit, coCount, parkCarryover, trapCarryoverFocus,
+  activateCarryoverDialog, deactivateCarryoverDialog, handleCarryoverKeydown,
+}

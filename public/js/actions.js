@@ -2,7 +2,7 @@ import { $, toast, api, page, hooks, reduced } from './session.js'
 import { whenPhrase } from './blocks.js'
 import { celebrate, pop, washCard, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
-import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount } from './year.js'
+import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount, parkCarryover } from './year.js'
 // Task focus listens in the capture phase, so it decides what a click on the
 // words of a row means before anything below gets to check the row off.
 import './focus-task.js'
@@ -208,7 +208,6 @@ document.addEventListener('click', async (e) => {
     return
   }
   if (e.target.closest('[data-back-to-year]')) {
-    page.yearShown = null
     buildYear()
     return
   }
@@ -225,9 +224,7 @@ document.addEventListener('click', async (e) => {
 
   // Clean Slate: park it, resume it, look back, navigate, answer, bulk out
   if (e.target.closest('[data-co-park]')) {
-    page.coParked = true
-    renderCarryover()
-    renderCarryoverNudge()
+    parkCarryover()
     return
   }
   if (e.target.closest('[data-co-resume]')) {
@@ -237,9 +234,7 @@ document.addEventListener('click', async (e) => {
     return
   }
   if (e.target.closest('[data-co-look]')) {
-    page.coParked = true
-    renderCarryover()
-    renderCarryoverNudge()
+    parkCarryover({ restore: false })
     openPastYear(page.state.carryover.fromYear)
     return
   }
@@ -476,17 +471,6 @@ document.addEventListener('keydown', async (e) => {
   const carryoverUp = !!(page.state?.carryover && !page.coParked && document.querySelector('.co-card'))
   if (e.key === 'Escape' && !carryoverUp && $('#focus').innerHTML && !document.querySelector('[contenteditable="true"]')) {
     closeFocus()
-  }
-  // the ceremony answers to the keyboard, and never traps you
-  if (page.state?.carryover && !page.coParked && document.querySelector('.co-card')) {
-    if (e.key === 'Escape') {
-      page.coParked = true
-      renderCarryover()
-      renderCarryoverNudge()
-    }
-    if (page.coIndex > 0 && (e.key === 'y' || e.key === 'n')) {
-      coAnswer(e.key === 'y', document.querySelector(e.key === 'y' ? '[data-co-yes]' : '[data-co-no]'))
-    }
   }
 })
 
