@@ -451,10 +451,18 @@
 .today-more {
   flex: 0 0 auto;
   margin-left: auto;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-family: inherit;
   font-size: 11.5px;
   color: var(--text-3);
   white-space: nowrap;
+  cursor: pointer;
 }
+.today-more:hover { color: var(--text-1); }
+.today-more:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 
 /* Two bands: what is due now, and what is coming. The label sits in a left
    column beside the band's first row rather than on a line of its own, so
@@ -473,6 +481,21 @@
 /* the week ahead reads a shade quieter than what is due now */
 .today-row.ahead .row-text { color: var(--text-2); }
 .today-row.ahead:hover .row-text { color: var(--text-1); }
+
+/* Overflow opens in the same elevated focus surface as a card. The fixed
+   stage stays compact behind it while the card owns any scrolling. */
+.attention-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.attention-card .attention-head .space-name { margin: 0; }
+.attention-close { flex: 0 0 auto; }
+.attention-list .band + .band { margin-top: var(--space-4); }
+.attention-list .today-item + .today-item { margin-top: var(--space-1); }
+.attention-list .today-row { animation: none; }
 
 /* ------------------------------------------------------------ the toast */
 
