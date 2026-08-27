@@ -266,6 +266,15 @@ button.ym.future .ym-name { color: var(--text-2); }
 .mo-line.ahead .mo-day { color: var(--accent-ink); font-weight: 500; }
 .mo-at { font-size: 11px; color: var(--text-3); white-space: nowrap; }
 
+/* An overdue reminder is still open work, not month history. Bad ink stays
+   on the words only; the explicit status keeps the meaning when color is
+   unavailable. */
+.mo-line.overdue .mo-day,
+.mo-line.overdue .mo-text,
+.mo-line.overdue .mo-status { color: var(--bad-ink); }
+.mo-status { font-size: 11px; white-space: nowrap; }
+.yr-mo-n .overdue { color: var(--bad-ink); }
+
 /* the month walks: one quiet stepper pair in the top right corner — a
    pair reads as a stepper where a lone ‹ read as another back button.
    At a bound the dead direction stays, disabled, so the pair keeps its
