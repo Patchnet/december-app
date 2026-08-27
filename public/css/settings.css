@@ -178,6 +178,19 @@
 .set-input:focus { outline: none; box-shadow: var(--focus-ring-field); border-color: var(--accent-edge); background: var(--elevated); }
 .set-input::placeholder { color: var(--text-3); opacity: 0.7; }
 
+.model-picker {
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+  width: 180px;
+}
+.model-picker .set-input { width: 100%; }
+.set-select {
+  padding-right: 26px;
+  cursor: pointer;
+}
+.model-custom-input { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
+
 .set-note { padding: 0 2px; color: var(--text-3); font-size: 11.5px; text-wrap: pretty; }
 
 .set-paths {
@@ -440,6 +453,7 @@
 @media (max-width: 720px) {
   .settings-pop { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); padding: var(--space-5); border-radius: var(--radius-lg); }
   .set-input { width: min(160px, 46vw); }
+  .model-picker { width: min(160px, 46vw); }
   .set-paths { grid-template-columns: 1fr; }
   .set-paths .set-input { width: 100%; }
 }
