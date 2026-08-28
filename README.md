@@ -59,11 +59,17 @@ The page covers one year. The point is to get to December with a record of
 what you actually did, the goals you reached, and the milestones along the
 way.
 
+Your day does not only happen at your desk, so December Pocket puts the same
+page on your phone. You write a line on the way home and it is filed by the
+time you walk in. That trip is encrypted: your devices hold the keys, and
+nothing in between can read it. Pocket is optional and pairs with a QR code.
+
 We built this for ourselves first, to get on top of the disorder that comes
 with fast AI content generation. We are working on more features and
 improvements.
 
-Use as you wish, drop us a note on how we can make it better. MIT licensed.
+Use as you wish, drop us a note on how we can make it better. Apache-2.0
+licensed, published by Patchnet AI, Inc.
 Created by [louie305](https://github.com/louie305).
 
 ---
