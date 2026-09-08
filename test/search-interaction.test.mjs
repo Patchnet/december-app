@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 
-function harness() {
+function harness(lineEnding='\n') {
   const listeners = new Map()
   const results = {innerHTML:'',classList:{add(){},remove(){}},querySelector(){return null},addEventListener(){}}
   const field = {value:'',addEventListener(name,fn){listeners.set(name,fn)}}
@@ -14,13 +14,14 @@ function harness() {
     document:{addEventListener(){}},
     api: () => new Promise(done=>{resolve=done}),
   }
-  const source = readFileSync(new URL('../public/js/search.js',import.meta.url),'utf8').replace(/^import .*\n/,'')
+  const source = readFileSync(new URL('../public/js/search.js',import.meta.url),'utf8').replace(/\r?\n/g,lineEnding).replace(/^import[^\r\n]*\r?\n/,'')
   const app = runInNewContext(source+'\n;({askThePage,closeSearch})',context)
   return {app,results,field,listeners,resolve:value=>resolve(value)}
 }
 
-test('a closed search cannot be repopulated by a late answer', async () => {
-  const h = harness()
+for(const lineEnding of ['\n','\r\n']) {
+test(`a closed search cannot be repopulated by a late answer (${lineEnding.length===1?'LF':'CRLF'})`, async () => {
+  const h = harness(lineEnding)
   const pending = h.app.askThePage('What did I save?')
   h.app.closeSearch()
   h.resolve({answer:'Old answer'})
@@ -28,8 +29,8 @@ test('a closed search cannot be repopulated by a late answer', async () => {
   assert.equal(h.results.innerHTML,'')
 })
 
-test('new local search results take precedence over an earlier question', async () => {
-  const h = harness()
+test(`new local search results take precedence over an earlier question (${lineEnding.length===1?'LF':'CRLF'})`, async () => {
+  const h = harness(lineEnding)
   const pending = h.app.askThePage('What did I save?')
   h.field.value = 'pasta'
   h.listeners.get('input')()
@@ -39,3 +40,5 @@ test('new local search results take precedence over an earlier question', async 
   assert.equal(h.results.innerHTML,local)
   assert.match(local,/No matches/)
 })
+
+}
