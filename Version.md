@@ -1,11 +1,18 @@
 ---
 enabled: true
-current: 0.17.2
+current: 0.18.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.18.0 - 2026-09-08
+
+Polish desktop cards, the stage and year navigation with interruptible motion
+and reduced-motion support. Preserve cards and drafts during task toggles,
+retain queued captures, bind answers to their questions, and improve task-edit,
+undo and identified-retry recovery.
 
 ## 0.17.2 - 2026-08-27
 
