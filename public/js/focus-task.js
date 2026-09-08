@@ -10,7 +10,7 @@
 // matters — a span is written once, or not at all — should be readable, and
 // testable, without a browser around it.
 
-import { esc, api, page, hooks, toast } from './session.js'
+import { esc, api, page, hooks, toast, adoptState } from './session.js'
 
 // The same bounds lib/core.mjs enforces. Below the floor a click was only
 // passing through; above the ceiling a window was left open overnight.
@@ -218,7 +218,7 @@ async function exit() {
     toast(`${focusPhrase(verdict.ms)} focused`)
     const next = await api('/api/state')
     if (Array.isArray(next?.spaces) && Array.isArray(next?.captures)) {
-      page.state = next
+      adoptState(next)
       hooks.render()
     }
   } catch (err) {

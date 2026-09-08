@@ -1,7 +1,13 @@
+import { updateCardContent } from './card-dom.js'
+import { highlightCardChanges } from './card-changes.js'
 import { $, esc, localDay, reduced, fmtAmount, page, hooks } from './session.js'
 import { clockOf, whenPhrase, words, spaceInner } from './blocks.js'
-import { markChange, markEdited, bump, travelDot, washCard, withFlip, drawMeters } from './motion.js'
+import { markChange, bump, travelDot, washCard, withFlip, drawMeters } from './motion.js'
 import { goalOnly } from './goals.js'
+import { renderPendingStage } from './pending-stage.js'
+import { pendingView, filingPlan } from './work-feedback.js'
+import { syncTools, mountSurface } from './card-surface.js'
+import { invalidateYearRequest } from './year-navigation.js'
 
 // ------------------------------------------------------------ focus view
 
@@ -12,6 +18,16 @@ function buildFocus() {
   if (!space) {
     page.focusId = null
     wrap.innerHTML = ''
+    return
+  }
+  const existing=wrap.querySelector('.focus-card')
+  if(existing?.dataset.sid===space.id && !wrap.dataset.confirm) {
+    updateCardContent(existing,spaceInner(space,true))
+    wrap.dataset.u=space.updatedAt
+    wrap.dataset.preview=space.previewKey || ''
+    syncTools(existing,space)
+    existing.setAttribute('aria-label',space.name)
+    existing.querySelector('.focus-capture')?.setAttribute('aria-label',`Add or change something in ${space.name}`)
     return
   }
   // a re-render (the agent touched this space) must never eat a draft
@@ -27,10 +43,11 @@ function buildFocus() {
     <div class="focus-wrap" data-close>
       <article class="focus-card" data-sid="${space.id}">
         ${spaceInner(space, true)}
-        <textarea class="capture focus-capture" rows="1" placeholder="Add to ${esc(space.name)}…" spellcheck="false"></textarea>
+        <textarea class="capture focus-capture" rows="1" aria-label="Add or change something in ${esc(space.name)}" placeholder="Add or change something…" spellcheck="false"></textarea>
       </article>
     </div>`
   wrap.dataset.u = space.updatedAt
+  wrap.dataset.preview = space.previewKey || ''
   const fieldEl = wrap.querySelector('.focus-capture')
   if (fieldEl) {
     fieldEl.value = draft
@@ -42,11 +59,20 @@ function buildFocus() {
   const card = wrap.querySelector('.focus-card')
   // a card opens at its top; only a re-render keeps where you were
   card?.scrollTo({ top: scrollTop, behavior: 'auto' })
-  document.documentElement.classList.add('modal-open')
+  mountSurface(card)
+}
+
+function openStageCard(id) {
+  if (!page.state.spaces.some(space => space.id === id && !space.finished)) return
+  attentionReturn = document.activeElement
+  page.focusId = id
+  buildFocus()
 }
 
 function closeFocus() {
-  const returnTo = attentionReturn
+  invalidateYearRequest()
+  $('#focus').removeAttribute('aria-busy')
+  const returnTo = attentionReturn || (page.focusId && page.spaceEls.get(page.focusId)?.el) || (page.yearOpen ? $('#dateline') : null)
   attentionReturn = null
   document.documentElement.classList.remove('modal-open')
   $('#focus').dataset.confirm = ''
@@ -113,30 +139,9 @@ function travelTargets() {
     card beating its own animation. Held cards stay a hollow frame until
     the mote lands on them. */
 function heldSpaces() {
-  if (!page.state.captures.length || !page.prev) return []
+  if (!page.state.captures.length || !page.state.settle.running || !page.prev) return []
   const before = new Set(page.prev.spaces.map((s) => s.id))
   return page.state.spaces.filter((s) => !before.has(s.id)).map((s) => s.id)
-}
-
-/** Pinning does not change a space's content, so its updatedAt does not
-    move and the card's markup is never rebuilt. The tools have to be synced
-    on their own or an unpinned card keeps a solid pin forever. */
-function syncTools(el, space) {
-  if (!el) return
-  el.classList.toggle('pinned', !!space.pinned)
-  const pin = el.querySelector('[data-pin]')
-  if (pin) {
-    pin.classList.toggle('on', !!space.pinned)
-    pin.setAttribute('aria-label', space.pinned ? 'Unpin' : 'Pin')
-    pin.setAttribute('title', space.pinned ? 'unpin' : 'pin')
-    pin.querySelector('svg')?.setAttribute('fill', space.pinned ? 'currentColor' : 'none')
-  }
-  const finish = el.querySelector('[data-finish]')
-  if (finish) {
-    finish.classList.toggle('ready', !space.finished && space.role === 'do' && !!space.complete)
-    finish.setAttribute('aria-label', space.finished ? 'Reopen this space' : 'Archive this space')
-    finish.setAttribute('title', space.finished ? 'reopen' : 'archive')
-  }
 }
 
 // The building moment: a card under construction is a hollow dashed frame
@@ -152,68 +157,51 @@ function unbuild(el) {
 /** Nothing left settling: release any frame still waiting on a mote that
     is never coming (a failed pass, a capture filed to nothing). */
 function releaseHeld(targets) {
-  if (page.state.captures.length) return
-  const landing = new Set(targets.values())
+  if (page.state.captures.length && page.state.settle.running) return
+  const landing = page.state.settle.lastError ? new Set() : new Set(targets.values())
   for (const el of document.querySelectorAll('.space.building')) {
     if (!landing.has(el.dataset.sid)) unbuild(el)
   }
 }
 
-/** While the agent works the stage says one word, not your own sentence.
-    The words you just wrote were echoed back for the whole pass — thirty
-    to sixty seconds of reading what you already knew — and everything then
-    resolved in about a second. The one line stays put while each settled
-    capture flies out of it into its card, so the filing motion still reads
-    as your sentence travelling somewhere. */
+/** Keep the existing thought stack, with truthful delivery/work status.
+    Filing acknowledges a bounded set of visible saved destinations. */
 function renderInbox(targets = new Map()) {
   const box = $('#inbox')
-  const failed = !page.state.settle.running && page.state.settle.lastError
-  const captureOnly = page.state.settle.captureOnly
   const ids = new Set(page.state.captures.map((c) => c.id))
 
   // anything that left the inbox since the last pass flies to its card;
   // a batch launches as a stream, not a swarm
   const origin = box.querySelector('.working')?.getBoundingClientRect()
-  let launch = 0
+  const candidates = []
   for (const cid of [...page.pending]) {
     if (ids.has(cid)) continue
     page.pending.delete(cid)
-    const targetEl =
-      page.spaceEls.get(targets.get(cid))?.el ||
-      // a goal-only space has no card; its row in the band is the place
+    const targetEl = page.spaceEls.get(targets.get(cid))?.el ||
       document.querySelector(`#goals [data-goal-open="${targets.get(cid)}"]`)
-    if (!targetEl || !origin) continue
+    if (targetEl) candidates.push(targetEl)
+  }
+  const canMove = !document.hidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const visible = rect => rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth
+  const plan = filingPlan(candidates, el => canMove && visible(origin) && visible(el.getBoundingClientRect()))
+  for (const {target:targetEl, delay} of plan) {
+    if (delay === null) { unbuild(targetEl); continue }
     page.flying++
     setTimeout(() => {
       travelDot(origin, targetEl, () => {
-        if (targetEl.classList.contains('goal')) {
-          bump(targetEl.querySelector('.goal-count'))
-        } else {
-          unbuild(targetEl)
-          washCard(targetEl)
-        }
+        if (targetEl.classList.contains('goal')) bump(targetEl.querySelector('.goal-count'))
+        else { unbuild(targetEl); washCard(targetEl) }
         page.flying = Math.max(0, page.flying - 1)
-        hooks.renderStage() // the stage was holding open for this
+        // Update both the label and pane once the last visual acknowledgement lands.
+        renderInbox()
+        hooks.renderStage()
       })
-    }, launch++ * 160)
+    }, delay)
   }
   for (const c of page.state.captures) page.pending.add(c.id)
 
-  const word = captureOnly ? 'saved · capture only' : failed ? "couldn't settle" : 'working'
-  const kind = captureOnly ? 'capture-only' : failed ? 'failed' : ''
-  // the queue: what you said, greyed, in order, until it lands on a card
-  const queue = [...page.queuedTexts, ...page.state.captures.map((c) => c.text)]
-  const show = queue.length > 0 || page.pending.size > 0 || page.state.settle.running || page.flying > 0
-  const key = show ? `${kind}|${word}|${queue.join('¦')}` : ''
-  if (box.dataset.key === key) return
-  box.dataset.key = key
-  const dots = kind === '' ? '<span class="working-dots" aria-hidden="true"><i></i><i></i><i></i></span>' : ''
-  box.innerHTML = show
-    ? queue.map((t) => `<div class="queue-row">${esc(t)}</div>`).join('') +
-      `<div class="working ${kind}"><span class="working-word">${esc(word)}</span>${dots}${
-        failed ? '<button class="retry">retry</button>' : ''
-      }</div>`
-    : ''
+  const view = pendingView(page.state, page.queuedCaptures, page.flying)
+  renderPendingStage(box, view)
 }
 
 /** The card's own sheen already said what happened. All the top keeps is
@@ -384,19 +372,25 @@ function renderSpaces(delayWash = new Set()) {
       // for longer; afterwards a new card arrives on its own immediately
       el.style.animationDelay = page.booting
         ? `${260 + Math.min(i * 55, 660)}ms`
-        : `${Math.min(i * 45, 270)}ms`
+        : '0ms'
       el.dataset.sid = space.id
       el.innerHTML = spaceInner(space)
       el.classList.toggle('pinned', !!space.pinned)
       // once the entrance ends, stop its fill so FLIP transforms can act
-      el.addEventListener('animationend', () => el.classList.add('settled'), { once: true })
+      const finishArrival = (event) => {
+        if (event.target !== el) return
+        el.classList.add('settled')
+        el.removeEventListener('animationend', finishArrival)
+      }
+      el.addEventListener('animationend', finishArrival)
       ;(box.querySelector('.col') || box).appendChild(el)
-      page.spaceEls.set(space.id, { el, updatedAt: space.updatedAt })
+      page.spaceEls.set(space.id, { el, updatedAt: space.updatedAt, previewKey: space.previewKey })
       if (!building) drawMeters(el)
-    } else if (known.updatedAt !== space.updatedAt) {
+    } else if (known.updatedAt !== space.updatedAt || known.previewKey !== space.previewKey) {
       const prevSpace = page.prev?.spaces.find((s) => s.id === space.id)
       const heightBefore = known.el.offsetHeight
-      known.el.innerHTML = spaceInner(space)
+      if(known.quiet)updateCardContent(known.el,spaceInner(space))
+      else known.el.innerHTML = spaceInner(space)
       animateHeight(known.el, heightBefore)
       known.el.classList.toggle('pinned', !!space.pinned)
       known.el.style.animationDelay = '0ms'
@@ -410,25 +404,7 @@ function renderSpaces(delayWash = new Set()) {
           bel.style.setProperty('--d', `${Math.min(n++, 4) * 45}ms`)
         }
       }
-      // reworded text is not a flicker: it says it changed
-      const prevText = new Map()
-      for (const pb of prevSpace?.blocks || []) {
-        if (pb.type === 'list') for (const i of pb.items) prevText.set(i.id, i.text)
-        if (pb.type === 'note' || pb.type === 'reminder') prevText.set(pb.id, pb.text)
-      }
-      for (const b of space.blocks) {
-        const bel0 = known.el.querySelector(`[data-bid="${b.id}"]`)
-        if (!bel0) continue
-        if (b.type === 'list') {
-          for (const i of b.items) {
-            if (prevText.has(i.id) && prevText.get(i.id) !== i.text) {
-              markEdited(bel0.querySelector(`[data-item="${i.id}"] .row-text`))
-            }
-          }
-        } else if ((b.type === 'note' || b.type === 'reminder') && prevText.has(b.id) && prevText.get(b.id) !== b.text) {
-          markEdited(bel0.querySelector('.note-text, .row-text'))
-        }
-      }
+      highlightCardChanges(known.el, prevSpace, space)
       // changed numbers beat; changed meters glide from where they were
       for (const b of space.blocks) {
         const pb = prevSpace?.blocks.find((x) => x.id === b.id)
@@ -450,7 +426,8 @@ function renderSpaces(delayWash = new Set()) {
         }
         if (b.type === 'ledger' && (pb.total ?? 0) !== (b.total ?? 0)) {
           bump(bel.querySelector('.ledger-total'))
-          markChange(bel.querySelector('.ledger-total'), `+${fmtAmount((b.total ?? 0) - (pb.total ?? 0), b.unit)}`)
+          const delta = (b.total ?? 0) - (pb.total ?? 0)
+          markChange(bel.querySelector('.ledger-total'), `${delta < 0 ? '−' : '+'}${fmtAmount(Math.abs(delta), b.unit)}`)
           bel.querySelector('.ledger-entry')?.classList.add('entry-in')
         }
         if (b.type === 'streak' && b.dates.length > (pb.dates?.length ?? 0)) {
@@ -463,6 +440,7 @@ function renderSpaces(delayWash = new Set()) {
       if (!delayWash.has(space.id) && !known.quiet) washCard(known.el)
       known.quiet = false
       known.updatedAt = space.updatedAt
+      known.previewKey = space.previewKey
     }
   })
   for (const [id, { el }] of page.spaceEls) {
@@ -629,7 +607,7 @@ function renderAsk() {
       const card = box.querySelector('.ask')
       if (card) {
         card.classList.add('out')
-        setTimeout(() => (box.innerHTML = ''), 240)
+        setTimeout(() => { if (card.parentElement === box && !box.dataset.aid) card.remove() }, 240)
       }
     }
     return
@@ -641,7 +619,7 @@ function renderAsk() {
   // own words — offering three wrong options and no way past them is worse
   // than asking nothing at all.
   box.innerHTML = `
-    <div class="ask">
+    <div class="ask" data-ask-id="${esc(page.state.ask.id)}">
       <div class="ask-q">${esc(page.state.ask.question)}</div>
       ${
         opts.length
@@ -858,17 +836,19 @@ const CAN_DO = [
     holds the caret from the moment the page opens, so a bare ? has nowhere
     to land. It lists the keys that actually work now. */
 function showIntro() {
+  attentionReturn = document.activeElement
   const wrap = $('#focus')
   wrap.dataset.help = '1'
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card" role="dialog" aria-modal="true" aria-label="What December can do">
-        <h2 class="space-name">What you can say</h2>
+        <div class="surface-heading"><h2 class="space-name">What you can say</h2><button class="surface-close" data-close aria-label="Close writing help">Close</button></div>
         ${CAN_DO.map(([k, v]) => `<div class="can-row"><div class="can-k">${esc(k)}</div><div class="can-v">${esc(v)}</div></div>`).join('')}
         <div class="can-keys">/ to find · ⌘Z to undo · esc to close</div>
       </article>
     </div>`
+  mountSurface(wrap.querySelector('.focus-card'), true)
 }
 
 // --------------------------------------------------------- notifications
@@ -894,4 +874,4 @@ function maybeNotify(items) {
   }
   localStorage.setItem('dec-notified', JSON.stringify(seen))
 }
-export { buildFocus, closeFocus, renderYearline, travelTargets, heldSpaces, renderInbox, renderActivity, askToFinish, resortCard, renderSpaces, renderResting, resizeLayout, renderRail, renderSuggestions, renderAsk, renderToday, showIntro, releaseHeld }
+export { attentionBand, openStageCard, buildFocus, closeFocus, renderYearline, travelTargets, heldSpaces, renderInbox, renderActivity, askToFinish, resortCard, renderSpaces, renderResting, resizeLayout, renderRail, renderSuggestions, renderAsk, renderToday, showIntro, releaseHeld }

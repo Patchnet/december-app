@@ -1,3 +1,4 @@
+import { reconcileState } from './state-sync.js'
 // Shared page session. Feature modules read and write this object;
 // they do not keep their own copy of the year. New page features get a
 // file under public/js/ — they do not grow app.js unless they are boot,
@@ -6,7 +7,9 @@
 export const $ = (sel) => document.querySelector(sel)
 export const localDay = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-export const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+export let reduced = motionPreference.matches
+motionPreference.addEventListener?.('change', event => { reduced = event.matches })
 
 export const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
@@ -25,8 +28,9 @@ export function toast(msg) {
   toast._t = setTimeout(() => el.classList.remove('show'), 2600)
 }
 
-export async function api(path, body) {
+export async function api(path, body, {signal} = {}) {
   const res = await fetch(path, {
+    signal,
     method: body !== undefined ? 'POST' : 'GET',
     headers: body !== undefined ? { 'content-type': 'application/json' } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -41,6 +45,7 @@ export const page = {
   prev: null,
   booting: true,
   spaceEls: new Map(),
+  expandedLists: new Set(),
   pollTimer: null,
   pending: new Set(),
   flying: 0,
@@ -51,6 +56,8 @@ export const page = {
   awake: new Set(),
   attentionCount: 0,
   queuedTexts: [],
+  queuedCaptures: [],
+  captureError: null,
   reachedFor: false,
   coIndex: 0,
   coAnswered: new Map(),
@@ -59,7 +66,16 @@ export const page = {
   enterHint: null,
 }
 
+export function adoptState(incoming) {
+  const next = reconcileState(page.state,incoming)
+  if (next === page.state) return false
+  page.state = next
+  return true
+}
+
 export const hooks = {
+  startCaptureOutbox() {},
+  retryCaptureOutbox() {},
   render() {},
   renderStage() {},
   fitCapture() {},

@@ -1,4 +1,5 @@
 import { reduced, page } from './session.js'
+import { circleNumber } from './ink-feedback.js'
 
 // --------------------------------------------------------- celebration
 // The commit celebration, per Design repo §1.12. One shot, then gone.
@@ -39,6 +40,7 @@ function pop(el) {
 /** Say what a number did, right where it happened, then let it go. */
 function markChange(el, label) {
   if (reduced || !el || !label) return
+  el.querySelector('.delta')?.remove()
   const tag = document.createElement('span')
   tag.className = 'delta'
   tag.textContent = label
@@ -63,6 +65,7 @@ function bump(el) {
   el.classList.remove('bump')
   void el.offsetWidth
   el.classList.add('bump')
+  if (el.matches('.tracker-count, .goal-count, .ledger-total')) circleNumber(el)
 }
 
 /** The filing moment: a mote of light leaves your sentence and dissolves
@@ -72,7 +75,7 @@ function bump(el) {
 const inViewport = (r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
 
 function travelDot(fromRect, toEl, then, hue) {
-  if (reduced || !toEl) return then?.()
+  if (reduced || document.hidden || !toEl?.isConnected) return then?.()
   const to = toEl.getBoundingClientRect()
   // a flight nobody can see is just latency: skip when either end is offscreen
   if (!inViewport(fromRect) || !inViewport(to)) return then?.()
@@ -147,68 +150,54 @@ function washCard(el) {
   el._washT = setTimeout(() => el.classList.remove('washed'), 1000)
 }
 
-/** FLIP: when the grid changes shape, cards glide to their new places
-    instead of teleporting. */
+// A layout move owns only its own animation. Reflow interrupts it from the
+// current visual position, and an old finish cannot reset a newer move.
+const layoutMoves=new Map()
+function finishLayoutMoves() {
+  for(const animation of layoutMoves.values())animation.cancel()
+  layoutMoves.clear()
+}
+const layoutPreference=window.matchMedia('(prefers-reduced-motion: reduce)')
+layoutPreference.addEventListener?.('change',()=>{if(layoutPreference.matches)finishLayoutMoves()})
+globalThis.document?.addEventListener('visibilitychange',()=>{if(document.hidden)finishLayoutMoves()})
+
+/** FLIP: preserve where things are now, then glide to their new layout. */
 function withFlip(fn) {
-  if (reduced) return fn()
-  const before = new Map()
-  // everything the header can shove: the cards, the rail beside them, and
-  // the quiet spaces below. Measuring only the grid left the rest snapping.
-  for (const el of document.querySelectorAll('#spaces .space, #rail, #resting')) {
-    before.set(el, el.getBoundingClientRect())
+  if(reduced || document.hidden){finishLayoutMoves();return fn()}
+  const before=new Map()
+  for(const el of document.querySelectorAll('#spaces .space, #rail, #resting'))before.set(el,el.getBoundingClientRect())
+  const rowsBefore=new Map()
+  for(const row of document.querySelectorAll('#spaces .row[data-item]'))rowsBefore.set(`${row.dataset.block}/${row.dataset.item}`,row.getBoundingClientRect())
+  // Measure the displayed position before releasing interrupted transforms.
+  finishLayoutMoves()
+  const result=fn()
+  const moves=[],parentMoves=new Map()
+  for(const [el,a] of before) {
+    if(!el.isConnected || (el.classList.contains('fresh') && !el.classList.contains('settled')))continue
+    const b=el.getBoundingClientRect(),dx=a.left-b.left,dy=a.top-b.top
+    if(Math.abs(dx)>1 || Math.abs(dy)>1){moves.push({el,dx,dy,top:b.top});parentMoves.set(el,{dx,dy})}
   }
-  // And the rows inside a card. A render rebuilds a card's HTML, so the row
-  // you just ticked is a new element by the time it reaches the done tail —
-  // measured by element it would never match, and it snapped there while
-  // the card around it glided. Keyed by item id, it glides with the rest.
-  const rowsBefore = new Map()
-  for (const row of document.querySelectorAll('#spaces .row[data-item]')) {
-    rowsBefore.set(`${row.dataset.block}/${row.dataset.item}`, row.getBoundingClientRect())
+  for(const row of document.querySelectorAll('#spaces .row[data-item]')) {
+    const a=rowsBefore.get(`${row.dataset.block}/${row.dataset.item}`)
+    if(!a)continue
+    const b=row.getBoundingClientRect(),parent=parentMoves.get(row.closest('.space'))
+    // A row travels with its card already. Animate only its internal move.
+    const dx=a.left-b.left-(parent?.dx || 0),dy=a.top-b.top-(parent?.dy || 0)
+    if(Math.abs(dx)>1 || Math.abs(dy)>1)moves.push({el:row,dx,dy,top:b.top})
   }
-  fn()
-  const moves = []
-  for (const [el, a] of before) {
-    if (!el.isConnected) continue
-    // a card still mid-entrance owns its transform; leave it be
-    if (el.classList.contains('fresh') && !el.classList.contains('settled')) continue
-    const b = el.getBoundingClientRect()
-    const dx = a.left - b.left
-    const dy = a.top - b.top
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([el, dx, dy])
-  }
-  for (const row of document.querySelectorAll('#spaces .row[data-item]')) {
-    const a = rowsBefore.get(`${row.dataset.block}/${row.dataset.item}`)
-    if (!a) continue // a new row arrives on its own entrance
-    const b = row.getBoundingClientRect()
-    const dx = a.left - b.left
-    const dy = a.top - b.top
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moves.push([row, dx, dy])
-  }
-  if (!moves.length) return
-  // Settling reads as a settling, not a snap: the page resolves from the
-  // top down, and how far a card travels decides how long it takes. One
-  // duration for every card made a 6px nudge look as laborious as a
-  // full-column move, and every card starting on the same frame made the
-  // whole grid move like one object.
-  const plan = moves
-    .map(([el, dx, dy]) => ({ el, dx, dy, top: el.getBoundingClientRect().top, dist: Math.hypot(dx, dy) }))
-    .sort((p, q) => p.top - q.top)
-  for (const m of plan) {
-    m.el.style.transition = 'none'
-    m.el.style.transform = `translate(${m.dx}px, ${m.dy}px)`
-  }
-  void document.body.offsetHeight
-  let longest = 0
-  plan.forEach((m, i) => {
-    const dur = Math.round(Math.min(460, 250 + m.dist * 0.55))
-    const delay = Math.min(i * 14, 110)
-    longest = Math.max(longest, dur + delay)
-    m.el.style.transition = `transform ${dur}ms var(--ease-settle) ${delay}ms`
-    m.el.style.transform = ''
+  const ease=getComputedStyle(document.documentElement).getPropertyValue('--ease-settle').trim() || 'cubic-bezier(.32,.72,0,1)'
+  moves.sort((a,b)=>a.top-b.top).forEach((move,i)=>{
+    if(!move.el.animate)return
+    const animation=move.el.animate([
+      {transform:`translate(${move.dx}px, ${move.dy}px)`},{transform:'translate(0, 0)'},
+    ],{duration:Math.round(Math.min(460,250+Math.hypot(move.dx,move.dy)*.55)),delay:Math.min(i*14,110),easing:ease,fill:'both'})
+    layoutMoves.set(move.el,animation)
+    animation.onfinish=()=>{
+      if(layoutMoves.get(move.el)!==animation)return
+      layoutMoves.delete(move.el);animation.cancel()
+    }
   })
-  setTimeout(() => {
-    for (const m of plan) m.el.style.transition = ''
-  }, longest + 60)
+  return result
 }
 
 /** Data reveal: bars draw to their mark instead of appearing at it. */

@@ -1,45 +1,43 @@
-import { $, toast, api, page, hooks } from './session.js'
+import { submitAnswer } from './question-input.js'
+import {retainSubmission,deliverCaptures} from './capture-delivery.js'
+import { $, toast, page, hooks, adoptState } from './session.js'
 
 page.field = $('#capture')
 page.enterHint = $('#enter-hint')
 
-// Lines the server has not acknowledged yet. They hooks.render immediately as
-// greyed queue rows, so the beat between Enter and the response never
-// shows an empty stage.
+// Submitted text stays in the local outbox until the server acknowledges it.
 
+let retainingMain = false
 async function submitCapture() {
-  const text = page.field.value.trim()
-  if (!text) return
-  page.queuedTexts.push(text)
-  page.field.value = ''
-  page.field.style.height = 'auto'
-  document.documentElement.style.setProperty('--capture-h', `${page.field.offsetHeight}px`)
-  page.enterHint.classList.remove('on')
-  $('#shell').classList.remove('composing')
-  const cw = page.field.closest('.cwrap')
-  cw.classList.remove('big')
-  cw.dataset.hint = ''
-  localStorage.setItem('dec-files', String(Number(localStorage.getItem('dec-files') || 0) + 1))
-  if ('Notification' in window && Notification.permission === 'default' && !localStorage.getItem('dec-notif-asked')) {
-    localStorage.setItem('dec-notif-asked', '1')
-    Notification.requestPermission().catch(() => {})
-  }
-  nextPrompt()
-  hooks.render() // the queued line appears the same instant the field clears
+  const text = page.field.value.trim(), draft = page.field.value
+  if (!text || retainingMain) return
+  retainingMain = true
   try {
-    page.state = await api('/api/capture', { text })
-    page.queuedTexts.splice(page.queuedTexts.indexOf(text), 1)
+    await retainSubmission(text)
+    // Retaining is asynchronous too. Never clear words typed in the meantime.
+    if (page.field.value === draft) {
+      page.field.value = ''
+      page.field.style.height = 'auto'
+      document.documentElement.style.setProperty('--capture-h', `${page.field.offsetHeight}px`)
+      page.enterHint.classList.remove('on')
+      $('#shell').classList.remove('composing')
+      const cw = page.field.closest('.cwrap')
+      cw.classList.remove('big'); cw.dataset.hint = ''
+      nextPrompt()
+    }
+    // Optional preferences must never stop delivery of an already-retained note.
+    try {
+      localStorage.setItem('dec-files', String(Number(localStorage.getItem('dec-files') || 0) + 1))
+      if ('Notification' in window && Notification.permission === 'default' && !localStorage.getItem('dec-notif-asked')) {
+        localStorage.setItem('dec-notif-asked','1'); Notification.requestPermission().catch(()=>{})
+      }
+    } catch {}
     hooks.render()
-    hooks.schedulePoll()
-  } catch (e) {
-    page.queuedTexts.splice(page.queuedTexts.indexOf(text), 1)
-    page.field.value = text
-    $('#shell').classList.add('composing') // the draft is back; keep the page quiet
-    toast(e.message)
-    hooks.render()
-  }
+    void deliverCaptures()
+  } catch(error) {
+    toast(error.message) // the field was never cleared
+  } finally { retainingMain = false }
 }
-
 
 // The page greets you like a person, not a form — and it knows what time
 // it is. Mornings ask about the day ahead; nights ask what got done.
@@ -73,34 +71,25 @@ document.addEventListener('keydown', async (e) => {
   e.preventDefault()
   const choice = ai.value.trim()
   if (!choice) return
-  ai.disabled = true
-  try {
-    page.state = await api('/api/answer', { choice, typed: true })
-    hooks.render()
-    hooks.schedulePoll()
-  } catch (err) {
-    ai.disabled = false
-    toast(err.message)
-  }
+  await submitAnswer(ai,choice,true)
 })
 
-// talking to a space from inside its focus view
+// A focused-card note keeps its original destination through retries/reload.
+const retainingFields = new WeakSet()
 document.addEventListener('keydown', async (e) => {
   const fc = e.target.closest?.('.focus-capture')
   if (!fc || e.key !== 'Enter' || e.shiftKey) return
   e.preventDefault()
-  const text = fc.value.trim()
-  if (!text) return
-  const hint = page.state.spaces.find((s) => s.id === page.focusId)?.name
-  fc.value = ''
+  const text = fc.value.trim(), draft = fc.value
+  if (!text || retainingFields.has(fc)) return
+  const hint = page.state.spaces.find(s=>s.id===page.focusId)?.name
+  retainingFields.add(fc)
   try {
-    page.state = await api('/api/capture', { text, hint })
-    hooks.render()
-    hooks.schedulePoll()
-    toast(`settling into ${hint}`)
-  } catch (err) {
-    toast(err.message)
-  }
+    await retainSubmission(text,hint)
+    if (fc.value === draft) fc.value = ''
+    void deliverCaptures()
+  } catch(error) { toast(error.message) }
+  finally { retainingFields.delete(fc) }
 })
 
 // the page opens quiet; chips answer only once you reach for the field
@@ -130,7 +119,12 @@ function fitCapture() {
   // compose — but never past it, because the cards do not move
   const gridTop = document.querySelector('.body-grid')?.getBoundingClientRect().top ?? 0
   const fieldTop = page.field.getBoundingClientRect().top
-  const room = Math.max(60, Math.round(gridTop - fieldTop - 28))
+  const busy = page.state?.settle.running || page.state?.captures.length || page.queuedTexts.length
+  const reserve = busy ? 64 : 28
+  const stageBottom = $('#stage')?.getBoundingClientRect().bottom ?? gridTop
+  const goalsHeight = $('#goals')?.getBoundingClientRect().height || 0
+  const floor = busy && innerWidth > 720 ? Math.min(gridTop - reserve, stageBottom - goalsHeight - 48) : gridTop - reserve
+  const room = Math.max(60, Math.round(floor - fieldTop))
   const max = Math.min(room, Math.round(innerHeight * 0.4), 220)
   page.field.style.fontSize = ''
   page.field.style.height = 'auto'
@@ -185,9 +179,10 @@ page.field.addEventListener('input', () => {
 // The page is the input: start typing anywhere and it lands in the capture.
 // Space alone still scrolls; with the focus view open, typing lands there.
 document.addEventListener('keydown', (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('dialog[open]')) return
+  if (e.target.closest?.('[contenteditable="true"]') || (document.documentElement.classList.contains('modal-open') && !page.focusId)) return
   const tag = document.activeElement?.tagName
-  if (tag === 'TEXTAREA' || tag === 'INPUT') return
+  if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return
   if (e.key.length !== 1) return
   if (e.key === ' ') return
   if (e.key === '/') {
@@ -230,7 +225,7 @@ document.addEventListener('drop', async (e) => {
       const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'upload failed')
-      page.state = data
+      adoptState(data)
       hooks.render()
       toast(`reading ${file.name}`)
     } catch (err) {

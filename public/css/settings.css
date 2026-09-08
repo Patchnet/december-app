@@ -534,3 +534,16 @@
 @media (max-width: 620px) {
   .onboarding-engines { grid-template-columns: 1fr; }
 }
+
+/* Settings shares the material and editorial heading of the card detail. */
+.settings-pop {
+  width: min(480px, calc(100vw - 32px)); padding: 24px; border-radius: 24px;
+  background: color-mix(in srgb, var(--elevated) 96%, transparent);
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+}
+.settings-title { font-family: var(--font-serif); font-size: 26px; font-weight: 400; }
+.settings-backdrop { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.seg button[aria-checked="true"] { background: var(--elevated); color: var(--text-1); box-shadow: 0 1px 4px rgba(0,0,0,.09); }
+.pocket-actions .pocket-primary { background: var(--text-1); color: var(--bg); border-color: transparent; }
+.pocket-pairing > .pocket-pairing-expiry { color: var(--text-2); }
+@supports not (backdrop-filter: blur(1px)) { .settings-pop { background: var(--elevated); } }

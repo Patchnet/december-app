@@ -182,6 +182,7 @@ class FakeElement {
   contains(node) { return node === this || this.children.some((child) => child.contains(node)) }
   focus() { this.ownerDocument.activeElement = this }
   getAttribute(name) { return this.attrs[name] ?? null }
+  removeAttribute(name) { delete this.attrs[name] }
   querySelector(selector) {
     if (selector.startsWith('[data-co-next]')) return this.children.find((child) => child.attrs['data-co-next'] != null || child.attrs['data-co-yes'] != null || child.attrs['data-co-no'] != null || child.attrs['data-co-park'] != null) || null
     return this.querySelectorAll(selector)[0] || null

@@ -1,4 +1,4 @@
-import { $, toast, api, page, hooks } from './session.js'
+import { $, toast, api, page, hooks, adoptState } from './session.js'
 import { openSettings, closeSettings } from './connections.js'
 
 const letter = $('#letter-toggle')
@@ -42,7 +42,7 @@ async function saveAbout() {
   const markdown = aboutField.value
   if (markdown === (aboutState().markdown || '')) return aboutState()
   try {
-    page.state = await api('/api/about', { markdown, mode: 'set' })
+    adoptState(await api('/api/about', { markdown, mode: 'set' }))
     paintLetter()
     hooks.render()
     toast('About Me saved')

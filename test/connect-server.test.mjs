@@ -226,14 +226,74 @@ test('/api/state uses revisions for compact polling and batch capture writes onc
   assert.equal(after.unchanged, undefined)
   assert.equal(after.revision, 1, 'the whole dump is one durable state write')
   assert.deepEqual(after.captures.map((capture) => capture.text), ['paid rent', 'ran three miles'])
+
+  const post = body => fetch(`${url}/api/capture`, {
+    method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body),
+  })
+  for (const text of ['x'.repeat(8001), Array.from({length:26},(_,i)=>`line ${i}`).join('\n')]) {
+    const refused=await post({text,requestId:'oversized'})
+    assert.equal(refused.status,413)
+    assert.deepEqual((await (await fetch(`${url}/api/state`)).json()).captures,after.captures)
+  }
+  const body={text:Array.from({length:25},(_,i)=>`note ${i}`).join('\n'),hint:'Work',requestId:'durable-request'}
+  const accepted=await post(body)
+  assert.equal(accepted.status,200)
+  const receipt=await accepted.json()
+  assert.equal(receipt.captureReceipt.requestId,body.requestId)
+  assert.equal(receipt.captureReceipt.captureIds.length,25)
+  const replay=await (await post(body)).json()
+  assert.deepEqual(replay.captureReceipt,receipt.captureReceipt)
+  assert.equal(replay.revision,receipt.revision)
+  assert.equal(replay.captures.length,27)
+  assert.equal((await post({...body,text:'changed note'})).status,409)
+  assert.equal((await (await fetch(`${url}/api/state`)).json()).captures.length,27)
+
+  const tool=async(name,args)=>{
+    const response=await fetch(`${url}/api/tool`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,arguments:args})})
+    assert.equal(response.status,200)
+    return (await response.json()).result
+  }
+  const list=await tool('december_create_block',{space:'Plumber',type:'list',title:'',items:['Call plumber'],operationId:'initial-plumber-list'})
+  const original=await tool('december_read_block',{blockId:list.blockId})
+  const move={blockId:list.blockId,itemId:original.block.items[0].id,when:'2026-09-09',text:'Call plumber to arrange a visit'}
+  const reminder=await tool('december_set_reminder',move)
+  assert.equal((await tool('december_set_reminder',move)).blockId,reminder.blockId)
+  assert.equal((await tool('december_view',{})).spaces.find(s=>s.name==='Plumber').blocks.length,1)
+  await tool('december_set_reminder',{blockId:reminder.blockId,text:'Call plumber about the kitchen sink',at:'10:00'})
+  const edited=await tool('december_read_block',{blockId:reminder.blockId})
+  assert.equal(edited.block.text,'Call plumber about the kitchen sink')
+  assert.equal(edited.block.when,move.when)
+  assert.equal(edited.block.at,'10:00')
+
+  const askState=async question=>{
+    await tool('december_ask',{question,options:[]})
+    return (await (await fetch(`${url}/api/state`)).json()).ask
+  }
+  const oldAsk=await askState('What time?')
+  const newAsk=await askState('Which place?')
+  const answer=body=>fetch(`${url}/api/answer`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+  assert.equal((await answer({askId:oldAsk.id,choice:'3 pm',typed:true})).status,409)
+  assert.equal((await (await fetch(`${url}/api/state`)).json()).ask.id,newAsk.id)
+  const answerBody={askId:newAsk.id,choice:'The station',typed:true}
+  const answered=await answer(answerBody)
+  assert.equal(answered.status,200)
+  const answerState=await answered.json()
+  assert.equal(answerState.ask,null)
+  assert.equal(answerState.captures.filter(c=>c.text==='Which place? The station').length,1)
+  const laterAsk=await askState('Who is coming?')
+  const replayedAnswer=await(await answer(answerBody)).json()
+  assert.equal(replayedAnswer.ask.id,laterAsk.id)
+  assert.equal(replayedAnswer.captures.filter(c=>c.text==='Which place? The station').length,1)
 })
 
 test('client polling keeps live flags and rejects incomplete, stale, and overlapping responses', async () => {
   const source = await readFile(join(ROOT, 'public', 'app.js'), 'utf8')
   assert.match(source, /request !== pollRequest/)
-  assert.match(source, /incoming\.revision < current\.revision/)
-  assert.match(source, /!Array\.isArray\(incoming\.spaces\) \|\| !Array\.isArray\(incoming\.captures\)/)
-  assert.match(source, /Object\.hasOwn\(incoming, field\)/)
+  const reconcile = await readFile(join(ROOT, 'public', 'js', 'state-sync.js'), 'utf8')
+  assert.match(source, /adoptState\(incoming\)/)
+  assert.match(reconcile, /incoming\.revision < current\.revision/)
+  assert.match(reconcile, /!Array\.isArray\(incoming\.spaces\) \|\| !Array\.isArray\(incoming\.captures\)/)
+  assert.match(reconcile, /Object\.hasOwn\(incoming, field\)/)
 })
 
 test('scratch server GET is read-only and POST writes only the injected home', async (t) => {

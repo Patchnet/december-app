@@ -22,7 +22,7 @@
       </div>
     </section>
     <section class="settings-pop" id="settings-pop" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" hidden>
-      <h2 class="settings-title" id="settings-title">Settings</h2>
+      <div class="surface-heading"><h2 class="settings-title" id="settings-title">Settings</h2><button type="button" class="surface-close" id="settings-close" aria-label="Close settings">Close</button></div>
 
       <div class="set-list">
         <div class="set-row">
@@ -153,9 +153,8 @@
         <span class="enter-hint" id="enter-hint" aria-hidden="true">&#8629;</span>
       </div>
 
-      <!-- One region, one job at a time: the question, what is settling, or
-           what needs you today. While you write, it clears for you. The
-           cards below never move because this never changes height. -->
+      <!-- The main moment clears while you write. Active work keeps its
+           compact line at the foot of the stage; the cards stay in place. -->
       <div class="moment">
         <div class="pane pane-ask">
           <div id="ask"></div>
@@ -167,6 +166,7 @@
         <div class="pane pane-idle">
           <div class="co-nudge" id="co-nudge"></div>
           <div class="chips" id="suggest"></div>
+          <div id="stage-context"></div>
           <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
         </div>
       </div>
@@ -181,7 +181,7 @@
 
     <header class="corner">
       <div class="search-wrap">
-        <input class="search" id="search" placeholder="find" autocomplete="off" spellcheck="false" />
+        <input class="search" id="search" aria-label="Find in December" aria-controls="search-results" aria-keyshortcuts="Meta+K Control+K" placeholder="find" autocomplete="off" spellcheck="false" />
         <div class="search-results" id="search-results"></div>
       </div>
       <div class="letter-wrap">

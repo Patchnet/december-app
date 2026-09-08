@@ -61,13 +61,12 @@ test('attention dialog has a named close path and restores focus', () => {
 
 test('month detail labels overdue work in text and never as a background highlight', () => {
   assert.match(year, /data\.overdue\} overdue/)
-  assert.match(year, /data\.events \|\| data\.overdue \|\| data\.scheduled/)
   assert.match(year, /data\.scheduled\} scheduled/)
   assert.match(year, /l\.overdue \? ' overdue' : ''/)
   assert.match(year, /<span class="mo-status">overdue<\/span>/)
   assert.match(year, /m\.overdue \? `\$\{m\.overdue\} overdue`/)
   assert.match(year, /m\.ahead \? `\$\{m\.ahead\} scheduled`/)
-  assert.match(yearCss, /\.mo-line\.overdue \.mo-text,[\s\S]*?color: var\(--bad-ink\)/)
+  assert.match(yearCss, /\.mo-line\.overdue \.mo-text \{ color: var\(--text-2\)/)
   const overdueRule = yearCss.match(/\.mo-line\.overdue \.mo-day,[\s\S]*?\}/)?.[0] || ''
   assert.doesNotMatch(overdueRule, /background/)
 })

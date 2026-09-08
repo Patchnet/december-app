@@ -97,9 +97,8 @@
   margin: 0 0 var(--space-4);
 }
 
-/* A space holding one short thing: the thing IS the card. The tick stays
-   out of the way until the card is under the cursor, so at rest this
-   reads as a sentence, not as a form. */
+/* A space holding one short thing leads with its sentence. Task completion
+   stays on a separate, explicit checkbox. */
 .solo {
   display: block;
   width: 100%;
@@ -385,7 +384,10 @@
 .space.building > * { opacity: 0.22; filter: blur(5px); }
 
 /* the mote lands and the card condenses out of that light */
-.space.forming { animation: form-in 620ms var(--ease-expo) both; }
+.space.forming { animation: form-in 620ms var(--ease-out) both; }
+/* Relay combines these: animation declarations otherwise cancel each other. */
+.space.forming.washed { animation: form-in 620ms var(--ease-out) both, border-glow 900ms var(--ease); }
+.space.forming.noted { animation: form-in 620ms var(--ease-out) both, border-glow 1400ms var(--ease); }
 @keyframes form-in {
   0%   { transform: scale(0.97); filter: blur(6px); }
   100% { transform: none; filter: blur(0); }
@@ -740,3 +742,148 @@
   from { transform: scale(0.4); opacity: 0; }
   to   { transform: none; opacity: 1; }
 }
+
+/* September card study: content earns hierarchy; existing blocks keep their semantics. */
+.space { padding: 22px; border-radius: 16px; }
+.space-name { font-size: 19px; line-height: 1.3; margin-bottom: 20px; padding-right: 26px; }
+.space .row { padding-block: 7px; line-height: 1.55; }
+.space .block + .block { padding-top: 14px; border-top: 1px solid var(--line-1); }
+.space .hero .tracker-count b { font-family: var(--font-serif); font-size: 36px; line-height: 1.1; font-weight: 400; letter-spacing: -0.035em; margin-right: 5px; }
+.space .hero .tracker-count { display: block; margin-bottom: 10px; }
+.space .hero .ledger-total { font-family: var(--font-serif); font-size: 36px; font-weight: 400; letter-spacing: -0.035em; }
+.space .ledger-entry { padding-block: 4px; }
+.space[data-kind="note"] { background: var(--elevated); }
+.space[data-kind="note"] .solo-text { display: block; font-size: 23px; line-height: 1.45; letter-spacing: -0.015em; padding-block: 8px; }
+.space[data-kind="note"] .note-text { font-family: var(--font-serif); font-size: 17px; line-height: 1.6; }
+.space[data-kind="reminder"] .solo-text { display: block; font-size: 21px; line-height: 1.4; }
+.space .solo-sub { margin-top: 16px; }
+.space .meter { height: 5px; margin-top: 10px; }
+.space .pips { gap: 7px; }
+.space .card-tools { top: 9px; right: 9px; }
+.space:focus-within .card-tools { opacity: 1; }
+@media (hover: none) { .space .card-tools { opacity: 1; } .space .card-tool { width: 36px; height: 36px; } }
+@media (max-width: 540px) { .space { padding: 20px; } }
+@media (prefers-reduced-motion: reduce) {
+  .space.forming, .space.forming.washed, .space.forming.noted, .space.forming > * { animation: none; }
+}
+/* Editorial ink remains neutral; urgency and progress use separate marks. */
+.space .space-name, .focus-card .space-name,
+.space .solo:hover .solo-text, .focus-card .solo:hover .solo-text { color: var(--text-1); }
+.space .block-title, .focus-card .block-title { color: var(--text-2); }
+.space .solo-sub, .space .solo-sub .urgent,
+.space .when-sub, .space .when-sub.urgent,
+.focus-card .when-sub, .focus-card .when-sub.urgent { color: var(--text-3); }
+.space .urgent::before, .focus-card .when-sub.urgent::before {
+  content: ''; display: inline-block; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--bad-ink); margin-right: 6px; vertical-align: middle;
+}
+.space .card-link, .focus-card .card-link { color: inherit; border-bottom-color: var(--line-2); }
+.space .pace, .space .pace.behind, .focus-card .pace, .focus-card .pace.behind { color: var(--text-3); }
+/* Pocket's frosted sheet material, adapted to the desktop detail surface. */
+.focus-backdrop { background: rgba(225,225,225,.22); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.focus-card {
+  background: color-mix(in srgb, var(--elevated) 92%, transparent);
+  border-radius: 26px; border-color: color-mix(in srgb, var(--elevated) 80%, var(--line-1));
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 24px 80px rgba(15,12,8,.15), 0 3px 12px rgba(15,12,8,.05), inset 0 1px 0 rgba(255,255,255,.5);
+}
+:root[data-theme="dark"] .focus-backdrop { background: rgba(0,0,0,.32); }
+@supports not (backdrop-filter: blur(1px)) { .focus-card { background: var(--elevated); } }
+
+/* Exploration details, carried into the quiet page. Surface, not more chrome. */
+.space {
+  border-radius: 21px;
+  border-color: color-mix(in srgb, var(--line-1) 76%, transparent);
+  box-shadow: 0 2px 5px rgba(0,0,0,.018), 0 9px 25px rgba(0,0,0,.025), inset 0 1px 0 rgba(255,255,255,.55);
+  transition: border-color 220ms var(--ease), box-shadow 220ms var(--ease);
+}
+.space:hover:not(.ghost) {
+  box-shadow: 0 3px 8px rgba(0,0,0,.025), 0 12px 28px rgba(0,0,0,.04), inset 0 1px 0 rgba(255,255,255,.65);
+}
+.space .block + .block { border-top-color: color-mix(in srgb, var(--line-1) 65%, transparent); }
+.space .card-tools {
+  border: 1px solid color-mix(in srgb, var(--elevated) 80%, transparent);
+  border-radius: 20px; padding: 2px;
+  background: color-mix(in srgb, var(--elevated) 76%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.space .card-tool { border-radius: 50%; }
+.focus-card { animation: pocket-focus-in 380ms var(--ease-expo) both; }
+@keyframes pocket-focus-in {
+  from { opacity: 0; transform: translateY(9px) scale(.985); filter: blur(3px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
+}
+:root[data-theme="dark"] .space { box-shadow: 0 4px 15px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.04); }
+.space:focus-visible, .space:focus-visible:hover { box-shadow: var(--focus-ring-field); }
+.list-preview { margin-top: 6px; }
+.list-preview summary {
+  display: flex; align-items: center; gap: 6px; width: fit-content;
+  padding: 6px 10px; margin-left: -10px; border-radius: 12px;
+  list-style: none; cursor: pointer; font-size: 11px; color: var(--text-3);
+  transition: background 180ms var(--ease), color 180ms var(--ease);
+}
+.list-preview summary::-webkit-details-marker { display: none; }
+.list-preview summary:hover { background: var(--surface-2); color: var(--text-2); }
+.list-preview summary:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.list-preview .list-collapse, .list-preview[open] .list-expand { display: none; }
+.list-preview[open] .list-collapse { display: inline; }
+.list-preview .list-chevron { display: inline-block; transition: transform 180ms var(--ease); }
+.list-preview[open] .list-chevron { transform: rotate(180deg); }
+.list-preview[open] { padding-bottom: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .space { transition: none; }
+  .focus-card { animation: none; }
+  .list-preview summary, .list-preview .list-chevron { transition: none; }
+}
+
+.focus-card:not(.year-card):not(.attention-card):not(.demo-card) > .space-name { padding-right: 120px; }
+.focus-card .card-tools { gap: 4px; align-items: center; }
+.focus-card .card-tools .surface-close { margin-left: 5px; }
+
+/* Press feedback stays local; it never moves the card or its neighbours. */
+.card-tool, .surface-close { transition:transform 160ms var(--ease-out), background 160ms var(--ease), color 160ms var(--ease); }
+.card-tool:active, .surface-close:active { transform:scale(.94); }
+.row:active .tick { transform:scale(.88); }
+.list-preview summary:active { background:var(--surface-2); }
+@media(prefers-reduced-motion:reduce) {
+  .card-tool, .surface-close { transition:none; }
+  .card-tool:active, .surface-close:active, .row:active .tick { transform:none; }
+}
+
+/* Brief ink, then plain reading. Native decoration still owns wrapped text
+   after completion; the transient drawing follows measured text fragments. */
+.ink-host { position: relative; }
+.ink-feedback { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; color: var(--text-2); animation: ink-release 1500ms linear both; }
+.ink-feedback path { fill: none; stroke: currentColor; stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: ink-write 340ms steps(6,end) both; }
+.ink-strike { animation-duration: 640ms; }
+.ink-strike path { stroke-width: 1; animation-duration: 280ms; }
+.row.done .row-text.ink-strike-active { text-decoration-color: transparent; }
+@keyframes ink-write { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ink-release { 0%,70% { opacity: .7; } 100% { opacity: 0; } }
+/* Numbers stay in neutral ink. Their annotation occupies no layout space. */
+.bump { animation: status-swap 280ms var(--ease-out); }
+.tracker-count, .goal-count, .ledger-total { position: relative; }
+.delta { position: absolute; left: 0; top: 100%; margin: 1px 0 0; padding: 0 4px; border-radius: 4px; background: var(--elevated); color: var(--text-3); white-space: nowrap; z-index: 2; pointer-events: none; font: 10px/1.4 var(--font-sans); }
+/* A filed card resolves from its title into its contents. */
+.space.forming > .space-name { animation-delay: 35ms; }
+.space.forming > .block { animation-delay: 80ms; }
+.space.forming > .block ~ .block { animation-delay: 125ms; }
+@media (prefers-reduced-motion: reduce) {
+  .ink-feedback { display: none; animation: none; }
+  .row.done .row-text.ink-strike-active { text-decoration-color: var(--line-2); }
+  .bump, .space.forming > * { animation: none; }
+}
+
+/* Approved original p5.brush tick. Native SVG remains the image-load fallback.
+   Checked rows hold one static frame; only a new completion plays the strip. */
+.painted-ticks .row.done .tick{position:relative;background:transparent;border-color:transparent;overflow:visible}
+.painted-ticks .row.done .tick>svg{opacity:0}
+.painted-ticks .row.done .tick::after,.commit-tick-live{content:'';position:absolute;left:50%;top:50%;width:54px;height:54px;transform:translate(-50%,-50%);pointer-events:none;background:url('../brush/commit-tick.png') 63.6363636% 0/1200% 100% no-repeat}
+.painted-ticks .row.commit-playing .tick::after{opacity:0}
+@media(prefers-reduced-motion:reduce){.commit-tick-live{display:none}}
+
+/* Keep opening a single-task card separate from completing its task. */
+.solo.solo-task { display: flex; align-items: flex-start; gap: 10px; }
+.space .row.solo-check { flex: 0 0 28px; width: 28px; min-height: 32px; padding: 7px 5px; margin-left: -5px; }
+.solo-task .solo-text { flex: 1; min-width: 0; }
+.solo-check.done + .solo-text { text-decoration: line-through; color: var(--text-3); }
