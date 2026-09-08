@@ -2,7 +2,7 @@
 // Boot, poll, and the session live here. Everything else is a module
 // under public/js/: a new surface gets a new file.
 
-import { $, api, page, hooks, reduced } from './js/session.js'
+import { $, api, page, hooks, reduced, adoptState } from './js/session.js'
 import './js/motion.js'
 import './js/blocks.js'
 import './js/layout.js'
@@ -14,6 +14,7 @@ import './js/connections.js'
 import './js/about.js'
 import './js/receipt.js'
 import './js/demo.js'
+import './js/preview-images.js'
 import { render } from './js/paint.js'
 import { fitCapture } from './js/capture.js'
 import { renderSuggestions } from './js/layout.js'
@@ -23,7 +24,6 @@ import { closeFocus } from './js/layout.js'
 import { loadConnections, renderSettings, shouldOnboard, launchParams, onboarding } from './js/connections.js'
 import { firstRunDemo } from './js/demo.js'
 import { showIntro } from './js/layout.js'
-
 document.documentElement.classList.add('booting')
 
 hooks.fitCapture = fitCapture
@@ -36,29 +36,6 @@ function schedulePoll() {
   page.pollTimer = setTimeout(poll, busy ? 1500 : 10000)
 }
 let pollRequest = 0
-const LIVE_FIELDS = ['settle', 'canUndo', 'canUndoManual']
-function reconcileState(current, incoming) {
-  if (!incoming || typeof incoming !== 'object') return current
-  if (
-    Number.isSafeInteger(current?.revision) &&
-    (!Number.isSafeInteger(incoming.revision) || incoming.revision < current.revision)
-  ) return current
-  if (incoming.unchanged) {
-    if (!current) return current
-    const next = { ...current }
-    for (const field of ['fingerprint', ...LIVE_FIELDS]) {
-      if (Object.hasOwn(incoming, field)) next[field] = incoming[field]
-    }
-    return next
-  }
-  // An interrupted or proxy-truncated response must not erase the page.
-  if (!Array.isArray(incoming.spaces) || !Array.isArray(incoming.captures)) return current
-  const next = { ...incoming }
-  for (const field of LIVE_FIELDS) {
-    if (!Object.hasOwn(incoming, field) && Object.hasOwn(current || {}, field)) next[field] = current[field]
-  }
-  return next
-}
 
 async function poll() {
   const request = ++pollRequest
@@ -66,11 +43,7 @@ async function poll() {
     const since = page.state?.fingerprint
     const incoming = await api(`/api/state${since ? `?since=${encodeURIComponent(since)}` : ''}`)
     if (request !== pollRequest) return
-    const next = reconcileState(page.state, incoming)
-    if (next !== page.state) {
-      page.state = next
-      render()
-    }
+    if (adoptState(incoming)) render()
   } catch {
     /* transient */
   }
@@ -94,7 +67,8 @@ document.addEventListener('visibilitychange', () => {
 
 async function boot() {
   try {
-    page.state = await api('/api/state')
+    adoptState(await api('/api/state'))
+    if (!page.state) throw new Error('invalid page response')
     render()
     if (shouldOnboard) {
       onboarding.hidden = false
@@ -103,7 +77,8 @@ async function boot() {
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
-    if (!page.state.spaces.length && !page.state.captures.length && !page.state.carryover) {
+    await hooks.startCaptureOutbox()
+    if (!page.state.spaces.length && !page.state.captures.length && !page.queuedTexts.length && !page.state.carryover) {
       if (!reduced) firstRunDemo()
       else if (!localStorage.getItem('dec-intro')) {
         localStorage.setItem('dec-intro', '1')

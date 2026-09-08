@@ -1,11 +1,23 @@
-import { $, toast, api, page, hooks, reduced } from './session.js'
+import { submitAnswer } from './question-input.js'
+import { $, toast, api, page, hooks, reduced, adoptState } from './session.js'
 import { whenPhrase } from './blocks.js'
-import { celebrate, pop, washCard, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
+import { commitTick, clearCommitTick } from './commit-tick.js'
+import { drawCompletion, clearInk } from './ink-feedback.js'
+import { pop, withFlip, celebrateSpace, markEdited, bump } from './motion.js'
 import { buildFocus, closeFocus, askToFinish, resortCard } from './layout.js'
 import { openPastYear, buildYear, openMonth, renderCarryover, renderCarryoverNudge, coAnswer, coCommit, coCount, parkCarryover } from './year.js'
 // Task focus listens in the capture phase, so it decides what a click on the
 // words of a row means before anything below gets to check the row off.
 import './focus-task.js'
+import './disclosure-motion.js'
+const pendingChecks=new Set()
+
+document.addEventListener('toggle', (e) => {
+  const fold = e.target
+  if (!fold.matches?.('[data-list-preview]') || !fold.isConnected) return
+  if (fold.open) page.expandedLists.add(fold.dataset.listPreview)
+  else page.expandedLists.delete(fold.dataset.listPreview)
+}, true)
 
 document.addEventListener('click', async (e) => {
   // a link in a card is a link: let the browser have it
@@ -35,7 +47,7 @@ document.addEventListener('click', async (e) => {
     if (!reduced) celebrateSpace(document.querySelector(`#goals [data-goal-open="${id}"]`))
     try {
       const out = await api('/api/finish', { spaceId: id, finished: true })
-      page.state = out.state
+      adoptState(out.state)
       page.focusId = null
       hooks.render()
       toast(`${out.name} archived`)
@@ -50,7 +62,7 @@ document.addEventListener('click', async (e) => {
     const sp = page.state.spaces.find((x) => x.id === pinBtn.dataset.pin)
     try {
       const out = await api('/api/pin', { spaceId: pinBtn.dataset.pin, pinned: !sp?.pinned })
-      page.state = out.state
+      adoptState(out.state)
       withFlip(() => hooks.render())
       if (page.focusId) buildFocus()
       toast(out.pinned ? `${out.name} pinned` : `${out.name} unpinned`)
@@ -71,7 +83,7 @@ document.addEventListener('click', async (e) => {
     if (!sp?.finished && el && !reduced) celebrateSpace(el)
     try {
       const out = await api('/api/finish', { spaceId: finBtn.dataset.finish, finished: !sp?.finished })
-      page.state = out.state
+      adoptState(out.state)
       if (out.finished) {
         await leaveArchived(finBtn.dataset.finish)
         toast(`${out.name} archived`)
@@ -88,7 +100,7 @@ document.addEventListener('click', async (e) => {
   if (reopen) {
     try {
       const out = await api('/api/finish', { spaceId: reopen.dataset.reopen, finished: false })
-      page.state = out.state
+      adoptState(out.state)
       withFlip(() => hooks.render())
       toast(`${out.name} reopened`)
     } catch (err) {
@@ -102,7 +114,7 @@ document.addEventListener('click', async (e) => {
   if (rest) {
     try {
       const out = await api('/api/restore', { spaceId: rest.dataset.restore })
-      page.state = out.state
+      adoptState(out.state)
       withFlip(() => hooks.render())
       toast(`${out.name} is back`)
     } catch (err) {
@@ -139,7 +151,7 @@ document.addEventListener('click', async (e) => {
     const text = sug.dataset.suggest
     setTimeout(async () => {
       try {
-        page.state = await api('/api/capture', { text })
+        adoptState(await api('/api/capture', { text }))
         page.state.suggestions = []
         hooks.render()
         hooks.schedulePoll()
@@ -151,31 +163,11 @@ document.addEventListener('click', async (e) => {
     return
   }
 
-  // answering the ask: the chosen sentence files as if typed
-  const ans = e.target.closest('[data-answer]')
-  if (ans) {
-    ans.classList.add('picked')
-    setTimeout(async () => {
-      try {
-        page.state = await api('/api/answer', { choice: ans.dataset.answer })
-        hooks.render()
-        hooks.schedulePoll()
-      } catch (err) {
-        toast(err.message)
-      }
-    }, 240)
-    return
-  }
-  if (e.target.closest('[data-dismiss]')) {
-    try {
-      page.state = await api('/api/answer', {})
-      hooks.render()
-    } catch (err) {
-      toast(err.message)
-    }
-    return
-  }
-
+  // Capture identity from the displayed question, before any async work.
+  const ans=e.target.closest('[data-answer]')
+  if(ans){void submitAnswer(ans,ans.dataset.answer);return}
+  const dismiss=e.target.closest('[data-dismiss]')
+  if(dismiss){void submitAnswer(dismiss,'');return}
   // a goal opens its space: the row is the space's presence on the page,
   // so clicking it gives the full card — log, tick, pin, archive
   const gopen = e.target.closest('[data-goal-open]')
@@ -275,18 +267,14 @@ document.addEventListener('click', async (e) => {
 
   // manual check on a list item or reminder — instant, no model.
   // One click, one request: taps during the round trip are ignored.
-  // A solo card IS its reminder: the whole card is the checkbox, markup and
-  // aria and all. It was left out of this selector, so the most common card
-  // on the page could not be ticked off by clicking it — and because it is a
-  // button, the open-the-card handler below skipped it too. It did nothing.
-  // A click on the words themselves never reaches here: focus-task.js takes
-  // it in the capture phase and spotlights the task instead. The tick, and
-  // the rest of the row beside the words, still check it off.
+  // Only the explicit checkbox completes a solo task. Its words and the
+  // surrounding card open the card, so reading cannot complete it.
   const row = e.target.closest('.row[data-block], .solo[data-block]')
   if (row) {
-    if (row.dataset.busy) return
-    row.dataset.busy = '1'
-    setTimeout(() => delete row.dataset.busy, 600)
+    const checkKey=`${row.dataset.block}/${row.dataset.item || ''}`
+    if(pendingChecks.has(checkKey))return
+    pendingChecks.add(checkKey)
+    row.dataset.busy='1'
     const done = !row.classList.contains('done')
     // the same row may exist in the grid card and the focus card: keep both true
     const item = row.dataset.item ? `[data-item="${row.dataset.item}"]` : ''
@@ -294,21 +282,14 @@ document.addEventListener('click', async (e) => {
       `.row[data-block="${row.dataset.block}"]${item}, .solo[data-block="${row.dataset.block}"]${item}`
     )
     for (const twin of twins) {
+      clearInk(twin.querySelector('.row-text'))
+      clearCommitTick(twin)
+      twin.setAttribute('aria-busy','true')
       twin.classList.remove('no-anim')
       twin.classList.toggle('done', done)
       twin.setAttribute('aria-checked', String(done))
     }
-    if (done) {
-      // a solo card has no tick of its own; the card is the mark
-      const mark = row.querySelector('.tick') || row
-      pop(mark)
-      celebrate(mark)
-      // finishing the whole list earns the card a wash
-      const blockEl = row.closest('[data-bid]')
-      if (blockEl && ![...blockEl.querySelectorAll('.row')].some((r) => !r.classList.contains('done'))) {
-        setTimeout(() => washCard(row.closest('.space')), 300)
-      }
-    }
+    if(done)pop(row.querySelector('.tick') || row)
 
     // the check counts: a space with exactly one tracker ticks it live —
     // the number beats, the bar glides, and completion earns the moment
@@ -329,34 +310,44 @@ document.addEventListener('click', async (e) => {
       const t = countedBy ? sp.blocks.find((b) => b.id === countedBy && b.type === 'tracker') : null
       if (t) {
         const prevC = t.current
-        t.current = Math.max(0, prevC + (done ? 1 : -1))
-        const completedNow = done && prevC < t.target && t.current >= t.target
+        const previewCurrent=Math.max(0,prevC+(done?1:-1))
         for (const bel of document.querySelectorAll(`[data-bid="${t.id}"]`)) {
           const countEl = bel.querySelector('.tracker-count')
           const b = countEl?.querySelector('b')
           if (b) {
-            b.textContent = t.current
+            b.textContent = previewCurrent
             bump(countEl)
           }
           const meterBox = bel.querySelector('.meter')
           const span = meterBox?.querySelector('span')
-          if (span) span.style.width = `${Math.min(100, Math.round((t.current / t.target) * 100))}%`
-          meterBox?.classList.toggle('full', t.current >= t.target)
-          countEl?.classList.toggle('full', t.current >= t.target)
-          if (completedNow) {
-            pop(meterBox)
-            celebrate(meterBox)
-          }
+          if (span) span.style.width = `${Math.min(100, Math.round((previewCurrent / t.target) * 100))}%`
+          meterBox?.classList.toggle('full', previewCurrent >= t.target)
+          countEl?.classList.toggle('full', previewCurrent >= t.target)
         }
-        if (completedNow) setTimeout(() => washCard(page.spaceEls.get(sid)?.el), 250)
       }
     }
 
     try {
-      page.state = await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done })
+      adoptState(await api('/api/check', { blockId: row.dataset.block, itemId: row.dataset.item, done }, {signal:AbortSignal.timeout(15000)}))
       const after = page.state.spaces.find((s) => s.id === sid || s.blocks?.some((b) => b.id === row.dataset.block))
       const spaceId = sid || after?.id
       const known = spaceId && page.spaceEls.get(spaceId)
+      const savedBlock=after?.blocks.find(block=>block.id===row.dataset.block)
+      const savedDone=isListItem ? savedBlock?.items?.find(item=>item.id===row.dataset.item)?.done : savedBlock?.done
+      for(const twin of twins) {
+        twin.classList.toggle('done',!!savedDone)
+        twin.setAttribute('aria-checked',String(!!savedDone))
+      }
+      for(const tracker of after?.blocks.filter(block=>block.type==='tracker') || []) {
+        for(const bel of document.querySelectorAll(`[data-bid="${tracker.id}"]`)) {
+          const count=bel.querySelector('.tracker-count'),number=count?.querySelector('b')
+          if(number)number.textContent=tracker.current
+          const meter=bel.querySelector('.meter'),fill=meter?.querySelector('span')
+          if(fill)fill.style.width=`${Math.min(100,Math.round(tracker.current/tracker.target*100))}%`
+          meter?.classList.toggle('full',tracker.current>=tracker.target)
+          count?.classList.toggle('full',tracker.current>=tracker.target)
+        }
+      }
       if (rolls) {
         // say what actually happened: it came round again, on this date
         const now = after?.blocks.find((b) => b.id === row.dataset.block)
@@ -368,6 +359,7 @@ document.addEventListener('click', async (e) => {
         toast(w ? `done · back ${w.text}` : 'done')
         return
       }
+      if (done && savedDone) for (const twin of twins) { commitTick(twin); drawCompletion(twin) }
       // adopt silently; the row is already painted
       if (after?.finished) {
         await leaveArchived(after.id)
@@ -388,7 +380,18 @@ document.addEventListener('click', async (e) => {
         }, done ? 900 : 400)
       }
     } catch (err) {
-      toast(err.message)
+      // A dropped response may still have saved. Refresh first; otherwise
+      // repaint the latest confirmed snapshot, not a stale pre-click copy.
+      try{adoptState(await api('/api/state',undefined,{signal:AbortSignal.timeout(5000)}))}catch{}
+      const affected=page.state.spaces.find(space=>space.id===sid || space.blocks.some(block=>block.id===row.dataset.block))
+      if(affected)resortCard(affected.id)
+      if(page.focusId && page.focusId===affected?.id)buildFocus()
+      delete $('#today').dataset.key
+      hooks.render()
+      toast(`Could not confirm the change. ${err.message}`)
+    } finally {
+      pendingChecks.delete(checkKey)
+      for(const twin of twins){delete twin.dataset.busy;twin.removeAttribute('aria-busy')}
     }
     return
   }
@@ -398,7 +401,7 @@ document.addEventListener('click', async (e) => {
     if (btn.disabled) return
     btn.disabled = true
     try {
-      page.state = await api('/api/undo', {})
+      adoptState(await api('/api/undo', {}))
       page.spaceEls.forEach(({ el }) => el.remove())
       page.spaceEls.clear()
       hooks.render()
@@ -410,6 +413,7 @@ document.addEventListener('click', async (e) => {
   }
 
   if (e.target.closest('.retry')) {
+    if (page.captureError) { await hooks.retryCaptureOutbox(); if (page.captureError) toast(page.captureError); return }
     try {
       await api('/api/settle', {})
       page.state.settle.lastError = null
@@ -425,7 +429,7 @@ document.addEventListener('click', async (e) => {
   // anywhere quiet on a grid card: open the focused view — but selecting
   // text to copy is reading, not clicking
   const card = e.target.closest('#spaces .space')
-  if (card && card.dataset.sid && !e.target.closest('button, a') && !window.getSelection()?.toString()) {
+  if (card && card.dataset.sid && !e.target.closest('button, a, summary') && !window.getSelection()?.toString()) {
     page.focusId = card.dataset.sid
     buildFocus()
   }
@@ -435,7 +439,7 @@ document.addEventListener('click', async (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return
   const card = e.target.closest?.('#spaces .space')
-  if (card?.dataset.sid) {
+  if (card?.dataset.sid && e.target === card) {
     e.preventDefault()
     page.focusId = card.dataset.sid
     buildFocus()
@@ -454,7 +458,7 @@ document.addEventListener('keydown', async (e) => {
     try {
       // your own last action first; the agent's batch only when you have none
       const out = await api(page.state.canUndoManual ? '/api/undo-mine' : '/api/undo', {})
-      page.state = out.state || out
+      adoptState(out.state || out)
       page.spaceEls.forEach(({ el }) => el.remove())
       page.spaceEls.clear()
       hooks.render()
@@ -515,7 +519,7 @@ document.addEventListener('dblclick', (e) => {
       return
     }
     try {
-      page.state = await api('/api/edit', { ...payload, text })
+      adoptState(await api('/api/edit', { ...payload, text }))
       markEdited(el)
       const sid = card?.dataset.sid
       const known = sid && page.spaceEls.get(sid)

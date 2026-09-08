@@ -228,9 +228,12 @@ export async function openSettings() {
   } catch (e) {
     toast(e.message)
   }
+  if (settingsPop.hidden) return
   const first = settingsPop.querySelector('#theme-seg button[aria-checked="true"]') || settingsFocusables()[0]
   first?.focus()
 }
+
+$('#settings-close').addEventListener('click', () => closeSettings())
 
 // the reference has a permanent home now, instead of one appearance on a
 // page you had not written anything on yet

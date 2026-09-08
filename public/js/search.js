@@ -6,14 +6,18 @@ const looksLikeQuestion = (t) => t.endsWith('?') || QUESTION_RE.test(t.trim())
 
 /** Questions belong with finding, not with writing: the answer appears in
     the search results, and leaves when the search does. */
+let searchRevision = 0
 async function askThePage(question) {
+  const revision = ++searchRevision
   const box = $('#search-results')
   box.classList.add('on')
   box.innerHTML = `<div class="search-answer thinking">thinking<span class="a-dots"><i>.</i><i>.</i><i>.</i></span></div>`
   try {
     const { answer } = await api('/api/query', { question })
-    box.innerHTML = `<div class="search-answer">${esc(answer)}</div>`
+    if (revision !== searchRevision) return
+    box.innerHTML = `<div class="search-answer" role="status">${esc(answer)}</div>`
   } catch (err) {
+    if (revision !== searchRevision) return
     box.innerHTML = `<div class="search-answer">couldn't answer: ${esc(err.message)}</div>`
   }
 }
@@ -47,11 +51,13 @@ function searchEverything(q) {
 }
 
 function closeSearch() {
+  searchRevision++
   resultsEl.innerHTML = ''
   resultsEl.classList.remove('on')
 }
 
 searchEl.addEventListener('input', () => {
+  searchRevision++
   const q = searchEl.value.trim()
   if (q.length < 2) return closeSearch()
   if (resultsEl.querySelector('.search-answer')) resultsEl.innerHTML = ''
@@ -60,11 +66,16 @@ searchEl.addEventListener('input', () => {
     ? hits
         .map((h, i) => `<button class="search-hit" data-hit="${h.sid}" style="--d:${Math.min(i * 28, 140)}ms"><span class="sh-label">${esc(h.label.slice(0, 44))}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
         .join('')
-    : '<div class="search-none">nothing found</div>'
+    : '<div class="search-none" role="status">No matches. Try a different word.</div>'
   resultsEl.classList.add('on')
 })
 
 searchEl.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') {
+    const first = resultsEl.querySelector('.search-hit')
+    if (first) { e.preventDefault(); first.focus() }
+    return
+  }
   if (e.key === 'Escape') {
     searchEl.value = ''
     closeSearch()
@@ -97,4 +108,28 @@ document.addEventListener('click', (e) => {
     return
   }
   if (!e.target.closest('.search-wrap')) closeSearch()
+})
+
+// Native buttons own Enter; arrow keys move through the local results.
+resultsEl.addEventListener('keydown', (e) => {
+  const hits = [...resultsEl.querySelectorAll('.search-hit')]
+  const at = hits.indexOf(document.activeElement)
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeSearch()
+    searchEl.focus()
+    return
+  }
+  if (at < 0 || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+  e.preventDefault()
+  if (e.key === 'ArrowUp' && at === 0) return searchEl.focus()
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? hits.length - 1 : Math.max(0, Math.min(hits.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))
+  hits[next]?.focus()
+})
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !document.documentElement.classList.contains('modal-open') && !document.querySelector('dialog[open]')) {
+    e.preventDefault()
+    searchEl.focus()
+    searchEl.select()
+  }
 })

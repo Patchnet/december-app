@@ -10,7 +10,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, clearAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { parseCaptureInput } from './public/js/capture-input.js'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
@@ -19,8 +20,10 @@ import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/setti
 import { docxText } from './lib/docx.mjs'
 import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
 import { createPocketSync } from './lib/pocket-sync.mjs'
+import { createPreviewStore } from './lib/previews.mjs'
 
 const PUBLIC = join(ROOT, 'public')
+const previews = createPreviewStore(DATA_DIR)
 const PORT = Number(process.env.PORT || 3008)
 // The shipped version, from the package manifest beside this file.
 const APP_VERSION = (() => {
@@ -168,7 +171,7 @@ const json = (res, code, body) => {
   const headers = { ...SECURITY_HEADERS, 'content-type': 'application/json; charset=utf-8' }
   if (code === 413) headers.connection = 'close'
   res.writeHead(code, headers)
-  res.end(JSON.stringify(body))
+  res.end(JSON.stringify(previews.decorate(body)))
 }
 
 // A capability the Pocket routes require. Any page can post to a loopback
@@ -303,7 +306,7 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (path === '/api/state' && req.method === 'GET') {
-      const fingerprint = stateFingerprint()
+      const fingerprint = `${stateFingerprint()}:${previews.revision()}`
       if (url.searchParams.get('since') === fingerprint) {
         return json(res, 200, {
           unchanged: true,
@@ -417,17 +420,11 @@ const server = createServer(async (req, res) => {
     // per line, so each thought settles and travels on its own.
     if (path === '/api/capture' && req.method === 'POST') {
       const body = await readBody(req)
-      const text = String(body.text || '').trim()
-      if (!text) return json(res, 400, { error: 'empty' })
-      // every line a person actually wrote is kept: the old floor of three
-      // characters silently swallowed "AC", "Rx", "gym" out of a dump
-      const lines = text.includes('\n')
-        ? text.split('\n').map((l) => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean).slice(0, 25)
-        : [text]
-      if (lines.length === 1) await addCapture(lines[0], body.hint)
-      else await addCaptureBatch(lines, body.hint)
+      const lines = parseCaptureInput(body.text)
+      if (body.requestId !== undefined && (typeof body.requestId !== 'string' || !body.requestId.trim())) return json(res,400,{error:'invalid request id'})
+      const captures = await addCaptureBatch(lines,body.hint,{id:body.requestId})
       scheduleSettle()
-      return json(res, 200, project(settleStatus()))
+      return json(res, 200, {...project(settleStatus()),captureReceipt:{requestId:body.requestId || null,captureIds:captures.map(capture=>capture.id)}})
     }
 
     // Manual, instant check from the page — no model involved.
@@ -452,16 +449,8 @@ const server = createServer(async (req, res) => {
 
     // Answer (or dismiss) the ask. A chosen option files as if typed.
     if (path === '/api/answer' && req.method === 'POST') {
-      const body = await readBody(req)
-      const asked = project().ask?.question || ''
-      await clearAsk()
-      if (body.choice) {
-        // a tapped option is a whole sentence already; a typed one is a
-        // fragment, so it files with the question that gives it meaning
-        const text = body.typed && asked ? `${asked} ${body.choice}` : String(body.choice)
-        await addCapture(text)
-        scheduleSettle()
-      }
+      const receipt=await answerAsk(await readBody(req))
+      if(receipt.captureId)scheduleSettle()
       return json(res, 200, project(settleStatus()))
     }
 
@@ -713,6 +702,12 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    if (path.startsWith('/api/preview-assets/') && req.method === 'GET') {
+      const asset = previews.asset(path.slice('/api/preview-assets/'.length))
+      if (!asset) return json(res, 404, { error: 'image unavailable' })
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': asset.type, 'content-length': asset.bytes.length, 'cache-control': 'private, max-age=31536000, immutable' })
+      return res.end(asset.bytes)
+    }
     if (path === '/api/health') return json(res, 200, { ok: true, port: PORT })
 
     return serveStatic(res, path)

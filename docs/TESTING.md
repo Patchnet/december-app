@@ -79,3 +79,32 @@ After `npm ci`, exercise Electron behavior manually:
   modules only; the running app exercises persistence.
 - Quality exemptions (skips, disabled assertions) require a `QX-` entry in
   `docs/quality-exemptions.md` per the workspace testing policy.
+
+## Desktop polish and reliability regression coverage
+
+The canonical suite additionally covers retained capture delivery, question
+identity and atomic answer persistence, operation replay across restart,
+conflict-aware undo, process replacement ownership, task scheduling without
+duplication, calendar navigation races, and reduced-motion behavior.
+
+For the cross-repository Pocket contract, check out the supported Relay beside
+this repository and run:
+
+```bash
+DECEMBER_RELAY_ROOT=../december-relay npm test
+```
+
+The `Windows package` PR check builds an installer without publishing it and
+retains the installer and blockmap as short-lived review artifacts. A successful
+build does not replace the installed-Windows and upgrade smoke checklist above.
+
+Agent content calls retain their legacy behavior when neither `source` nor
+`operationId` is supplied. Such calls are separate writes, not deduplicated
+retries. Pass a capture source or stable operation ID for durable replay
+protection; use distinct IDs for distinct identical actions.
+
+Photo and weather rendering reads an optional local preview cache. Ordinary
+notes remain functional without that cache. This change does not automatically
+retrieve recipe photos or refresh live weather; `scripts/cache-preview.mjs`
+imports already retrieved content for development. Cached weather explicitly
+reports stale and sample data.

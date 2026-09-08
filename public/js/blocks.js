@@ -1,4 +1,6 @@
 import { esc, localDay, fmtAmount, page } from './session.js'
+import { previewHTML, previewNoteText, weatherScene } from './preview-model.js'
+import { mediaListMarkup } from './list-preview.js'
 
 // ---------------------------------------------------------------- blocks
 
@@ -233,7 +235,7 @@ const FULL = {
     return `
     ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
     ${open.map((i) => rowMarkup(b, i)).join('')}
-    ${open.length === 0 ? '<div class="done-more">nothing open</div>' : ''}
+    ${open.length === 0 && done.length === 0 ? '<div class="done-more">No items yet</div>' : ''}
     ${
       done.length
         ? `<details class="done-fold"><summary>${done.length} done</summary>${done.map((i) => rowMarkup(b, i)).join('')}</details>`
@@ -244,14 +246,14 @@ const FULL = {
 
 const RENDER = {
   // Live cards show only open work. Done rows stay in storage and in focus.
-  list: (b, full) => {
+  list: (b, full, _hero, besideImage = false) => {
     const open = b.items.filter((i) => !i.done)
     const done = b.items.filter((i) => i.done).sort((a, z) => (z.doneAt || '').localeCompare(a.doneAt || ''))
     if (!full && open.length === 0) return ''
     const shown = [...open, ...(full ? done : [])]
     return `
     ${b.title ? `<div class="block-title">${esc(b.title)}</div>` : ''}
-    ${shown.map((i) => rowMarkup(b, i)).join('')}`
+    ${!full && besideImage ? mediaListMarkup(shown.map(i => rowMarkup(b, i)), b.id, page.expandedLists.has(b.id)) : shown.map((i) => rowMarkup(b, i)).join('')}`
   },
 
   tracker: (b, full_, hero) => {
@@ -314,9 +316,10 @@ const RENDER = {
     <div class="streak-line"><span class="streak-dots">${days.join('')}</span></div>`
   },
 
-  note: (b, full) => `
+  note: (b, full, _hero, _besideImage, weatherHeaderId) => `
+    ${previewHTML(b.preview, Date.now(), b.id === weatherHeaderId)}
     ${b.title && !/^notes?$/i.test(b.title.trim()) ? `<div class="block-title">${esc(b.title)}</div>` : ''}
-    <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(b.text)}</div>`,
+    <div class="note-text ${!full && b.text.length > 280 ? 'clamp' : ''}">${linkify(previewNoteText(b.text, b.preview, full))}</div>`,
 
   reminder: (b, full) => {
     if (!full && b.done && !b.repeat) return ''
@@ -381,7 +384,7 @@ function archiveReady(space) {
 }
 
 function soloOf(space) {
-  if (space.blocks.length !== 1) return null
+  if (space.blocks.length !== 1 || space.blocks[0].preview) return null
   const b = space.blocks[0]
   const solo = b.type === 'reminder' && !(b.done && !b.repeat)
     ? b
@@ -426,6 +429,7 @@ function spaceInner(space, full = false) {
         <button class="card-tool ${space.pinned ? 'on' : ''}" data-pin="${space.id}" aria-label="${space.pinned ? 'Unpin' : 'Pin'}" title="${space.pinned ? 'unpin' : 'pin'}">
           <svg viewBox="0 0 24 24" fill="${space.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4h6l-1 6 4 4v2h-5v5h-2v-5H6v-2l4-4-1-6Z"/></svg>
         </button>
+        ${full ? '<button type="button" class="surface-close" data-close aria-label="Close card">Close</button>' : ''}
       </div>`
   const solo = full ? null : soloOf(space)
   if (solo) {
@@ -439,31 +443,42 @@ function spaceInner(space, full = false) {
     const checkable = b.type === 'reminder'
     return `
       ${corner}
-      <${checkable ? 'button' : 'div'} class="solo ${b.done ? 'done' : ''}"
-        ${checkable ? `data-block="${b.id}" role="checkbox" aria-checked="${b.done}" aria-label="${esc(b.text)}"` : ''}>
+      <div class="solo ${checkable ? 'solo-task' : ''}">
+        ${checkable ? `<button type="button" class="row solo-check ${b.done ? 'done' : ''}" data-block="${b.id}" role="checkbox" aria-checked="${b.done}" aria-label="${esc(b.text)}">
+          <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
+        </button>` : ''}
         <span class="solo-text">${linkify(b.text)}</span>
-      </${checkable ? 'button' : 'div'}>
+      </div>
       ${bits.length ? `<div class="solo-sub">${bits.join(' · ')}</div>` : ''}`
   }
   const meta = full
     ? [space.area, space.pinned ? 'pinned' : '', touchedPhrase(space.updatedAt)].filter(Boolean).join(' · ')
     : ''
+  const besideImage = shown.some(block => block.preview?.kind === 'image')
+  const sky = blocks[0]?.type === 'note' ? weatherScene(blocks[0].preview) : ''
+  const weatherHeaderId = sky ? blocks[0].id : null
   const rendered = blocks
-    .map((b) => {
+    .map((original) => {
+      // A heading earns its place only when it adds information. Keep stored
+      // wording intact; this also covers older cards the agent already wrote.
+      const sameTitle = String(original.title || '').trim().toLocaleLowerCase() === space.name.trim().toLocaleLowerCase()
+      const b = sameTitle ? {...original, title:''} : original
       const isHero = b.id === hero
       const compact = !full && !isHero && COMPACT[b.type]
       const draw = full && FULL[b.type] ? FULL[b.type] : RENDER[b.type]
-      const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero) : ''
+      const body = compact ? COMPACT[b.type](b) : draw ? draw(b, full, isHero, besideImage, weatherHeaderId) : ''
       if (!String(body).trim()) return ''
       return `<div class="block${isHero ? ' hero' : ''}" data-bid="${b.id}">${body}</div>`
     })
     .join('')
-  // Done work leaves the compact card, so a space whose every thing is done
-  // (a reopened one, say) would be a name over nothing. Say so, the way a
-  // list with no open rows does, rather than drawing an empty card.
-  const body = rendered.trim() || (full ? '' : '<div class="done-more">nothing open</div>')
+  // A completed card is a receipt, not an empty state. Its full view keeps
+  // the original checkboxes available to inspect or reopen.
+  const completed = shown.flatMap(b => b.type === 'list' ? b.items.filter(i=>i.done) : b.type === 'reminder' && b.done ? [b] : [])
+  const emptyText = completed.length === 1 ? `Completed · ${completed[0].text}` : completed.length ? `${completed.length} tasks completed` : 'No items yet'
+  const body = rendered.trim() || (full ? '' : `<div class="done-more">${esc(emptyText)}</div>`)
   return `
     ${corner}
+    ${sky}
     <h2 class="space-name">${esc(space.name)}</h2>
     ${meta ? `<div class="focus-meta">${esc(meta)}</div>` : ''}
     ${body}`

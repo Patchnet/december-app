@@ -243,7 +243,7 @@ test('an archive alone is not rollover provenance', async () => {
   assert.equal(core.project().about.name, 'Current page')
 })
 
-test('the capture cap removes only oldest inbox entries when legacy ids collide', async () => {
+test('a full inbox rejects new intake without evicting captures or legacy receipts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-capture-cap-'))
   const year = new Date().getFullYear()
   const captures = [
@@ -258,7 +258,7 @@ test('the capture cap removes only oldest inbox entries when legacy ids collide'
   ]
   await writeFile(join(dir, 'state.json'), JSON.stringify({ captures, spaces: [], lessons: [], activity: [], retired: [], yearOf: year }))
   const core = await isolatedCore(dir)
-  await core.addCapture('one more inbox item')
+  await assert.rejects(core.addCapture('one more inbox item'), /200 unfiled/)
 
   const saved = JSON.parse(await readFile(join(dir, 'state.json'), 'utf8')).captures
   assert.equal(saved.filter((capture) => capture.status === 'inbox').length, 200)
@@ -266,11 +266,11 @@ test('the capture cap removes only oldest inbox entries when legacy ids collide'
   assert.deepEqual(saved.filter((capture) => capture.status === 'filed').map((capture) => capture.text), [
     'first filed receipt', 'second filed receipt',
   ])
-  assert.equal(saved.some((capture) => capture.text === 'inbox 0'), false)
+  assert.equal(saved.some((capture) => capture.text === 'inbox 0'), true)
   assert.equal(core.project().sources['duplicate-id'], 'second filed receipt')
 })
 
-test('batch capture deduplicates in order, persists once, and caps only the inbox', async () => {
+test('batch capture validates capacity atomically and persists an accepted dump once', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'december-batch-'))
   const year = new Date().getFullYear()
   const captures = [
@@ -285,8 +285,11 @@ test('batch capture deduplicates in order, persists once, and caps only the inbo
   let persists = 0
   core.observePersists(() => { persists++ })
 
-  const kept = await core.addCaptureBatch(['paid rent', 'ran three miles', 'paid rent'])
-  assert.deepEqual(kept.map((capture) => capture.text), ['paid rent', 'ran three miles'])
+  await assert.rejects(core.addCaptureBatch(['paid rent', 'ran three miles', 'paid rent']), /200 unfiled/)
+  assert.equal(core.project().captures.length,199)
+  assert.equal(persists,0)
+  const kept = await core.addCaptureBatch(['paid rent', 'paid rent'])
+  assert.deepEqual(kept.map((capture) => capture.text), ['paid rent'])
   assert.equal(persists, 1)
 
   const raw = await readFile(join(dir, 'state.json'), 'utf8')
@@ -298,7 +301,7 @@ test('batch capture deduplicates in order, persists once, and caps only the inbo
     'first receipt', 'second receipt',
   ])
   const events = (await core.readEvents(year)).filter((event) => event.kind === 'capture')
-  assert.deepEqual(events.map((event) => event.summary), ['paid rent', 'ran three miles'])
+  assert.deepEqual(events.map((event) => event.summary), ['paid rent'])
 })
 
 test('durable revisions and poll freshness cross same-state time boundaries', async () => {
@@ -936,4 +939,144 @@ test('a month separates overdue reminders, future reminders, and completed histo
   assert.equal(future.ahead, 1)
   assert.equal(future.overdue, 0)
   assert.match(future.spaces[0].headline, /1 scheduled/)
+})
+
+
+test('capture duplicates wait for durable storage after failure and during concurrent intake', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-durable-capture-'))
+  let core=await isolatedCore(dir)
+  const blocker=join(dir,'state.json.writing')
+  await mkdir(blocker)
+  await assert.rejects(core.addCapture('Keep this',undefined,{id:'phone-note'}))
+  await assert.rejects(core.addCapture('Keep this',undefined,{id:'phone-note'}))
+  await rm(blocker,{recursive:true})
+  const [a,b]=await Promise.all([core.addCapture('Keep this',undefined,{id:'phone-note'}),core.addCapture('Keep this',undefined,{id:'phone-note'})])
+  assert.equal(a.id,b.id)
+  core=await isolatedCore(dir)
+  assert.equal(core.project().captures.filter(c=>c.id==='phone-note').length,1)
+  await assert.rejects(core.addCapture('Changed body',undefined,{id:'phone-note'}),/different content/)
+})
+
+test('a stable batch request replays after filing and restart without creating more notes', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-replay-capture-'))
+  let core=await isolatedCore(dir)
+  const first=await core.addCaptureBatch(['A','B'],'Work',{id:'request-1'})
+  await core.fileCapture(first[0].id,'Work','Kept A')
+  core=await isolatedCore(dir)
+  const revision=core.stateRevision()
+  const replay=await core.addCaptureBatch(['A','B'],'Work',{id:'request-1'})
+  assert.deepEqual(replay.map(c=>c.id),first.map(c=>c.id))
+  assert.equal(core.stateRevision(),revision)
+  assert.equal(core.project().captures.length,1)
+  await assert.rejects(core.addCaptureBatch(['A','B','C'],'Work',{id:'request-1'}),/different content/)
+  await assert.rejects(core.addCaptureBatch(['A','B'],'Home',{id:'request-1'}),/different content/)
+  assert.equal(core.project().captures.length,1)
+})
+
+test('failed batch persistence can be retried durably without duplicate lines', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-batch-durable-'))
+  let core=await isolatedCore(dir)
+  const blocker=join(dir,'state.json.writing');await mkdir(blocker)
+  await assert.rejects(core.addCaptureBatch(['One','Two'],undefined,{id:'batch-failed'}))
+  await rm(blocker,{recursive:true})
+  const retry=await core.addCaptureBatch(['One','Two'],undefined,{id:'batch-failed'})
+  assert.equal(retry.length,2)
+  core=await isolatedCore(dir)
+  assert.deepEqual(core.project().captures.map(c=>c.text),['One','Two'])
+})
+
+test('oversized text and batches fail before accepting any input', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-input-limits-')),core=await isolatedCore(dir)
+  await assert.rejects(core.addCapture('x'.repeat(8001)),/8,000/)
+  await assert.rejects(core.addCaptureBatch(['valid','x'.repeat(8001)]),/8,000/)
+  await assert.rejects(core.addCaptureBatch(Array.from({length:26},(_,i)=>String(i))),/25/)
+  assert.equal(core.project().captures.length,0)
+  assert.equal(core.stateRevision(),0)
+  await core.addCapture('x'.repeat(8000))
+  assert.equal(core.project().captures[0].text.length,8000)
+})
+
+test('distinct explicit capture IDs preserve identical authored notes', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-distinct-notes-')),core=await isolatedCore(dir)
+  await core.addCapture('Coffee',undefined,{id:'phone-a'})
+  await core.addCapture('Coffee',undefined,{id:'phone-b'})
+  await core.addCaptureBatch(['Coffee','Coffee'],undefined,{id:'desktop-c'})
+  assert.equal(core.project().captures.length,4)
+})
+
+test('scheduling a list task replaces only that task and survives retries and restart', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-schedule-task-')),core=await isolatedCore(dir)
+  const made=await core.createBlock('Home',{type:'list',title:'Calls',items:['Call plumber','Call Ana'],source:'original'})
+  const before=structuredClone(core.readBlock(made.blockId).block),item=before.items[0]
+  const args={blockId:made.blockId,itemId:item.id,when:'2026-09-09',text:'Call plumber to arrange a visit as soon as possible',source:'follow-up'}
+  const result=await core.scheduleListItem(args)
+  assert.deepEqual(core.readBlock(made.blockId).block.items,[before.items[1]])
+  const reminder=core.readBlock(result.blockId).block
+  assert.equal(reminder.type,'reminder');assert.equal(reminder.when,args.when);assert.equal(reminder.done,false)
+  assert.deepEqual(reminder.movedFrom.item,item);assert.equal(reminder.src,'follow-up')
+  assert.equal(reminder.movedFrom.listFields.title,'Calls')
+  const replay=await core.scheduleListItem(args)
+  assert.equal(replay.blockId,result.blockId)
+  const reloaded=await isolatedCore(dir)
+  assert.equal((await reloaded.scheduleListItem(args)).blockId,result.blockId)
+  assert.equal(reloaded.agentView().spaces[0].blocks.length,2)
+  await assert.rejects(()=>reloaded.scheduleListItem({...args,when:'2026-09-10'}),/already moved/)
+  assert.equal(reloaded.readBlock(result.blockId).block.when,args.when)
+})
+
+test('scheduling a sole list item leaves one reminder rather than an empty list and duplicate', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-schedule-sole-')),core=await isolatedCore(dir)
+  const made=await core.createBlock('Plumber',{type:'list',title:'',items:['Call plumber']})
+  const item=core.readBlock(made.blockId).block.items[0]
+  const args={blockId:made.blockId,itemId:item.id,when:'2026-09-09'}
+  const result=await core.scheduleListItem(args)
+  assert.equal(core.agentView().spaces[0].blocks.length,1)
+  assert.equal(core.readBlock(result.blockId).block.text,'Call plumber')
+  assert.equal((await core.scheduleListItem(args)).blockId,result.blockId)
+})
+
+test('invalid and unsafe task moves leave the original card intact', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-schedule-invalid-')),core=await isolatedCore(dir)
+  const made=await core.createBlock('Calls',{type:'list',title:'Calls',items:['Call plumber']})
+  const item=core.readBlock(made.blockId).block.items[0]
+  const args={blockId:made.blockId,itemId:item.id,when:'2026-09-09'}
+  for (const patch of [{when:'2026-02-30'},{at:'25:00'},{itemId:'stale'},{done:true},{text:''},{text:'x'.repeat(201)},{entities:[{type:'imaginary',name:'x'}]}]) {
+    const before=JSON.stringify(core.agentView()),revision=core.stateRevision()
+    await assert.rejects(()=>core.scheduleListItem({...args,...patch}))
+    assert.equal(JSON.stringify(core.agentView()),before)
+    assert.equal(core.stateRevision(),revision)
+  }
+  await core.createBlock('Calls',{type:'tracker',title:'Calls',target:1,current:0})
+  await assert.rejects(()=>core.scheduleListItem(args),/counted/)
+  assert.equal(core.readBlock(made.blockId).block.items.length,1)
+})
+
+test('a failed task move write can be retried without duplicating the task', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-schedule-disk-')),core=await isolatedCore(dir)
+  const made=await core.createBlock('Plumber',{type:'list',title:'',items:['Call plumber']})
+  const args={blockId:made.blockId,itemId:core.readBlock(made.blockId).block.items[0].id,when:'2026-09-09'}
+  await rm(join(dir,'state.json'))
+  await mkdir(join(dir,'state.json'))
+  await assert.rejects(()=>core.scheduleListItem(args))
+  await rm(join(dir,'state.json'),{recursive:true})
+  const saved=await core.scheduleListItem(args)
+  const reloaded=await isolatedCore(dir)
+  assert.equal(reloaded.agentView().spaces[0].blocks.length,1)
+  assert.equal(reloaded.readBlock(saved.blockId).block.when,args.when)
+})
+
+test('an explicitly targeted duplicate is consolidated without changing the existing reminder identity', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'december-schedule-merge-')),core=await isolatedCore(dir)
+  const made=await core.createBlock('Plumber',{type:'list',title:'',items:['Call plumber']})
+  const item=core.readBlock(made.blockId).block.items[0]
+  const existing=await core.createBlock('Plumber',{type:'reminder',title:'',text:'Call plumber to arrange a visit',when:'2026-09-09',at:'09:00'})
+  const args={blockId:existing.blockId,itemId:item.id,source:'clarification'}
+  const result=await core.scheduleListItem(args)
+  assert.equal(result.blockId,existing.blockId)
+  const reminder=core.readBlock(result.blockId).block
+  assert.equal(reminder.text,'Call plumber to arrange a visit');assert.equal(reminder.at,'09:00')
+  assert.equal(reminder.movedFrom.item.text,'Call plumber')
+  assert.equal(reminder.movedFrom.previousReminder.id,existing.blockId)
+  assert.equal(core.agentView().spaces[0].blocks.length,1)
+  assert.equal((await core.scheduleListItem(args)).blockId,existing.blockId)
 })

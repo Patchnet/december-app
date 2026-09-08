@@ -11,9 +11,9 @@
   --line-1: #E7E6E2;
   --line-2: #BDBAB2;
 
-  --text-1: #262521;
-  --text-2: #56534C;
-  --text-3: #6E6A62;
+  --text-1: #262626;
+  --text-2: #565656;
+  --text-3: #656565;
 
   --accent: #3DA8DC;
   --accent-hot: #2A8AB8;
@@ -73,9 +73,9 @@
   --line-1: #2D2A26;
   --line-2: rgba(245, 241, 232, 0.28);
 
-  --text-1: #F5F1E8;
-  --text-2: #A89F92;
-  --text-3: rgba(245, 241, 232, 0.55);
+  --text-1: #F5F5F5;
+  --text-2: #A8A8A8;
+  --text-3: #A0A0A0;
 
   --accent-ink: #6FC1E8;
   --gold-ink: #D97757;
@@ -128,3 +128,14 @@ body {
   padding: var(--space-8) var(--space-6) var(--space-12);
   min-height: 100vh;
 }
+
+/* A shared, quiet way back from a secondary surface. */
+.surface-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
+.surface-close {
+  flex-shrink: 0; padding: 7px 10px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-2); font: 12px/1.4 var(--font-sans); cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.surface-close:hover { color: var(--text-1); background: var(--surface-2); }
+.surface-close:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .surface-close { transition: none; } }
