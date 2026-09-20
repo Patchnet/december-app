@@ -1,6 +1,6 @@
 /** The two inkCaret drawings from December's HyperFrames film,
  * compositions/frames/04b-close.html. Kept as tiny SVGs: no video runtime.
- * The tip is (0,0), anchored inside the current week's actual bar. */
+ * The tip is (0,0), anchored just above the current week's actual bar. */
 export function weekCaret() {
   return `<svg class="yr-week-caret" viewBox="-12 -14 24 16" aria-hidden="true" focusable="false">
     <g class="caret-a"><path pathLength="1" d="M-6.4 -7.4 Q-3.2 -3.7 0 0 Q3.4 -3.9 6.6 -7.8"/></g>

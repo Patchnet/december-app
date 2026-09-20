@@ -442,7 +442,7 @@ button.ym.future .ym-name { color: var(--text-2); }
    then leave. Its host is the actual week, so no measured pixel offset drifts. */
 .yr-weeks .w.wnow { position: relative; }
 .yr-week-caret {
-  position: absolute; top: 2px; left: 50%; width: 30px; height: 20px;
+  position: absolute; top: -5px; left: 50%; width: 24px; height: 16px;
   transform: translate(-50%,-87.5%); overflow: visible; pointer-events: none;
   color: var(--accent); animation: week-caret-presence 2940ms linear 450ms both;
 }
