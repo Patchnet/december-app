@@ -141,7 +141,7 @@ function build(task) {
         </div>
         <p class="task-focus-clock" aria-hidden="true"><span class="task-focus-elapsed">0:00</span></p>
         <p class="sr-only">Focused on this one thing. Press Escape, or click away, when you are done.</p>
-        <p class="task-focus-hint" aria-hidden="true">esc, or click away, when you're done</p>
+        <p class="task-focus-hint" aria-hidden="true"><kbd>esc</kbd> or click outside to return</p>
       </section>
     </div>`
   document.body.appendChild(host)
@@ -193,7 +193,25 @@ function enter(row) {
 function teardown() {
   clearInterval(ticker)
   ticker = null
-  host?.remove()
+  const leaving = host
+  if (leaving) {
+    leaving.removeAttribute('id')
+    leaving.inert = true
+    leaving.setAttribute('aria-hidden', 'true')
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) leaving.remove()
+    else {
+      for (const el of leaving.querySelectorAll('.task-focus-backdrop, .task-focus-card')) {
+        const style = getComputedStyle(el)
+        const from = { opacity: style.opacity, transform: style.transform, filter: style.filter }
+        el.style.animation = 'none'
+        el.animate([from, { opacity: 0, transform: 'translateY(4px)', filter: 'blur(0px)' }], {
+          duration: 320, easing: 'cubic-bezier(.32,.08,.2,1)', fill: 'forwards',
+        })
+      }
+      leaving.classList.add('leaving')
+      setTimeout(() => leaving.remove(), 360)
+    }
+  }
   host = null
   document.documentElement.classList.remove('task-focusing')
   // the page comes back before the caret does, or it lands somewhere inert

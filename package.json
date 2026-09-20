@@ -12,11 +12,15 @@
   "main": "electron/main.mjs",
   "scripts": {
     "app": "electron .",
+    "shots": "electron gallery/shots.cjs",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
     "dist:win:publish": "electron-builder --win nsis --x64 --publish always",
     "lint": "eslint .",
     "test:node": "node --test",
-    "test": "npm run lint && npm run test:node"
+    "test": "npm run lint && npm run test:node",
+    "setup:jev": "node scripts/configure-jev-key.mjs",
+    "preview:jev": "node scripts/jev-preview.mjs",
+    "preview:simulate": "node scripts/jev-preview.mjs --simulate"
   },
   "dependencies": {
     "electron-updater": "6.8.9"

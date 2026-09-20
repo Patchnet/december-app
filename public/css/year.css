@@ -300,11 +300,19 @@ button.ym.future .ym-name { color: var(--text-2); }
 .year-card .space-name { font-size: 64px; line-height: 1; letter-spacing: -.045em; margin: 0 0 14px; padding: 0; }
 .yr-summary { display: flex; flex-wrap: wrap; gap: 5px 18px; font-size: 12px; line-height: 1.6; color: var(--text-3); }
 .yr-summary b { font-weight: 500; color: var(--text-2); }
+/* the year read as figures: the card register, so the same ladder and the
+   same hairline above each number */
+.year-card .yr-figs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px; margin: 18px 0 22px;
+}
+.year-card .yr-figs .fig b { font-size: 24px; }
+.year-card .yr-figs .fig span { white-space: normal; line-height: 1.4; }
 .yr-progress { position: relative; flex: 0 0 86px; height: 86px; display: grid; place-items: center; }
 .yr-progress svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .yr-progress circle { fill: none; stroke-width: 3; }
 .yr-ring-track { stroke: var(--line-1); }
-.yr-ring-fill { stroke: var(--accent); stroke-linecap: round; animation: year-ring-in 700ms var(--ease-expo) both; }
+.yr-ring-fill { stroke: var(--accent); stroke-linecap: round; animation: year-ring-in var(--m-draw) var(--ease-expo) both; }
 .yr-progress > span { font-family: var(--font-serif); font-size: 25px; color: var(--text-1); }
 .yr-progress small { font: 11px var(--font-sans); margin-left: 1px; color: var(--text-3); }
 @keyframes year-ring-in { from { stroke-dasharray: 0 100; } }
@@ -317,33 +325,68 @@ button.ym.future .ym-name { color: var(--text-2); }
 .yr-goals { margin-bottom: 18px; }
 .yr-goal { min-height: 36px; }
 .yr-goal.met .yr-goal-pace { color: var(--text-3); }
-.yr-months { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin: 0 0 20px; }
+/* ------------------------------------------------------- the journal
+   The year as spreads: the month's name on the left with its counts, and
+   on the right what it held — the paragraph, the figures over hairlines,
+   the dated things as rows. Figures in the serif, facts in the small size,
+   one dot for what slipped. No charts. Empty stretches fold to one line. */
+.jr-months { margin: 0 0 6px; }
+.jr-mo {
+  display: grid; grid-template-columns: 140px 1fr; gap: 0 28px;
+  padding: 20px 0; border-top: 1px solid var(--line-1);
+  animation: month-arrive var(--m-struct) var(--ease-expo) var(--month-delay,0ms) both;
+}
+.jr-mo.quiet { padding: 10px 0; align-items: baseline; }
+.jr-mo-name { min-width: 0; }
 .yr-mo {
-  position: relative; display: flex; flex-direction: column; align-items: stretch;
-  min-height: 112px; padding: 13px 14px 16px; gap: 6px; overflow: hidden;
-  text-align: left; font: inherit; color: var(--text-1); cursor: pointer;
-  border: 1px solid var(--line-1); border-radius: 15px;
-  background: color-mix(in srgb,var(--elevated) 48%,transparent);
-  transition: background 180ms var(--ease), border-color 180ms var(--ease), transform 200ms var(--ease-out), box-shadow 200ms var(--ease);
-  animation: month-arrive 360ms var(--ease-expo) var(--month-delay,0ms) both;
+  display: inline-block; padding: 0; margin: 0; border: 0; background: none; text-align: left; cursor: pointer;
+  font-family: var(--font-serif); font-size: 22px; line-height: 1.1; letter-spacing: -.02em; color: var(--text-1);
+  border-radius: var(--radius-sm);
+  transition: color var(--m-ui) var(--ease);
 }
-.yr-mo-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-.yr-mo-number { font-size: 9px; letter-spacing: .03em; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.yr-mo-arrow { color: var(--text-3); opacity: .4; font-size: 13px; transition: transform 200ms var(--ease), opacity 200ms var(--ease); }
-.yr-mo-name { font-family: var(--font-serif); font-size: 19px; line-height: 1.15; letter-spacing: -.02em; color: var(--text-1); }
-.yr-mo-n { font-size: 10px; line-height: 1.5; color: var(--text-3); font-variant-numeric: tabular-nums; text-wrap: pretty; }
-.yr-mo.now { background: var(--surface-1); border-color: var(--line-2); }
-.yr-mo.now .yr-mo-number { color: var(--text-2); }
-.yr-month-progress { position: absolute; left: 14px; right: 14px; bottom: 8px; height: 2px; border-radius: 2px; background: var(--line-1); overflow: hidden; }
-.yr-month-progress i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
-.yr-mo:focus-visible { outline: 2px solid var(--text-3); outline-offset: 3px; }
+.yr-mo.quiet { font-size: 13px; color: var(--text-3); letter-spacing: 0; }
+.jr-run { display: flex; flex-wrap: wrap; gap: 0 10px; }
+.jr-mo.quiet .jr-q { font-size: 11.5px; color: var(--text-3); }
+.jr-now { display: inline-block; margin-left: 8px; font-family: var(--font-sans); font-size: 11.5px; letter-spacing: 0; color: var(--text-3); vertical-align: middle; }
+.jr-k { margin-top: 6px; font-size: 11.5px; line-height: 1.7; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.jr-k .overdue { color: var(--text-3); }
+.jr-body { min-width: 0; }
+.yr-line { margin: 0 0 22px; max-width: 520px; font-family: var(--font-serif); font-size: 15px; line-height: 1.6; color: var(--text-2); text-wrap: pretty; }
+.yr-line[hidden] { display: none; }
+.jr-p { margin: 0 0 12px; font-family: var(--font-serif); font-size: 14.5px; line-height: 1.65; color: var(--text-2); text-wrap: pretty; }
+.jr-p.stale { color: var(--text-3); }
+.jr-p.arrived { animation: materialize var(--m-struct) var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) { .jr-p.arrived { animation: none; } }
+.jr-p.quiet { font-family: var(--font-sans); font-size: 12px; color: var(--text-3); }
+.jr-figs { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 12px; }
+.jr-f { display: flex; flex-direction: column; gap: 2px; min-width: 64px; padding-top: 8px; border-top: 1px solid var(--line-1); }
+.jr-f b { font-family: var(--font-serif); font-size: 20px; line-height: 1.15; font-weight: 400; letter-spacing: -.01em; color: var(--text-1); font-variant-numeric: tabular-nums lining-nums; }
+.jr-f span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.jr-rows + .jr-rows { margin-top: 8px; }
+.jr-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; padding: 5px 0; border-top: 1px solid var(--line-1); font-size: 13px; }
+.jr-row:first-child { border-top: 0; }
+.jr-row .d { flex: 0 0 26px; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.jr-row .t { flex: 1 1 0; min-width: 55%; color: var(--text-1); }
+.jr-row.ahead .t { color: var(--text-2); }
+.jr-past .t { color: var(--text-2); }
+.jr-row .w { margin-left: auto; font-size: 11.5px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jr-row .w.od::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--bad-ink); margin: 0 6px 1px 0; }
+.jr-letter { margin: 12px 0 22px; padding-top: 18px; border-top: 1px solid var(--line-1); }
+.jr-letter:empty { display: none; }
+.jr-letter .k { font-size: 11.5px; color: var(--text-3); }
+.jr-letter p { margin: 4px 0 0; max-width: 520px; font-family: var(--font-serif); font-size: 15px; line-height: 1.6; color: var(--text-2); text-wrap: pretty; white-space: pre-wrap; }
+.jr-letter p.quiet { color: var(--text-3); }
+.yr-mo:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 @media (hover:hover) {
-  .yr-mo:hover { transform: translateY(-2px); background: var(--elevated); border-color: var(--line-2); box-shadow: 0 4px 12px rgba(0,0,0,.04); }
-  .yr-mo:hover .yr-mo-arrow { opacity: 1; transform: translate(1px,-1px); }
+  /* hover is tone, never position */
+  .yr-mo:hover { color: var(--accent-ink, var(--text-1)); }
 }
-.yr-mo:active { transform: scale(.98); box-shadow: none; }
+.yr-mo:active { transform: scale(.98); }
 @keyframes month-arrive { from { opacity: 0; translate: 0 5px; } to { opacity: 1; translate: 0 0; } }
-.yr-hl { margin: 0 0 18px; line-height: 1.6; }
+@media (max-width: 720px) {
+  .jr-mo { grid-template-columns: 1fr; gap: 8px 0; padding: 16px 0; }
+  .jr-mo.quiet { gap: 2px 0; padding: 10px 0; }
+}
 .year-footer, .month-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 16px; border-top: 1px solid var(--line-1); font-size: 11px; line-height: 1.5; color: var(--text-3); }
 .year-footer .retire-link { margin: 0; white-space: nowrap; padding: 6px 0; }
 .month-toolbar .mo-steps { position: static; align-items: center; gap: 6px; }
@@ -377,7 +420,8 @@ button.ym.future .ym-name { color: var(--text-2); }
 }
 @media (max-width:460px) {
   .yr-months { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-  .yr-mo { min-height: 114px; }
+  .yr-months .yr-mo { min-height: 114px; }
+  .jr-mo .yr-mo { min-height: 44px; min-width: 44px; }
   .year-footer { align-items: flex-start; flex-direction: column; gap: 6px; }
   .month-footer > span { display: none; }
   .month-toolbar { gap: 4px; }
@@ -389,9 +433,9 @@ button.ym.future .ym-name { color: var(--text-2); }
   .month-card .mo-at, .month-card .mo-amt, .month-card .mo-status { margin-left: 30px; }
 }
 @media (prefers-reduced-motion:reduce) {
-  .yr-mo, .yr-ring-fill, .month-card .mo-space, .month-card .mo-weeks i { animation: none; }
-  .yr-mo, .yr-mo-arrow { transition: none; }
-  .yr-mo:hover, .yr-mo:active, .yr-mo:hover .yr-mo-arrow { transform: none; }
+  .jr-mo, .yr-ring-fill, .month-card .mo-space, .month-card .mo-weeks i { animation: none; }
+  .yr-mo { transition: none; }
+  .yr-mo:hover, .yr-mo:active { transform: none; }
 }
 
 /* The film's hand-drawn downward caret: draw, hold in two ink drawings,
@@ -400,12 +444,12 @@ button.ym.future .ym-name { color: var(--text-2); }
 .yr-week-caret {
   position: absolute; top: 2px; left: 50%; width: 30px; height: 20px;
   transform: translate(-50%,-87.5%); overflow: visible; pointer-events: none;
-  color: var(--text-1); animation: week-caret-presence 2940ms linear 450ms both;
+  color: var(--accent); animation: week-caret-presence 2940ms linear 450ms both;
 }
-.yr-week-caret path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: week-caret-draw 160ms steps(3,end) 450ms both; }
+.yr-week-caret path { fill: none; stroke: currentColor; stroke-width: 3.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: week-caret-draw var(--m-ui) steps(3,end) 450ms both; }
 .yr-week-caret .caret-b path { stroke-width: 4.6; }
-.yr-week-caret .caret-a { animation: week-caret-a 250ms steps(1,end) 630ms 10; }
-.yr-week-caret .caret-b { opacity: 0; animation: week-caret-b 250ms steps(1,end) 630ms 10; }
+.yr-week-caret .caret-a { animation: week-caret-a var(--m-depth) steps(1,end) 630ms 10; }
+.yr-week-caret .caret-b { opacity: 0; animation: week-caret-b var(--m-depth) steps(1,end) 630ms 10; }
 @keyframes week-caret-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes week-caret-a { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes week-caret-b { 0%,100% { opacity: 0; } 50% { opacity: 1; } }
@@ -413,4 +457,16 @@ button.ym.future .ym-name { color: var(--text-2); }
 @media (prefers-reduced-motion:reduce) {
   .yr-week-caret, .yr-week-caret path, .yr-week-caret .caret-a, .yr-week-caret .caret-b { animation: none; }
   .yr-week-caret .caret-b { display: none; }
+}
+
+/* Calendar navigation complements the year narrative and week rhythm. */
+.calendar-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 0 16px}.calendar-heading h3,.calendar-agenda h3{font:24px var(--font-serif);margin:0}.calendar-months{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.mini-month{padding:16px;border:1px solid var(--line-1);border-radius:14px;text-align:left;color:var(--text-1);background:var(--bg);cursor:pointer}.mini-month:hover{border-color:var(--accent-edge)}.mini-month strong{font:20px var(--font-serif);font-weight:400}.mini-days{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-top:14px;gap:3px;font:11px var(--font-sans)}.mini-days span{padding:3px 0}.mini-days small{color:var(--text-3);font-size:9px}.mini-days .today,.calendar-day.today .calendar-number{border-radius:50%;background:var(--accent-soft);color:var(--accent-ink)}.mini-count{display:block;font-size:10px;color:var(--text-3);margin-top:10px}.year-journal,.month-story{margin-top:26px}.year-journal summary,.month-story summary{cursor:pointer;color:var(--text-2);padding:12px 0}.calendar-weekdays,.calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.calendar-weekdays{text-align:center;color:var(--text-3);font-size:11px;margin-bottom:8px}.calendar-day{min-height:86px;padding:8px;text-align:left;align-self:stretch;background:transparent;border:1px solid var(--line-1);margin:0 -1px -1px 0;overflow:hidden;cursor:pointer;color:var(--text-1)}.calendar-day.selected{background:var(--accent-soft)}.calendar-number{display:inline-grid;place-items:center;min-width:24px;height:24px;font-size:12px}.calendar-entry{display:block;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-3);margin-top:3px}.calendar-entry.planned{color:var(--accent-ink)}.calendar-entry.overdue{color:var(--bad-ink)}.calendar-day small{font-size:9px;color:var(--text-3)}.calendar-dot{display:none}.calendar-agenda{margin-top:24px;min-height:110px}.calendar-scope,.calendar-empty{font-size:12px;color:var(--text-3)}.calendar-agenda-row{display:flex;gap:18px;padding:12px 0;border-bottom:1px solid var(--line-1)}.calendar-agenda-row p{margin:0;line-height:1.5}.calendar-agenda-row small{font-size:11px;color:var(--text-3)}.calendar-date{flex:0 0 48px;color:var(--text-3);font-size:12px}.calendar-day:focus-visible,.mini-month:focus-visible{outline:2px solid var(--accent);outline-offset:2px;position:relative;z-index:1}@media(max-width:600px){.calendar-months{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mini-month{padding:12px}.calendar-day{min-height:49px;padding:5px}.calendar-entry,.calendar-day small{display:none}.calendar-dot{display:block;width:4px;height:4px;border-radius:50%;background:var(--accent);margin:3px auto}.calendar-agenda-row{gap:10px}.mini-days{gap:1px}}
+
+/* A calendar is one persistent reading frame across year/month navigation.
+   Its contents scroll; changing page or agenda never recenters the dialog. */
+.focus-card.year-card, .focus-card.month-card {
+  height: 90vh;
+  height: 90dvh;
+  max-height: 90dvh;
+  overflow-anchor: none;
 }

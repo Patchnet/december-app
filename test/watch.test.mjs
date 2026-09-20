@@ -197,7 +197,7 @@ test('a due watch reads the official source and files the page\'s own words', as
     onCaptured: () => settled++,
   })
 
-  assert.deepEqual(result, { skipped: false, due: 1, captured: 1, failed: 0 })
+  assert.deepEqual(result, { skipped: false, due: 1, captured: 1, refreshed: 0, failed: 0 })
   assert.deepEqual(lookup.searches, [{ query: 'UF football home schedule', limit: 5 }])
   assert.deepEqual(lookup.fetches, ['https://floridagators.com/schedule'], 'the aggregator is not what gets read')
   assert.equal(settled, 1, 'what came back settles like anything else the page receives')
@@ -227,7 +227,7 @@ test('nothing untagged ever reaches the network', async () => {
     searchWeb: lookup.searchWeb,
     fetchPage: lookup.fetchPage,
   })
-  assert.deepEqual(quiet, { skipped: false, due: 0, captured: 0, failed: 0 })
+  assert.deepEqual(quiet, { skipped: false, due: 0, captured: 0, refreshed: 0, failed: 0 })
   assert.deepEqual(lookup.searches, [], 'milk stays milk')
   assert.deepEqual(lookup.fetches, [])
   assert.deepEqual(sink.captures, [])
@@ -256,7 +256,7 @@ test('an archived space is not refreshed, and its run record is forgotten', asyn
     searchWeb: lookup.searchWeb,
     fetchPage: lookup.fetchPage,
   })
-  assert.deepEqual(result, { skipped: false, due: 0, captured: 0, failed: 0 })
+  assert.deepEqual(result, { skipped: false, due: 0, captured: 0, refreshed: 0, failed: 0 })
   assert.deepEqual(lookup.searches, [])
   assert.deepEqual(store.current(), {}, 're-tagging later starts clean, not mid-backoff')
 })
@@ -314,7 +314,7 @@ test('a failed lookup files nothing, stays retryable, and never invents an answe
   }
 
   const first = await runWatchPass({ now: T0, ...deps })
-  assert.deepEqual(first, { skipped: false, due: 1, captured: 0, failed: 1 })
+  assert.deepEqual(first, { skipped: false, due: 1, captured: 0, refreshed: 0, failed: 1 })
   assert.deepEqual(sink.captures, [], 'a gap is never filled with something plausible')
   assert.equal(store.current().b1.failures, 1)
   assert.match(store.current().b1.error, /503/)

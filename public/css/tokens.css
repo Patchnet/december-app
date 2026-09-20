@@ -51,7 +51,10 @@
   --lh-h3: 1.1; --lh-body: 1.5; --ls-h3: -0.015em;
 
   --card-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 2px rgba(15,12,8,0.04), 0 1px 1px rgba(15,12,8,0.03);
+  /* three rings; nothing draws its own outline */
   --focus-ring-field: 0 0 0 3px rgba(61,168,220,0.12);
+  --focus-ring-cta: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent-ink);
+  --focus-ring-link: 0 0 0 3px var(--accent-ink);
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -61,6 +64,20 @@
   --ease-settle: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-pop: cubic-bezier(0.34, 1.28, 0.5, 1);
 
+  /* THE LADDER. Six rungs, and a move picks the rung that matches what it is
+     doing — never a number of its own. Anything the hand is waiting on stays
+     at or under --m-depth; past that the page is finishing a thought, not
+     answering. Exits take the rung below their entrance: leaving should feel
+     quicker than arriving. A move a KEY press causes does not animate at all.
+       --m-press   a thing gives under the finger: squash, tick, tap
+       --m-ui      tone changes: hover, focus, a small thing showing itself
+       --m-depth   something changes height off the page: a card lifting
+                   under the hand, a popover, a sheet, a disclosure opening
+       --m-enter   a thing arrives or leaves: a card, a row, the question
+       --m-struct  the page rearranges around it: reflow, sort, fold
+       --m-draw    a line draws itself: rings, ticks, the year's marks
+     Long ambient loops (a sheen, a breath, a shimmer) are deliberately off
+     the ladder: they are weather, not response, and carry their own timing. */
   --m-press: 120ms; --m-ui: 140ms; --m-depth: 220ms;
   --m-enter: 320ms; --m-struct: 380ms; --m-draw: 700ms;
 }
@@ -128,6 +145,8 @@ body {
   padding: var(--space-8) var(--space-6) var(--space-12);
   min-height: 100vh;
 }
+/* room for three columns of cards; the writing column stays 640px */
+@media (min-width: 1100px) { .shell { max-width: 1240px; } }
 
 /* A shared, quiet way back from a secondary surface. */
 .surface-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
@@ -137,5 +156,5 @@ body {
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
 .surface-close:hover { color: var(--text-1); background: var(--surface-2); }
-.surface-close:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.surface-close:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 @media (prefers-reduced-motion: reduce) { .surface-close { transition: none; } }

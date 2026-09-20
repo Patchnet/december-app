@@ -1,5 +1,5 @@
 // Native details semantics, with a short, interruptible height transition.
-// Only the existing media-list disclosure opts in; no content is removed.
+// Media-list and completed-item disclosures opt in; no content is removed.
 const running = new Map()
 const preference=matchMedia('(prefers-reduced-motion: reduce)')
 function finish(fold,current) {
@@ -27,7 +27,7 @@ document.addEventListener('click', (event) => {
   const to = opening ? fold.scrollHeight : summary.getBoundingClientRect().height
   fold.style.overflow = 'hidden'
   const animation = fold.animate([{height:`${from}px`},{height:`${to}px`}], {
-    duration:260, easing:'cubic-bezier(.22,1,.36,1)', fill:'both',
+    duration:220, easing:'cubic-bezier(.32,.08,.2,1)', fill:'both',
   })
   const current={animation,opening}
   running.set(fold,current)

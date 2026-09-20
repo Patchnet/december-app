@@ -26,3 +26,19 @@ export function highlightCardChanges(card, before, after) {
     }
   }
 }
+
+// A local acknowledgement for newly filed list items. WAAPI survives a poll
+// reconciling the row's class attribute; the same row never restarts its cue.
+const arrivals = new WeakSet()
+export function showAddedItem(row) {
+  if (!row || arrivals.has(row) || document.hidden) return
+  arrivals.add(row)
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const tint = getComputedStyle(row).getPropertyValue('--accent-soft').trim() || 'rgba(61,168,220,.12)'
+  row.animate([
+    { opacity: reduced ? 1 : .2, backgroundColor: tint },
+    { opacity: 1, backgroundColor: tint, offset: .25 },
+    { opacity: 1, backgroundColor: tint, offset: .65 },
+    { opacity: 1, backgroundColor: 'transparent' },
+  ], { duration: reduced ? 900 : 1600, easing: 'ease-out' })
+}

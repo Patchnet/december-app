@@ -137,3 +137,18 @@ test('compact preview source collapse preserves prose, distinct links and full n
   }
   assert.equal(previewNoteText(p.source,p),'')
 })
+
+test('a reading is out of date only once a refresh has actually been missed', () => {
+  const T = Date.parse('2026-09-19T12:00:00Z')
+  const base = { kind: 'weather', source: 'https://open-meteo.com/', status: 'ready', code: 0, isDay: true, celsius: 18, location: 'Tallahassee' }
+  const at = (mins) => ({ ...base, observedAt: new Date(T - mins * 60000).toISOString(), expiresAt: new Date(T - (mins - 60) * 60000).toISOString() })
+  // the watch looks every half hour on an hour-long reading: an hour-old
+  // reading is ordinary and must not wear a warning
+  assert.doesNotMatch(previewHTML(at(5), T), /may be out of date/)
+  assert.doesNotMatch(previewHTML(at(61), T), /may be out of date/, 'one minute past the hour is not stale')
+  assert.doesNotMatch(previewHTML(at(115), T), /may be out of date/)
+  // past two hours a refresh has been missed and the card says so
+  assert.match(previewHTML(at(150), T), /may be out of date/)
+  // and the source's own word still wins
+  assert.match(previewHTML({ ...at(5), status: 'stale' }, T), /may be out of date/)
+})

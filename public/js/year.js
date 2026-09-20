@@ -1,3 +1,4 @@
+import { yearCalendars, monthCalendar, mountMonthCalendar } from './year-calendar.js'
 import { $, esc, reduced, fmtAmount, toast, api, page, hooks, adoptState } from './session.js'
 import { pop, bloom } from './motion.js'
 import { mountSurface } from './card-surface.js'
@@ -5,6 +6,11 @@ import { beginYearRequest, invalidateYearRequest, currentYearRequest, yearPositi
 import { clockOf } from './blocks.js'
 import { weekCaret } from './year-week-caret.js'
 import { liveGoals, paceWords, goalLabel, goalClass } from './goals.js'
+import { yearHead } from './year-head.js'
+
+// Which register the year's head wears. The options live side by side on the
+// gallery at /year; this is the one the app uses.
+const YEAR_CHROME = 'figures'
 
 // ------------------------------------------------------------- year view
 
@@ -40,21 +46,17 @@ function buildYear() {
   const through = past ? 1 : position.through
   const daysLeft = position.daysToDecember
   const thisWeek = Math.max(0, Math.min((y.weeks?.length || 52) - 1, Math.floor((now - new Date(y.year, 0, 1)) / (7 * 86400000))))
-  const peakW = Math.max(1, ...(y.weeks || []))
-  const strip = y.weeks
-    ? `<div class="yr-weeks" aria-hidden="true">${y.weeks
-        .map((c, i) => {
-          const sched = (y.sweeks || [])[i] || 0
-          const caret = i === thisWeek && !past && !returnMonth ? weekCaret() : ''
-          if (c) return `<i class="w on${i === thisWeek && !past ? ' wnow' : ''}" style="--h:${Math.max(18, Math.round((c / peakW) * 100))}%">${caret}</i>`
-          if (sched && i >= thisWeek) return `<i class="w sched${i === thisWeek && !past ? ' wnow' : ''}">${caret}</i>`
-          return `<i class="w${i === thisWeek && !past ? ' wnow' : ''}">${caret}</i>`
-        })
-        .join('')}</div>`
-    : ''
   const moments = y.months.reduce((n, m) => n + m.events, 0)
-  const stat = `<div class="yr-summary"><span><b>${moments}</b> recorded moment${moments === 1 ? '' : 's'}</span><span>${past ? 'An archived chapter' : daysLeft ? `${daysLeft} days to December` : `${position.daysLeft} days left in the year`}</span></div>`
-  const ring = `<div class="yr-progress" role="img" aria-label="${Math.round(through*100)} percent of the year elapsed"><svg viewBox="0 0 80 80" aria-hidden="true"><circle class="yr-ring-track" cx="40" cy="40" r="34"/><circle class="yr-ring-fill" cx="40" cy="40" r="34" pathLength="100" style="stroke-dasharray:${Math.round(through*100)} 100"/></svg><span>${Math.round(through*100)}<small>%</small></span></div>`
+  const head = yearHead({
+    year: y.year,
+    moments,
+    tail: past ? 'An archived chapter' : daysLeft ? `${daysLeft} days to December` : `${position.daysLeft} days left in the year`,
+    through,
+    weeks: y.weeks,
+    sweeks: y.sweeks,
+    thisWeek,
+    past,
+  }, { chrome: YEAR_CHROME, rhythm: true, caret: past || returnMonth ? '' : weekCaret() })
 
   // ---- the goals, as numbers: the band on the page already draws their
   // meters, so here they get the serif and a word — the weigh-in reads
@@ -74,28 +76,12 @@ function buildYear() {
     })
     .join('')
 
-  // ---- the months, as a grid of doors: a place each, its count beneath,
-  // the current month marked, with calendar progress on its lower edge.
-  const cells = names
-    .map((name, m) => {
-      const data = y.months[m] || {events:0}
-      const future = !past && m > y.month
-      const nowM = !past && m === y.month
-      const bits = []
-      if (data.events) bits.push(`${data.events} recorded`)
-      if (data.overdue) bits.push(`<span class="overdue">${data.overdue} overdue</span>`)
-      if (data.scheduled) bits.push(`<span class="ahead">${data.scheduled} scheduled</span>`)
-      const summary = bits.join(' · ') || (future ? 'Room for plans' : nowM ? 'Your month is unfolding' : 'Nothing recorded')
-      const monthStart = new Date(y.year,m,1), monthEnd = new Date(y.year,m+1,1)
-      const elapsed = past ? 1 : Math.max(0,Math.min(1,(now-monthStart)/(monthEnd-monthStart)))
-      const id = `${y.year}-${String(m+1).padStart(2,'0')}`
-      const plain = `${name} ${y.year}${nowM ? ', current month' : ''}, ${data.events || 0} recorded, ${data.scheduled || 0} scheduled${data.overdue ? `, ${data.overdue} overdue` : ''}`
-      return `<button class="yr-mo has${nowM ? ' now' : ''}${future ? ' quiet' : ''}" data-month="${id}" aria-label="${esc(plain)}"${nowM ? ' aria-current="date"' : ''} style="--month-delay:${m*18}ms">
-        <span class="yr-mo-top"><span class="yr-mo-number">${nowM ? 'This month' : String(m+1).padStart(2,'0')}</span><span class="yr-mo-arrow" aria-hidden="true">↗</span></span>
-        <span class="yr-mo-name">${name}</span><span class="yr-mo-n">${summary}</span>
-        ${nowM ? `<span class="yr-month-progress" role="img" aria-label="${Math.round(elapsed*100)} percent of the month elapsed"><i style="width:${Math.round(elapsed*100)}%"></i></span>` : ''}
-      </button>`
-    }).join('')
+  // ---- the months, as a journal: a spread each, the month's name on the
+  // left with its counts, and on the right what it held — the engine's
+  // paragraph when there is one, the figures, and the dated things as
+  // rows. Empty stretches fold to one line. Every month stays a door.
+  const journal = page.journal?.year === y.year ? page.journal : null
+  const spreads = journalSpreads(y, journal, names, past)
 
   const years = page.state.archivedYears || []
   const nav = [...years, page.state.year.year]
@@ -109,27 +95,138 @@ function buildYear() {
     ? `<div class="rest-head" style="margin-top:20px">what the year held</div>` +
       y.spaces.map((s) => `<div class="ym-hl"><b>${esc(s.name)}</b>${s.stats.length ? ` · ${esc(s.stats.join(' · '))}` : ''}</div>`).join('')
     : ''
-  // the freshest thing the year said about itself, one line, whole words
-  const hl = [...y.months].reverse().find((m) => m.highlights?.length)?.highlights[0]
   showYearSurface(wrap, `
     <div class="focus-backdrop" data-close></div>
     <div class="focus-wrap" data-close>
       <article class="focus-card year-card">
         <div class="year-toolbar"><span>${past ? 'From the archive' : 'Your year'}</span><button type="button" class="surface-close" data-close aria-label="Close year">Close</button></div>
-        <div class="year-title-row"><div><h2 class="space-name">${y.year}</h2>${stat}</div>${ring}</div>
-        ${strip ? `<div class="year-rhythm"><div class="year-rhythm-label"><span>The rhythm of your year</span><span>Week by week</span></div>${strip}</div>` : ''}
+        ${head}
         ${years.length ? `<div class="year-nav">${nav}</div>` : ''}
+        <p class="yr-line" id="yr-line"${journal?.line ? '' : ' hidden'}>${esc(journal?.line?.text || '')}</p>
         ${goalRows ? `<div class="yr-goals">${goalRows}</div>` : ''}
-        <div class="yr-months">${cells}</div>
-        ${hl && !past ? `<div class="yr-hl">${esc(trim(hl, 96))}</div>` : ''}
+        ${yearCalendars(y)}
+        <details class="year-journal" open><summary>Read the year’s story</summary><div class="jr-months" id="jr-months">${spreads}</div></details>
         ${held}
-        <div class="year-footer"><span>Open a month to read its story.</span><a class="retire-link" href="${past ? `/api/export/${y.year}.md` : '/api/export.md'}" download>Download the year ↗</a></div>
+        <div class="jr-letter" id="jr-letter">${letterHTML(journal, past)}</div>
+        <div class="year-footer"><span>Open a month to read it in full.</span><a class="retire-link" href="${past ? `/api/export/${y.year}.md` : '/api/export.md'}" download>Download the year ↗</a></div>
       </article>
     </div>`, -1)
   page.yearOpen = true
   page.focusId = null
   mountSurface(wrap.querySelector('.focus-card'), true)
   if (returnMonth) wrap.querySelector(`[data-month="${returnMonth}"]`)?.focus({preventScroll:true})
+  void loadJournal(y.year, names, past)
+}
+
+/** The journal arrives after the year is on screen and settles into it in
+    place, so the year never repaints twice. While the engine still has
+    months to write, the page asks again, a few times, quietly. */
+async function loadJournal(year, names, past, tries = 0) {
+  const ticket = currentYearRequest.__journal = (currentYearRequest.__journal || 0) + 1
+  let j
+  try {
+    j = await api(`/api/journal/${year}`)
+  } catch {
+    return
+  }
+  if (ticket !== currentYearRequest.__journal || !page.yearOpen) return
+  const shown = page.yearShown || page.state.year
+  if (!shown || shown.year !== year) return
+  page.journal = j
+  const months = $('#jr-months')
+  if (months) {
+    const before = new Set([...months.querySelectorAll('.jr-p')].map((p) => p.textContent))
+    months.innerHTML = journalSpreads(shown, j, names, past)
+    // words that were not on the page a moment ago come up out of a blur
+    for (const p of months.querySelectorAll('.jr-p')) if (!before.has(p.textContent)) p.classList.add('arrived')
+  }
+  const line = $('#yr-line')
+  if (line) {
+    line.textContent = j.line?.text || ''
+    line.hidden = !j.line?.text
+  }
+  const letter = $('#jr-letter')
+  if (letter) letter.innerHTML = letterHTML(j, past)
+  if (j.pending && tries < 6) setTimeout(() => loadJournal(year, names, past, tries + 1), 9000)
+}
+
+/** A month's spread, or the folded run that empty months share. */
+function journalSpreads(y, journal, names, past) {
+  const nowM = past ? -1 : y.month
+  const rows = []
+  let run = []
+  const flush = () => {
+    if (!run.length) return
+    const first = names[run[0]], last = names[run.at(-1)]
+    rows.push(`<div class="jr-mo quiet"><div class="jr-mo-name"><span class="jr-run">${run
+      .map((m) => `<button class="yr-mo quiet" data-month="${monthId(y.year, m)}" aria-label="${esc(`${names[m]} ${y.year}, nothing recorded`)}">${names[m].slice(0, 3)}</button>`)
+      .join('')}</span></div><div class="jr-body"><span class="jr-q">${run.length > 1 ? `${first} – ${last}` : first}: nothing recorded${
+      run[0] > nowM && nowM >= 0 ? ', nothing planned' : ''
+    }.</span></div></div>`)
+    run = []
+  }
+  for (let m = 0; m < 12; m++) {
+    const summary = y.months[m] || { events: 0 }
+    const jm = journal?.months?.[m]
+    const has = (jm ? jm.recorded || jm.ahead || jm.overdue || jm.done : summary.events || summary.overdue || summary.scheduled) || m === nowM
+    if (!has) {
+      run.push(m)
+      continue
+    }
+    flush()
+    rows.push(monthSpread(y, m, names[m], jm, summary, m === nowM, past))
+  }
+  flush()
+  return rows.join('')
+}
+
+const monthId = (year, m) => `${year}-${String(m + 1).padStart(2, '0')}`
+
+function monthSpread(y, m, name, jm, summary, nowM, past) {
+  const id = monthId(y.year, m)
+  const recorded = jm ? jm.recorded : summary.events || 0
+  const overdue = jm ? jm.overdue : summary.overdue || 0
+  const ahead = jm ? jm.ahead : summary.scheduled || 0
+  const counts = [
+    recorded ? `${recorded} recorded` : '',
+    overdue ? `<span class="overdue">${overdue} overdue</span>` : '',
+    ahead ? `${ahead} scheduled` : '',
+  ].filter(Boolean).join('<br>')
+  const plain = `${name} ${y.year}${nowM ? ', current month' : ''}, ${recorded} recorded, ${ahead} scheduled${overdue ? `, ${overdue} overdue` : ''}`
+  // a month still ahead has nothing to count yet; its rows say what is planned
+  const figs = jm && !(jm.month > (past ? '9999' : monthId(y.year, y.month)))
+    ? [
+        jm.done ? `<div class="jr-f"><b>${jm.done}</b><span>done</span></div>` : '',
+        jm.money != null ? `<div class="jr-f"><b>${esc(fmtAmount(jm.money, jm.unit))}</b><span>${jm.entries} ${jm.entries === 1 ? 'entry' : 'entries'}</span></div>` : '',
+        jm.spaces?.length ? `<div class="jr-f"><b>${jm.spaces.length}</b><span>${jm.spaces.length === 1 ? 'card' : 'cards'} touched</span></div>` : '',
+      ].filter(Boolean).join('')
+    : ''
+  const day = (d) => String(Number(d.slice(8, 10)))
+  const line = (l) =>
+    `<div class="jr-row${l.overdue ? ' overdue' : ''}${l.ahead ? ' ahead' : ''}"><span class="d">${day(l.day)}</span><span class="t">${esc(l.text)}</span>${
+      l.amount != null ? `<span class="w">${esc(fmtAmount(l.amount, l.unit))}</span>` : l.overdue ? '<span class="w od">overdue</span>' : l.at ? `<span class="w">${esc(clockOf(l.at))}</span>` : l.repeat ? `<span class="w">${esc(l.repeat)}</span>` : ''
+    }</div>`
+  const coming = jm?.coming?.length ? `<div class="jr-rows">${jm.coming.map(line).join('')}</div>` : ''
+  const happened = jm?.happened?.length && !jm.text ? `<div class="jr-rows jr-past">${jm.happened.map(line).join('')}</div>` : ''
+  // the paragraph is the engine's, in the person's words; a stale one is
+  // shown a shade quieter until the fresh one lands
+  const text = jm?.text ? `<p class="jr-p${jm.stale ? ' stale' : ''}">${esc(jm.text)}</p>` : ''
+  const hl = !jm && summary.highlights?.[0] ? `<p class="jr-p quiet">${esc(trim(summary.highlights[0], 120))}</p>` : ''
+  return `<div class="jr-mo${nowM ? ' now' : ''}" style="--month-delay:${m * 18}ms">
+    <div class="jr-mo-name">
+      <button class="yr-mo ${nowM ? 'now' : ''}" data-month="${id}" aria-label="${esc(plain)}"${nowM ? ' aria-current="date"' : ''}>${name}${nowM ? '<span class="jr-now">now</span>' : ''}</button>
+      <div class="jr-k">${counts}</div>
+    </div>
+    <div class="jr-body">${text || hl}${figs ? `<div class="jr-figs">${figs}</div>` : ''}${coming}${happened}</div>
+  </div>`
+}
+
+/** The December letter: the one place the page writes in sentences, and
+    only because they are the person's. Until it exists, a line says when. */
+function letterHTML(journal, past) {
+  if (journal?.letter?.text) return `<span class="k">The December letter</span><p>${esc(journal.letter.text)}</p>`
+  if (past) return ''
+  return `<span class="k">The December letter</span><p class="quiet">On the last day of the year the page writes the year back to you, in your own words — what you recorded, what you finished, what you let go.</p>`
 }
 
 /** Cut a line at a word, not mid-syllable. The year view was slicing
@@ -210,12 +307,13 @@ async function openMonth(ym) {
       <article class="focus-card month-card">
         <div class="month-toolbar"><button class="mo-back" data-back-to-year>‹ All of ${esc(m.month.slice(0, 4))}</button><div class="mo-steps">${step(mm - 1, '‹', 'previous month')}${step(mm + 1, '›', 'next month')}<button type="button" class="surface-close" data-close aria-label="Close month">Close</button></div></div>
         <h2 class="space-name">${esc(m.label)}</h2>
-        <div class="mo-weeks" aria-hidden="true">${bars}</div>
+        <div class="mo-weeks" aria-hidden="true" hidden>${bars}</div>
         <div class="mo-total">${counts}</div>
-        <div class="month-story">${body}</div>
+        ${monthCalendar()}
+        <details class="month-story"><summary>Browse by topic</summary>${body}</details>
         <div class="month-footer"><span>← → to move between months</span><button class="mo-back" data-back-to-year>Back to the year</button></div>
       </article>
-    </div>`, fromMonth && ym < fromMonth ? -1 : 1)
+    </div>`, fromMonth && ym < fromMonth ? -1 : 1, card => mountMonthCalendar(card.querySelector('.month-calendar'), m))
   page.yearOpen = true
   page.focusId = null
   page.monthShown = m.month
@@ -225,8 +323,8 @@ async function openMonth(ym) {
 document.addEventListener('keydown', (e) => {
   const tile = e.target.closest?.('.yr-mo[data-month]')
   if (!tile || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key)) return
-  const grid = tile.parentElement, tiles = [...grid.querySelectorAll('.yr-mo')]
-  const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
+  const grid = tile.closest('.jr-months') || tile.parentElement, tiles = [...grid.querySelectorAll('.yr-mo')]
+  const columns = 1
   const at = tiles.indexOf(tile)
   const next = e.key === 'Home' ? 0 : e.key === 'End' ? 11 : at + ({ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[e.key])
   e.preventDefault()
@@ -236,7 +334,7 @@ document.addEventListener('keydown', (e) => {
 // with a month open, the year walks under the arrow keys
 document.addEventListener('keydown', (e) => {
   if (e.altKey || e.ctrlKey || e.metaKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return
-  if (!document.querySelector('.month-card') || !page.monthShown) return
+  if (!document.querySelector('.month-card') || !page.monthShown || e.target.closest?.('.calendar-days')) return
   const tag = document.activeElement?.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT') return
   const [yy, mm] = page.monthShown.split('-').map(Number)

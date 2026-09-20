@@ -1,7 +1,8 @@
-import { $, esc, toast, api } from './session.js'
+import { $, esc, toast, api, adoptState, hooks } from './session.js'
 import { showIntro } from './layout.js'
 import { closePocketPairing, isPocketPairingOpen, refreshPocket, trapPocketFocus } from './pocket.js'
 import { buildEngineChoices, nextEngineKey } from './onboarding-state.js'
+import { openMenu } from './menu.js'
 
 export const launchParams = new URLSearchParams(location.search)
 export const shouldOnboard = launchParams.has('firstrun') || (launchParams.has('desktop') && !localStorage.getItem('dec-onboarding'))
@@ -60,7 +61,8 @@ modelSourceRow.replaceWith(modelRow)
 while (modelSourceRow.firstChild) modelRow.append(modelSourceRow.firstChild)
 const modelLabel = modelRow.querySelector('.set-label')
 const modelPicker = document.createElement('span')
-const modelSelect = document.createElement('select')
+const modelSelect = document.createElement('button')
+modelSelect.type = 'button'
 
 modelLabel.id = 'model-label'
 modelPicker.className = 'model-picker'
@@ -75,21 +77,19 @@ modelInput.remove()
 modelPicker.append(modelSelect, modelInput)
 modelRow.append(modelPicker)
 
-function modelOption(value) {
-  const option = document.createElement('option')
-  option.value = value
-  option.textContent = value || 'Engine default'
-  return option
-}
+const modelName = (value) => value || 'Engine default'
+// what the row says when it is not open: the model actually in use
+let modelItems = []
+let modelChosen = ''
 
 function renderModelPicker(settings) {
   const state = modelPickerState(settings.engine, settings.model)
-  modelSelect.replaceChildren(
-    ...state.models.map(modelOption),
-    modelOption(CUSTOM_MODEL_VALUE)
-  )
-  modelSelect.lastElementChild.textContent = 'Custom…'
-  modelSelect.value = state.selected
+  modelItems = [
+    ...state.models.map((value) => ({ value, label: modelName(value) })),
+    { value: CUSTOM_MODEL_VALUE, label: 'Custom…' },
+  ]
+  modelChosen = state.selected
+  modelSelect.textContent = state.custom ? 'Custom…' : modelName(state.selected)
   modelInput.hidden = !state.custom
   if (document.activeElement !== modelInput) modelInput.value = state.model
 }
@@ -163,8 +163,21 @@ async function connectClient(client, button) {
 }
 
 const settingsFocusables = () =>
-  [...settingsPop.querySelectorAll('button:not(:disabled), select:not(:disabled), input:not(:disabled), a[href]')]
-    .filter((element) => !element.closest('[hidden]'))
+  [...settingsPop.querySelectorAll('button:not(:disabled), input:not(:disabled), summary, a[href]')]
+    .filter((element) => !element.closest('[hidden]') && element.checkVisibility())
+
+$('#models-refresh').addEventListener('click', async event => {
+  const button = event.currentTarget
+  button.disabled = true
+  button.textContent = 'Checking…'
+  try {
+    renderSettings(await api('/api/settings'))
+    adoptState(await api('/api/state'))
+    hooks.render()
+    $('#settings-save-state').textContent = 'Setup checked. CLI detection does not verify sign-in.'
+  } catch (error) { $('#settings-save-state').textContent = `Could not check setup. ${error.message}` }
+  finally { button.disabled = false; button.textContent = 'Check setup' }
+})
 
 function closeSettings(restoreFocus = true) {
   closePocketPairing(false)
@@ -179,13 +192,15 @@ function renderSettings(s) {
   currentSettings = s
   $('#about-version').textContent = s.version ? `v${s.version}` : ''
   const seg = $('#engine-seg')
+  const restoreEngineFocus = seg.contains(document.activeElement)
   seg.innerHTML = ''
   for (const [key, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {
     const b = document.createElement('button')
     b.type = 'button'
     b.role = 'radio'
-    b.textContent = label
+    b.innerHTML = `<span>${label}</span><small>${s.engines[key] ? (s.engine === key ? 'Selected · detected' : 'Detected') : 'Not found'}</small>`
     b.setAttribute('aria-checked', String(s.engine === key))
+    b.tabIndex = s.engine === key ? 0 : -1
     b.disabled = !s.engines[key]
     b.title = s.engines[key] ? '' : `${label} CLI not found on this machine`
     b.addEventListener('click', async () => {
@@ -195,6 +210,7 @@ function renderSettings(s) {
     })
     seg.appendChild(b)
   }
+  if (restoreEngineFocus) seg.querySelector('[aria-checked="true"]')?.focus({preventScroll:true})
   renderModelPicker(s)
   for (const key of ['claude', 'codex']) {
     const pathInput = $(`#${key}-path`)
@@ -207,12 +223,14 @@ function renderSettings(s) {
 }
 
 async function saveSettings(patch) {
+  const status = $('#settings-save-state')
+  status.textContent = 'Saving…'
   try {
     renderSettings(await api('/api/settings', patch))
-    toast('settings saved')
+    status.textContent = 'Saved.'
     return true
   } catch (e) {
-    toast(e.message)
+    status.textContent = `Could not save. ${e.message}`
     return false
   }
 }
@@ -221,6 +239,7 @@ export async function openSettings() {
   if (!settingsPop.hidden) return
   settingsBackdrop.hidden = false
   settingsPop.hidden = false
+  settingsPop.querySelector('#settings-close').focus({preventScroll:true})
   document.documentElement.classList.add('modal-open')
   try {
     renderSettings(await api('/api/settings'))
@@ -229,9 +248,19 @@ export async function openSettings() {
     toast(e.message)
   }
   if (settingsPop.hidden) return
-  const first = settingsPop.querySelector('#theme-seg button[aria-checked="true"]') || settingsFocusables()[0]
-  first?.focus()
+
 }
+
+// Radio groups support the same directional navigation as their menus.
+for (const group of [$('#theme-seg'), $('#engine-seg')]) group.addEventListener('keydown', event => {
+  if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return
+  const options = [...group.querySelectorAll('button:not(:disabled)')]
+  if (!options.length) return
+  event.preventDefault()
+  const index = options.indexOf(document.activeElement)
+  const next = options[(index + (['ArrowRight','ArrowDown'].includes(event.key) ? 1 : -1) + options.length) % options.length]
+  next.focus(); next.click()
+})
 
 $('#settings-close').addEventListener('click', () => closeSettings())
 
@@ -242,15 +271,23 @@ $('#open-can').addEventListener('click', () => {
   showIntro()
 })
 
-modelSelect.addEventListener('change', async (event) => {
-  const selection = modelPickerSelection(event.target.value)
-  if (selection.custom) {
-    modelInput.hidden = false
-    modelInput.focus()
-    return
-  }
-  modelInput.hidden = true
-  await saveSettings({ model: selection.model })
+modelSelect.addEventListener('click', () => {
+  openMenu(modelSelect, {
+    items: modelItems,
+    value: modelChosen,
+    label: 'Model',
+    onPick: async (value) => {
+      const selection = modelPickerSelection(value)
+      if (selection.custom) {
+        modelSelect.textContent = 'Custom…'
+        modelInput.hidden = false
+        modelInput.focus()
+        return
+      }
+      modelInput.hidden = true
+      await saveSettings({ model: selection.model })
+    },
+  })
 })
 
 modelInput.addEventListener('change', (event) => saveSettings({ model: customModelValue(event.target.value) }))

@@ -2,7 +2,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {runInNewContext} from 'node:vm'
-import {pendingView,filingPlan} from '../public/js/work-feedback.js'
+import {pendingView,filingPlan,runDestinations,passComplete} from '../public/js/work-feedback.js'
 
 test('working stays truthful when another note is unsent; both retry states survive',()=>{
   const state={captures:[{id:'a',text:'Plumber'}],settle:{running:true,lastError:'old error'}}
@@ -30,20 +30,19 @@ test('large batches animate at most three distinct visible destinations, without
   assert.equal(plan[0].delay,null)
   assert.ok(filingPlan(targets,()=>false).every(p=>p.delay===null))
 })
-test('terminal failure releases saved cards even with unfiled captures',()=>{
-  const source=readFileSync(new URL('../public/js/layout.js',import.meta.url),'utf8')
-  const fn=source.slice(source.indexOf('function releaseHeld('),source.indexOf('\n/** Keep the existing thought stack'))
-  const card={dataset:{sid:'saved'}},released=[]
-  const state={captures:[{id:'remaining'}],settle:{running:false,lastError:'failed'}}
-  const release=runInNewContext(fn+';releaseHeld',{page:{state},document:{querySelectorAll:()=>[card]},unbuild:el=>released.push(el)})
-  release(new Map([['remaining','saved']]))
-  assert.deepEqual(released,[card])
-  released.length=0;state.settle.running=true
-  release(new Map())
-  assert.equal(released.length,0)
+test('running passes hold results until final edits stop, including an empty inbox',()=>{
+  assert.equal(passComplete({captures:[],settle:{running:true}},true),false)
+  assert.equal(passComplete({captures:[],settle:{running:false}},true),true)
+  assert.equal(passComplete({captures:[{id:'remaining'}],settle:{running:false,lastError:'failed'}},true),true)
+  assert.equal(passComplete({captures:[{id:'waiting'}],settle:{}},false),false)
+})
+test('destinations deduplicate captures and ignore unrelated historical activity',()=>{
+  const snapshot={captures:[{id:'b'}],settle:{running:true},activity:[{captureId:'a',space:'Work'},{captureId:'old',space:'Other'}],spaces:[{id:'work',name:'Work',blocks:[{items:[{src:'b'}]}]},{id:'other',name:'Other',blocks:[]}]}
+  assert.deepEqual([...runDestinations(snapshot,new Set(['a','b']),()=> 'edit')],['work'])
+  assert.deepEqual([...runDestinations(snapshot,new Set(['a','b']),()=> 'edit')],['work'])
 })
 test('date-only edits highlight the date in both compact and open cards',()=>{
-  const source=readFileSync(new URL('../public/js/card-changes.js',import.meta.url),'utf8').replace(/^import .*$/gm,'').replace('export function','function')
+  const source=readFileSync(new URL('../public/js/card-changes.js',import.meta.url),'utf8').replace(/^import .*$/gm,'').replaceAll('export function','function')
   const marks=[],fn=runInNewContext(source+';highlightCardChanges',{document:{hidden:false},CSS:{escape:x=>x},markEdited:el=>{if(el)marks.push(el)}})
   const before={name:'Plumber',blocks:[{id:'b',type:'reminder',text:'Call plumber',when:'2026-09-08'}]}
   const after=structuredClone(before);after.blocks[0].when='2026-09-09'
@@ -53,4 +52,14 @@ test('date-only edits highlight the date in both compact and open cards',()=>{
   const root={querySelector:s=>s==='.when-sub, .place-chip'?date:null}
   fn({querySelector:s=>s.startsWith('[data-bid')?root:null},before,after)
   assert.deepEqual(marks,[date])
+})
+
+ test('submission feedback starts before local retention and never claims unsaved text is saved',()=>{
+  const pending = pendingView({captures:[],settle:{}},[],0,[{id:'draft',text:'play minecraft tonight'}])
+  assert.equal(pending.mode,'retaining')
+  assert.equal(pending.show,true)
+  assert.equal(pending.queue[0].status,'Keeping your note')
+  const retained = pendingView({captures:[],settle:{}},[{id:'saved',text:'play minecraft tonight'}],0,[{id:'draft',text:'play minecraft tonight'}])
+  assert.equal(retained.queue.length,1)
+  assert.equal(retained.mode,'sending')
 })

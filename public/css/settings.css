@@ -163,20 +163,28 @@
 .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 .seg button:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 
+/* The value IS the control. A filled box with a border around it is a form;
+   these are settled facts you can change, so they read as the answer, and
+   only the hand passing over them says they can be edited. */
 .set-input {
   width: 180px;
   min-height: 32px;
-  padding: 4px 9px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: none;
   color: var(--text-1);
   font: inherit;
   font-size: 12.5px;
-  transition: border-color var(--m-ui) var(--ease), box-shadow var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
+  text-align: right;
+  transition: border-color var(--m-ui) var(--ease), color var(--m-ui) var(--ease);
 }
-.set-input:focus { outline: none; box-shadow: var(--focus-ring-field); border-color: var(--accent-edge); background: var(--elevated); }
-.set-input::placeholder { color: var(--text-3); opacity: 0.7; }
+@media (hover: hover) { .set-input:hover { border-bottom-color: var(--line-1); } }
+/* while it is being written, the line is there to write on */
+.set-input:focus { outline: none; border-bottom-color: var(--accent-edge); }
+.set-input::placeholder { color: var(--text-3); }
+.set-input:focus::placeholder { color: transparent; }
 
 .model-picker {
   display: grid;
@@ -185,10 +193,34 @@
   width: 180px;
 }
 .model-picker .set-input { width: 100%; }
+/* the chosen model, as a fact with a menu behind it */
 .set-select {
-  padding-right: 26px;
-  cursor: pointer;
+  display: block; width: 100%; min-height: 32px; padding: 4px 0;
+  border: 0; border-bottom: 1px solid transparent; background: none;
+  color: var(--text-1); font: inherit; font-size: 12.5px;
+  text-align: right; cursor: pointer;
+  transition: border-color var(--m-ui) var(--ease), color var(--m-ui) var(--ease);
 }
+@media (hover: hover) { .set-select:hover { border-bottom-color: var(--line-1); } }
+.set-select:focus-visible { outline: none; border-bottom-color: var(--accent-edge); }
+
+/* the menu it opens: rows in the popover's card, one of them the current one */
+.menu { width: 232px; padding: var(--space-2); }
+.menu-group {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+}
+.menu-item {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+  width: 100%; padding: 7px var(--space-2); border: 0; background: none; cursor: pointer;
+  border-radius: var(--radius-sm); text-align: left; color: var(--text-1); font: inherit; font-size: 12.5px;
+  transition: background var(--m-ui) var(--ease), color var(--m-ui) var(--ease);
+}
+.menu-item:hover { background: var(--surface-1); }
+.menu-item:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.menu-item.chosen { color: var(--accent-ink); }
+.menu-note { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.menu-item.chosen .menu-note { color: var(--accent-ink); opacity: 0.7; }
 .model-custom-input { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
 
 .set-note { padding: 0 2px; color: var(--text-3); font-size: 11.5px; text-wrap: pretty; }
@@ -200,7 +232,16 @@
   gap: var(--space-2) var(--space-3);
   padding: var(--space-4) 2px var(--space-3);
 }
-.set-path { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; }
+/* a path is longer than a value slot and its end is the part that identifies
+   it, so it takes whatever the row has left and loses its head, not its tail */
+.set-path {
+  font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px;
+  width: auto; flex: 1 1 auto; min-width: 0;
+  /* the row gives it everything it has left; a path longer than that trails
+     off, and the full one is on the row's title. Not rtl, which clips the
+     head but reorders the leading slash onto the end. */
+  text-overflow: ellipsis; text-align: right;
+}
 
 .connection-settings {
   margin-top: var(--space-4);
@@ -535,15 +576,53 @@
   .onboarding-engines { grid-template-columns: 1fr; }
 }
 
-/* Settings shares the material and editorial heading of the card detail. */
-.settings-pop {
-  width: min(480px, calc(100vw - 32px)); padding: 24px; border-radius: 24px;
-  background: color-mix(in srgb, var(--elevated) 96%, transparent);
-  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-}
-.settings-title { font-family: var(--font-serif); font-size: 26px; font-weight: 400; }
-.settings-backdrop { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.seg button[aria-checked="true"] { background: var(--elevated); color: var(--text-1); box-shadow: 0 1px 4px rgba(0,0,0,.09); }
-.pocket-actions .pocket-primary { background: var(--text-1); color: var(--bg); border-color: transparent; }
-.pocket-pairing > .pocket-pairing-expiry { color: var(--text-2); }
-@supports not (backdrop-filter: blur(1px)) { .settings-pop { background: var(--elevated); } }
+/* December settings: content-sized, model-first, one reading surface. */
+#settings-pop { top: max(24px, 7vh); width: min(520px, calc(100vw - 24px)); max-height: 86dvh; padding: 24px 26px 14px; border-radius: 20px; transform: translateX(-50%); display: flex; flex-direction: column; overflow: hidden; background: var(--elevated); animation: settings-sheet-in 180ms ease-out; }
+#settings-pop[hidden] { display: none; }
+#settings-pop .surface-heading { margin-bottom: 18px; flex-shrink: 0; }
+#settings-pop .settings-title { margin: 0; font-size: 26px; letter-spacing: -.02em; }
+.settings-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; scrollbar-width: thin; }
+.model-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.model-heading h3 { font: inherit; font-size: 14px; font-weight: 600; margin: 0; }
+.settings-text-action { font: inherit; font-size: 12px; color: var(--accent-ink); background: none; border: 0; cursor: pointer; min-height: 36px; padding: 4px; }
+.settings-description { color: var(--text-3); font-size: 12px; line-height: 1.5; margin: 4px 0 12px; }
+#settings-pop .jev-preview { margin: 8px 0 12px; padding: 0; border: 0; background: none; }
+#settings-pop .jev-preview summary { min-height: 44px; display: flex; align-items: center; }
+#settings-pop .jev-preview p { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.organizer-heading { color: var(--text-3); font-size: 12px; margin: 4px 0; }
+#engine-seg { display: flex; flex-direction: column; gap: 2px; }
+#engine-seg button { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 42px; border: 0; border-radius: 6px; padding: 8px 10px; font: inherit; background: transparent; color: var(--text-1); text-align: left; cursor: pointer; }
+#engine-seg button small { color: var(--text-3); font-size: 11px; }
+#engine-seg button[aria-checked="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 var(--accent); }
+#engine-seg button[aria-checked="true"] span::after { content: ' ✓'; color: var(--accent-ink); }
+#engine-seg button:disabled { cursor: default; }
+#engine-seg button:hover:not(:disabled) { background: var(--surface-1); }
+#settings-pop .set-row { min-height: 44px; padding: 2px 0; }
+#settings-pop .set-select { min-height: 44px; border-radius: 0; border: 0; border-bottom: 1px solid var(--line-1); padding: 4px 2px; text-align: right; background: transparent; }
+#settings-pop .set-select::after { content: ' ⌄'; color: var(--text-3); }
+#settings-pop .model-picker { width: min(230px, 60%); }
+.settings-disclosure { margin: 0; }
+.settings-disclosure > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 13px; cursor: pointer; list-style: none; }
+.settings-disclosure > summary::-webkit-details-marker { display: none; }
+.settings-disclosure > summary::after { content: '›'; margin-left: auto; color: var(--text-3); }
+.settings-disclosure[open] > summary::after { transform: rotate(90deg); }
+.settings-disclosure > summary > span { color: var(--text-3); font-size: 11px; margin-left: auto; }
+.settings-disclosure > summary > span + * { margin-left: 0; }
+.settings-advanced summary { color: var(--text-3); font-size: 12px; min-height: 40px; }
+.settings-advanced .set-row { flex-direction: column; align-items: stretch; gap: 4px; }
+#settings-pop .settings-advanced input { width: 100%; text-align: left; border: 1px solid var(--line-1); padding: 9px; border-radius: 6px; }
+.settings-save-state { font-size: 12px; color: var(--text-2); margin: 4px 0 10px; }
+.settings-save-state:empty { display: none; }
+.appearance-row { margin-top: 12px; border-top: 1px solid var(--line-1); padding-top: 14px !important; }
+#theme-seg { display: flex; gap: 8px; }
+#theme-seg button { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 5px 9px; border: 1px solid transparent; border-radius: 7px; color: var(--text-2); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+#theme-seg button[aria-checked="true"] { border-color: var(--accent); color: var(--text-1); }
+#theme-seg i { width: 20px; height: 25px; border: 1px solid #8886; border-radius: 3px; background: #fafaf8; box-shadow: inset 0 -7px #e8e8e3; }
+#theme-seg [data-theme-set="dark"] i { background: #25231f; box-shadow: inset 0 -7px #393630; }
+.settings-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-1); color: var(--text-3); font-size: 11px; flex-shrink: 0; }
+.settings-footer a { color: inherit; text-decoration: none; }
+#settings-pop .pocket-settings, #settings-pop .connection-settings { border: 0; padding: 4px 0 14px; margin: 0; }
+#settings-pop button:focus-visible, #settings-pop summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@keyframes settings-sheet-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+@media (max-width:560px) { #settings-pop { top: 12px; max-height: calc(100dvh - 24px); padding: 20px 16px 14px; } .settings-disclosure > summary > span { max-width: 45%; text-align: right; } }
+@media (prefers-reduced-motion:reduce) { #settings-pop { animation: none; } }

@@ -1,6 +1,15 @@
 /* ---------------------------------------------------------- the spaces */
 
-.body-grid { display: flex; gap: var(--space-8); margin-top: var(--space-5); align-items: flex-start; }
+.body-grid { display: flex; gap: 12px; margin-top: var(--space-5); align-items: flex-start; }
+/* The cards are centered on the page: the rail's column on the left is
+   mirrored by an empty one on the right, so the grid never sits off-axis
+   from the writing column above it. */
+.body-grid::after { content: ''; flex: 0 0 96px; display: none; }
+.body-grid:has(.rail.on)::after { display: block; }
+.spaces { max-width: 1000px; margin-inline: auto; justify-content: center; }
+.col { max-width: 360px; }
+/* One-column tablets should keep a readable page, not a phone-width strip. */
+@media (max-width: 720px) { .col { max-width: 560px; } }
 
 /* The rail: text only, appears once the page has grown enough to need it. */
 .rail {
@@ -15,20 +24,20 @@
   scrollbar-width: none;
   display: none;
   flex-direction: column;
-  max-width: 150px;
+  width: 96px;
 }
 .rail.on { display: flex; animation: rise var(--m-enter) var(--ease-out) both; }
 /* Portrait tablets and phones have no room beside the cards. This hide used
    to live in page.css, which loads BEFORE this sheet — so the rule above
    won and the rail squeezed every card to two-thirds width on a phone. */
-@media (max-width: 900px) { .rail.on { display: none; } }
+@media (max-width: 900px) { .rail.on { display: none; } .body-grid:has(.rail.on)::after { display: none; } }
 .rail a {
   display: block;
   padding: 2px 0;
   line-height: 1.45;
   color: var(--text-3);
   text-decoration: none;
-  font-size: 11.5px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -36,6 +45,19 @@
 }
 .rail a:hover { color: var(--text-1); }
 .rail a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+/* the card you are beside: ink, not a marker */
+.rail a.current { color: var(--text-1); }
+/* the page's areas, each a run of names under its label */
+.rail-area { margin-bottom: 10px; }
+.rail-area:last-child { margin-bottom: 0; }
+.rail-label {
+  display: block;
+  padding: 0 0 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+  opacity: .8;
+}
 
 .spaces { flex: 1; min-width: 0; display: flex; gap: var(--space-4); align-items: flex-start; }
 .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
@@ -54,6 +76,9 @@
 }
 /* a door hints it opens: tone only, never a lift */
 .space:hover:not(.ghost) { border-color: var(--line-2); }
+/* press is a squash, at once; the release eases back on the ladder */
+.space:active:not(.ghost):not(:has(.row:active, .card-tool:active, a:active)) { transform: scale(0.992); transition-duration: 0s; }
+.space { transition: border-color var(--m-depth) var(--ease), box-shadow var(--m-depth) var(--ease), transform var(--m-depth) var(--ease-out); }
 .space:focus-visible { outline: none; border-color: var(--accent-edge); box-shadow: var(--focus-ring-field); }
 .dateline:focus-visible { outline: none; }
 .dateline:focus-visible::after { transform: scaleX(1); background: var(--accent); }
@@ -62,7 +87,7 @@
 .space.settled { animation: none; }
 
 /* The agent's touch is light: a sheen sweeps the card, the border warms. */
-.space.washed { animation: border-glow 900ms var(--ease); }
+.space.washed { animation: border-glow 500ms var(--ease); }
 
 /* navigation's lighter touch: border only, no sheen */
 /* the rail's landing light: a quiet accent ring that draws the eye, then lets go */
@@ -76,13 +101,36 @@
   width: 60%;
   pointer-events: none;
   background: linear-gradient(100deg, transparent, var(--accent-soft) 45%, rgba(61, 168, 220, 0.18) 50%, var(--accent-soft) 55%, transparent);
-  animation: sheen 900ms var(--ease-out) forwards;
+  animation: sheen 500ms cubic-bezier(.32,.08,.2,1) forwards;
 }
 @keyframes sheen { to { transform: translateX(270%); } }
 @keyframes border-glow {
   0%, 35% { border-color: var(--accent-edge); box-shadow: 0 0 0 3px var(--accent-soft), var(--card-shadow); }
   100% { border-color: var(--line-1); box-shadow: var(--card-shadow); }
 }
+
+/* A shaped card leads with three figures over hairlines: the number in
+   the serif, the fact in the small size, one dot for what slipped. */
+.figs { display: flex; gap: 0 22px; margin: 2px 0 16px; }
+/* a ledger whose total the figures already carry keeps only its lines */
+.block.figured .ledger-total, .block.figured .ledger-month, .block.figured > .block-title { display: none; }
+/* the done pile's size, where the pile would be */
+.done-count { padding: 4px 0 0 30px; font-size: 11.5px; color: var(--text-3); }
+.fig { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line-1); }
+.fig b {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+.fig span { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.fig.od span::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--bad-ink); margin: 0 5px 1px 0; }
+.focus-card .figs { margin: -14px 0 22px; }
+.focus-card .fig b { font-size: 26px; }
 
 /* the identity layer is serif: a journal that keeps itself */
 .space-name {
@@ -127,28 +175,37 @@
   text-decoration-skip-ink: none;
 }
 .solo:hover .solo-text { color: var(--accent-ink, var(--text-1)); }
+/* the sub rides the text's line, on the right, and drops under — still on
+   the right — only when the sentence needs the whole line */
+.solo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; }
+.solo-text { flex: 1 1 0; min-width: 55%; }
 .solo-sub {
-  margin-top: var(--space-2);
+  flex: 0 0 auto;
+  margin-left: auto;
   font-size: 11.5px;
+  line-height: 21px;
   color: var(--text-3);
+  white-space: nowrap;
 }
 .solo-sub .urgent { color: var(--bad-ink); }
 
-.block { margin-bottom: var(--space-5); }
+.block { margin-bottom: 14px; }
 .block:last-child { margin-bottom: 0; }
-.block.arrive {
-  animation: materialize var(--m-struct) var(--ease-out) both;
-  animation-delay: var(--d, 0ms);
-}
+/* New ink arrives already in place: opacity only, once. The growing frame
+   is the one thing that moves, so nothing shifts underneath it. */
+.block.arrive, .row.row-arrive { animation: ink-in var(--m-ui) var(--ease) both; }
+@keyframes ink-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .block.arrive, .row.row-arrive { animation: none; } }
 
 /* things the agent makes condense into existence */
 @keyframes materialize {
-  from { opacity: 0; transform: translateY(5px); filter: blur(6px); }
-  to   { opacity: 1; transform: none; filter: blur(0); }
+  from { opacity: .72; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* a ledger's newest line arrives with its total */
-.ledger-entry.entry-in { animation: materialize var(--m-enter) var(--ease-out) both; }
+.ledger-entry.entry-in { animation: ink-in var(--m-ui) var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .ledger-entry.entry-in { animation: none; } }
 
 /* the day you just marked ripples once */
 .streak-dots i.just-marked { animation: dot-mark 560ms var(--ease-pop); }
@@ -161,7 +218,7 @@
 .block-title {
   font-size: 11.5px;
   color: var(--text-3);
-  margin-bottom: var(--space-2);
+  margin-bottom: 6px;
 }
 
 /* list + reminder rows share the tick */
@@ -206,13 +263,13 @@
   stroke-dashoffset: 24;
 }
 .row.done .tick { background: var(--accent); border-color: var(--accent); }
-.row.done .tick path { animation: check-draw 260ms var(--ease-out) 40ms forwards; }
+.row.done .tick path { animation: check-draw var(--m-depth) var(--ease-out) 40ms forwards; }
 .row.done.no-anim .tick path { stroke-dashoffset: 0; animation: none; }
 
 /* Native decoration follows every wrapped line and the active font metrics.
    A positioned rule only knew the box's midpoint, so zoomed or wrapped text
    could leave the strike floating between lines. */
-.row-text { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.row-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .row.done .row-text {
   color: var(--text-3);
   opacity: 0.75;
@@ -223,6 +280,32 @@
 }
 
 @keyframes check-draw { to { stroke-dashoffset: 0; } }
+
+/* One acknowledgment, at the click: the words recede while the strike is
+   drawn over them. A row that is rendered already done does not perform. */
+.row[role="checkbox"] > .row-text { transition: color var(--m-depth) var(--ease), opacity var(--m-depth) var(--ease); }
+.row[role="checkbox"].no-anim > .row-text { transition: none; }
+@media (prefers-reduced-motion: reduce) { .row[role="checkbox"] > .row-text { transition: none; } }
+
+/* A completion settles in real layout: the old slot closes while the new one
+   opens, on one clock, so the row, the frame and the cards below move as one.
+   The leaving slot is an inert copy that only occupies space; nothing in it
+   performs again. completion-motion.js owns the heights. */
+.slot-leaving, .slot-entering { overflow: hidden; overflow: clip; pointer-events: none; }
+.slot-leaving, .slot-leaving * { animation: none !important; transition: none !important; }
+/* either end of the move, measured for real before it starts */
+.slot-shut {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border-top-width: 0 !important;
+  border-bottom-width: 0 !important;
+  overflow: hidden !important;
+  overflow: clip !important;
+}
 
 /* tracker */
 .tracker-line {
@@ -236,9 +319,10 @@
 .tracker-count b { font-weight: 500; }
 .tracker-count.full b { color: var(--good-ink); }
 .tracker-unit { color: var(--text-3); font-size: 11.5px; }
+/* one hairline meter, everywhere: the stage's goal, a card's tracker, its hero */
 .meter {
   position: relative;
-  height: 4px;
+  height: 3px;
   background: var(--surface-2);
   border-radius: var(--radius-pill);
 }
@@ -250,6 +334,15 @@
   transition: width var(--m-struct) var(--ease-out);
 }
 .meter.full span { background: var(--hue-ok); }
+
+/* the fold: what a heavy card keeps for its opened view */
+.fold-more {
+  font-size: 11.5px;
+  color: var(--text-3);
+  padding: var(--space-1) 0 0 calc(18px + var(--space-3));
+  transition: color var(--m-ui) var(--ease);
+}
+.space:hover .fold-more { color: var(--text-2); }
 
 /* the quiet tail of a long list */
 .done-more {
@@ -290,10 +383,9 @@
 .streak-dots i.on { background: var(--accent); }
 /* today, still open: a quiet ring waiting to be filled */
 .streak-dots i.today { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); }
-/* dots pop in one by one when their card or block first arrives */
-.space.fresh .streak-dots i,
-.block.arrive .streak-dots i {
-  animation: dot-in 220ms var(--ease-out) both;
+/* dots pop in one by one when their card first arrives */
+.space.fresh .streak-dots i {
+  animation: dot-in var(--m-depth) var(--ease-out) both;
   animation-delay: calc(var(--i, 0) * 18ms);
 }
 @keyframes dot-in {
@@ -307,12 +399,13 @@
   text-decoration: none;
   border-bottom: 1px solid var(--accent-edge);
   transition: border-color var(--m-ui) var(--ease);
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 .card-link:hover { border-color: var(--accent-ink); }
 
 /* note */
-.note-text { color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; overflow-wrap: anywhere; }
+/* prose is the person's words: the serif, wherever it appears */
+.note-text { font-family: var(--font-serif); font-size: 15px; line-height: 1.6; color: var(--text-2); white-space: pre-wrap; text-wrap: pretty; overflow-wrap: anywhere; }
 .note-text.clamp {
   max-height: 132px;
   overflow: hidden;
@@ -334,7 +427,7 @@
 
 .block.hero .ledger-total { font-size: 28px; }
 .block.hero .tracker-count b { font-size: 19px; }
-.block.hero .meter { height: 6px; }
+.block.hero .meter { height: 3px; }
 
 .c-line {
   display: flex;
@@ -358,21 +451,21 @@
 
 /* --------------------------------------------------------- the building
    The dashed hollow frame is reserved for the moment a card is actually
-   being built. Content forms inside it, blurred and faint; when the dot
-   lands the frame inks in: dashes fade, content sharpens, bars draw. */
+   being built. Provisional ink shapes the frame as real content arrives.
+   The travel dot lands, then the blue swipe resolves the ink and edge. */
 
 .space::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  inset: 0;
   border: 1px dashed var(--line-2);
-  border-radius: var(--radius-lg);
+  border-radius: inherit;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--m-struct) var(--ease);
 }
 .space > * {
-  transition: opacity var(--m-struct) var(--ease-out), filter var(--m-struct) var(--ease-out);
+  transition: opacity 260ms cubic-bezier(.2,.7,.2,1), filter 300ms cubic-bezier(.2,.7,.2,1);
 }
 .space.building {
   border-color: transparent;
@@ -381,21 +474,62 @@
   animation: none;
 }
 .space.building::before { opacity: 1; }
-.space.building > * { opacity: 0.22; filter: blur(5px); }
+.space.building > :not(.card-tools) { opacity: 0.48; filter: blur(3px); }
+.space.building .card-tools { visibility: hidden; }
+.space.building:focus-within > * { opacity: 1; filter: none; }
 
 /* the mote lands and the card condenses out of that light */
-.space.forming { animation: form-in 620ms var(--ease-out) both; }
+.space.forming { animation: form-in 240ms cubic-bezier(.32,.08,.2,1) both; }
 /* Relay combines these: animation declarations otherwise cancel each other. */
-.space.forming.washed { animation: form-in 620ms var(--ease-out) both, border-glow 900ms var(--ease); }
-.space.forming.noted { animation: form-in 620ms var(--ease-out) both, border-glow 1400ms var(--ease); }
+.space.forming.washed { animation: form-in 240ms cubic-bezier(.32,.08,.2,1) both, border-glow 500ms var(--ease); }
+.space.forming.noted { animation: form-in 240ms cubic-bezier(.32,.08,.2,1) both, border-glow 1400ms var(--ease); }
 @keyframes form-in {
-  0%   { transform: scale(0.97); filter: blur(6px); }
-  100% { transform: none; filter: blur(0); }
+  0%   { border-color: var(--accent-edge); }
+  100% { border-color: var(--line-1); }
 }
-.space.forming > * { animation: form-content 480ms var(--ease-out) 80ms both; }
-@keyframes form-content {
-  from { opacity: 0.22; filter: blur(5px); }
-  to   { opacity: 1; filter: blur(0); }
+/* One transition owns the ink from construction through landing. Removing
+   building resolves from the current painted values, even mid-growth.
+   No keyframe restart, text translation, or per-row cascade. */
+.space.forming > :not(.card-tools) { opacity: 1; filter: blur(0); }
+
+/* The frame in a hand (card-drawing.js): the a09 hollow, drawn once around the
+   card at its real size. It replaces the plain dashes only while it is there,
+   sits outside layout and hit testing, and carries no wash of its own — the
+   landing owns the blue. */
+.space > .card-drawing,
+.space.building > .card-drawing { /* the second outranks the building blur */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 1;
+  filter: none;
+  transition: opacity 200ms var(--ease);
+}
+.space > .card-drawing.leaving { opacity: 0; }
+.space.building.drawing::before { opacity: 0; }
+.card-drawing-ink {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.card-drawing-reveal {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 10;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: card-draw 520ms cubic-bezier(.2,.7,.2,1) forwards;
+}
+.card-drawing.drawn .card-drawing-reveal { animation: none; stroke-dashoffset: 0; }
+@keyframes card-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .space > .card-drawing { display: none; }
+  .space.building.drawing::before { opacity: 1; }
 }
 
 .ghost-out {
@@ -545,7 +679,17 @@
 .focus-card::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: content-box; }
 
 /* while a card is open the page beneath holds still */
-:root.modal-open, :root.modal-open body { overflow: hidden; }
+/* Lock the viewport only. Locking body too creates a new scrolling ancestor
+   for the sticky rail and throws it offscreen when the page is scrolled. */
+:root.modal-open { overflow: hidden; }
+/* and holds until the surface has finished leaving. Closing drops
+   modal-open at once, so the page's scrollbar used to come back under a
+   ghost still mid-flight. The ghost's own presence keeps the lock instead:
+   no class to clear late, so reopening mid-exit cannot strand or steal it,
+   and the lock ends in the frame the ghost is removed. Kept as its own rule
+   so an engine without :has() drops only this, never the lock above. The
+   width never changes either way: the root keeps a stable gutter (below). */
+:root:has(> body > .focus-leaving) { overflow: hidden; }
 
 .focus-card .space-name { font-size: var(--fs-lede); margin-bottom: var(--space-6); }
 @keyframes focus-in {
@@ -555,6 +699,11 @@
 
 .space { cursor: pointer; }
 .focus-card .block { margin-bottom: var(--space-6); }
+.focus-card .hero .tracker-count b { font-family: var(--font-serif); font-size: 28px; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; margin-right: 5px; font-variant-numeric: tabular-nums lining-nums; }
+.focus-card .hero .tracker-count { display: block; margin-bottom: 8px; }
+.focus-card .hero .ledger-total { font-family: var(--font-serif); font-size: 28px; font-weight: 400; letter-spacing: -0.02em; font-variant-numeric: tabular-nums lining-nums; }
+.focus-card .block[data-type="reminder"] { margin-bottom: 0; }
+.focus-card .block[data-type="reminder"] + .block:not([data-type="reminder"]) { margin-top: var(--space-6); }
 
 /* ------------------------------------------------------- the celebration */
 
@@ -588,7 +737,18 @@
   100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1); }
 }
 
-.tick.pop, .meter.pop { animation: send-pop 520ms var(--ease-expo); }
+/* motion.js pop(). Never `.pop`: that class is the popover's chrome below.
+   The tick's check is the second half of its press: it leaves from the
+   pressed scale, so no transition starts under it, passes rest once, and
+   is home inside --m-depth. One scale; the brush draws on top of it. */
+.tick.popping { animation: tick-release var(--m-depth); }
+@keyframes tick-release {
+  0%   { transform: scale(0.88); animation-timing-function: var(--ease-out); }
+  55%  { transform: scale(1.04); animation-timing-function: var(--ease); }
+  100% { transform: none; }
+}
+.meter.popping { animation: send-pop 520ms var(--ease-expo); }
+@media (prefers-reduced-motion: reduce) { .tick.popping, .meter.popping { animation: none; } }
 @keyframes send-pop {
   0%   { transform: scale(1); }
   16%  { transform: scale(0.84); }
@@ -605,23 +765,31 @@
 /* ------------------------------------------------------ the opened card */
 /* A focused space gains resolution, not just room. */
 
-.focus-meta {
-  margin: calc(var(--space-3) * -1) 0 var(--space-5);
+/* the tag never breaks the name: it is one unbreakable unit that drops to
+   its own line whole when the name's line has no room for it */
+.space-tag {
+  display: inline-block;
+  margin-left: 4px;
+  font-family: var(--font-sans);
   font-size: 11.5px;
+  line-height: 1.4;
   color: var(--text-3);
+  white-space: nowrap;
+  vertical-align: 2px;
 }
+.space-name:has(.space-tag) { text-wrap: pretty; }
 
 /* a year of days: keeping-it-up made visible */
+/* the year fits the card: fifty-three weeks share the width, no scroll */
 .heatmap {
   display: flex;
-  gap: 3px;
-  overflow-x: auto;
+  gap: 2px;
   padding-bottom: var(--space-2);
 }
-.hm-week { display: flex; flex-direction: column; gap: 3px; }
+.hm-week { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; }
 .hm-week i {
-  width: 9px;
-  height: 9px;
+  width: auto;
+  aspect-ratio: 1;
   border-radius: 2px;
   background: var(--line-1);
   transition: background var(--m-ui) var(--ease);
@@ -635,7 +803,7 @@
   font-size: 10px;
   color: var(--text-3);
 }
-.hm-months span { position: absolute; left: calc(var(--w) * 12px); }
+.hm-months span { position: absolute; left: calc(var(--w) / 53 * 100%); }
 .hm-legend {
   display: flex;
   gap: var(--space-4);
@@ -653,26 +821,12 @@
   justify-content: space-between;
   align-items: baseline;
   font-size: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-1);
+  margin-bottom: 2px;
 }
 .lm-name { color: var(--text-2); letter-spacing: 0.01em; }
 .lm-sum { color: var(--text-1); font-variant-numeric: tabular-nums; }
-.lm-bar {
-  height: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--line-1);
-  margin: 6px 0 var(--space-3);
-  overflow: hidden;
-}
-.lm .ledger-entry { color: var(--text-2); }
-.lm-bar span {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  opacity: 0.55;
-  transition: width var(--m-enter) var(--ease-out);
-}
-
 /* am I ahead or behind, in words */
 .pace {
   margin-top: var(--space-2);
@@ -710,6 +864,7 @@
 /* prose wants a measure, not a card width */
 .focus-card .note-text {
   max-width: 62ch;
+  font-size: 16px;
   line-height: 1.62;
   text-wrap: pretty;
 }
@@ -733,9 +888,8 @@
 .pips.full i.on { background: var(--good-ink, var(--accent)); }
 /* they fill in sequence when the card first arrives */
 .space.fresh .pips i.on,
-.block.arrive .pips i.on,
 .space.forming .pips i.on {
-  animation: pip-in 260ms var(--ease-out) both;
+  animation: pip-in var(--m-depth) var(--ease-out) both;
   animation-delay: calc(var(--i) * 26ms);
 }
 @keyframes pip-in {
@@ -744,20 +898,26 @@
 }
 
 /* September card study: content earns hierarchy; existing blocks keep their semantics. */
-.space { padding: 22px; border-radius: 16px; }
-.space-name { font-size: 19px; line-height: 1.3; margin-bottom: 20px; padding-right: 26px; }
-.space .row { padding-block: 7px; line-height: 1.55; }
+.space { padding: 20px; border-radius: 16px; }
+.space-name { font-size: 20px; line-height: 1.3; margin-bottom: 14px; padding-right: 64px; }
+.space .row { padding-block: 6px; line-height: 1.55; }
 .space .block + .block { padding-top: 14px; border-top: 1px solid var(--line-1); }
-.space .hero .tracker-count b { font-family: var(--font-serif); font-size: 36px; line-height: 1.1; font-weight: 400; letter-spacing: -0.035em; margin-right: 5px; }
-.space .hero .tracker-count { display: block; margin-bottom: 10px; }
-.space .hero .ledger-total { font-family: var(--font-serif); font-size: 36px; font-weight: 400; letter-spacing: -0.035em; }
+/* reminders are rows, not sections: one after another they stack the way
+   a list's items do, with no rule between them */
+.space .block[data-type="reminder"] { margin-bottom: 0; }
+.space .block[data-type="reminder"] + .block[data-type="reminder"] { padding-top: 0; border-top: 0; }
+.space .block[data-type="reminder"] + .block:not([data-type="reminder"]) { margin-top: 14px; }
+/* one number leads a card at 28 in the serif; three figures lead it at 22 */
+.space .hero .tracker-count b { font-family: var(--font-serif); font-size: 28px; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; margin-right: 5px; font-variant-numeric: tabular-nums lining-nums; }
+.space .hero .tracker-count { display: block; margin-bottom: 8px; }
+.space .hero .ledger-total { font-family: var(--font-serif); font-size: 28px; font-weight: 400; letter-spacing: -0.02em; font-variant-numeric: tabular-nums lining-nums; }
 .space .ledger-entry { padding-block: 4px; }
 .space[data-kind="note"] { background: var(--elevated); }
-.space[data-kind="note"] .solo-text { display: block; font-size: 23px; line-height: 1.45; letter-spacing: -0.015em; padding-block: 8px; }
+.space[data-kind="note"] .solo-text { display: block; font-size: 21px; line-height: 1.45; letter-spacing: -0.01em; padding-block: 6px; }
 .space[data-kind="note"] .note-text { font-family: var(--font-serif); font-size: 17px; line-height: 1.6; }
-.space[data-kind="reminder"] .solo-text { display: block; font-size: 21px; line-height: 1.4; }
-.space .solo-sub { margin-top: 16px; }
-.space .meter { height: 5px; margin-top: 10px; }
+.space[data-kind="reminder"] .solo-text { display: block; font-size: 19px; line-height: 1.4; }
+.space .solo-sub { margin-top: 0; }
+.space .meter { height: 3px; margin-top: 10px; }
 .space .pips { gap: 7px; }
 .space .card-tools { top: 9px; right: 9px; }
 .space:focus-within .card-tools { opacity: 1; }
@@ -765,14 +925,94 @@
 @media (max-width: 540px) { .space { padding: 20px; } }
 @media (prefers-reduced-motion: reduce) {
   .space.forming, .space.forming.washed, .space.forming.noted, .space.forming > * { animation: none; }
+  .space > * { transition: none; }
+  .space.building > :not(.card-tools) { opacity: 1; filter: none; }
 }
 /* Editorial ink remains neutral; urgency and progress use separate marks. */
 .space .space-name, .focus-card .space-name,
 .space .solo:hover .solo-text, .focus-card .solo:hover .solo-text { color: var(--text-1); }
-.space .block-title, .focus-card .block-title { color: var(--text-2); }
+.space .block-title, .focus-card .block-title { color: var(--text-3); }
 .space .solo-sub, .space .solo-sub .urgent,
 .space .when-sub, .space .when-sub.urgent,
 .focus-card .when-sub, .focus-card .when-sub.urgent { color: var(--text-3); }
+/* the day is a thing you can move: it takes ink under the hand */
+.row .when-sub[data-when] { cursor: pointer; transition: color var(--m-ui) var(--ease); }
+.row .when-sub[data-when]:hover { color: var(--text-1); }
+/* the empty slot waits in silence; only a hand over the row brings it up */
+.row .when-sub.when-none { opacity: 0; transition: opacity var(--m-ui) var(--ease), color var(--m-ui) var(--ease); }
+@media (hover: hover) { .row:hover .when-sub.when-none { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .row .when-sub.when-none { transition: none; } }
+.row { position: relative; }
+
+/* Anything December opens over the page: one chrome, one arrival. A small
+   card in the card register — hairline, no fill of its own, tone on hover. */
+.pop {
+  /* above everything that can open one: a card (auto), the settings sheet
+     (71), a task in focus (81). A popover under the thing it belongs to is
+     just an invisible menu. */
+  position: fixed; z-index: 95; padding: var(--space-4);
+  background: var(--elevated); border: 1px solid var(--line-1);
+  border-radius: var(--radius-lg); box-shadow: 0 6px 20px rgba(15, 12, 8, 0.10), var(--card-shadow);
+  opacity: 0; transform: translateY(-3px) scale(0.985); transform-origin: top center;
+  max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px);
+  overflow-y: auto; overscroll-behavior: contain;
+  transition: opacity 260ms var(--ease), transform 320ms cubic-bezier(.32,.08,.2,1);
+}
+.pop.open { opacity: 1; transform: none; }
+/* on dark, a card and a popover share a colour: depth has to come from the
+   shadow and a lit top edge, or it reads as a hole in the card */
+:root[data-theme="dark"] .pop {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border-color: var(--line-2);
+}
+/* exits leave faster than they arrive */
+.pop.leaving { opacity: 0; transform: translateY(-2px) scale(0.99); transition-duration: var(--m-ui); }
+@media (prefers-reduced-motion: reduce) { .pop { transition: none; opacity: 1; transform: none; } }
+
+/* the month on a row */
+.day-picker { width: 244px; }
+.dp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-3); }
+.dp-month { font-family: var(--font-serif); font-size: 15px; color: var(--text-1); }
+.dp-step {
+  width: 22px; height: 22px; border: 0; background: none; cursor: pointer;
+  color: var(--text-3); font-size: 15px; line-height: 1; border-radius: var(--radius-sm);
+  transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
+}
+.dp-step:hover { color: var(--text-1); background: var(--surface-1); }
+.dp-step:active { transform: scale(0.92); }
+.dp-week, .dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.dp-week { margin-bottom: var(--space-1); }
+.dp-week span {
+  font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-3); text-align: center;
+}
+.dp-day {
+  aspect-ratio: 1; border: 0; background: none; cursor: pointer; padding: 0;
+  font-family: var(--font-serif); font-size: 13.5px; font-variant-numeric: tabular-nums;
+  color: var(--text-1); border-radius: var(--radius-sm);
+  transition: color var(--m-ui) var(--ease), background var(--m-ui) var(--ease);
+}
+.dp-day.away { color: var(--text-3); opacity: 0.55; }
+.dp-day:hover { background: var(--surface-1); color: var(--text-1); }
+.dp-day:active { transform: scale(0.9); }
+/* today is named by a mark under it; the chosen day is named by ink */
+.dp-day.today { position: relative; }
+.dp-day.today::after {
+  content: ''; position: absolute; left: 50%; bottom: 3px; width: 3px; height: 3px;
+  margin-left: -1.5px; border-radius: 50%; background: var(--text-3);
+}
+.dp-day.chosen { background: var(--accent-soft); color: var(--accent-ink); }
+.dp-day.chosen::after { background: var(--accent-ink); }
+.dp-clear {
+  display: block; width: 100%; margin-top: var(--space-3); padding-top: var(--space-3);
+  border: 0; border-top: 1px solid var(--line-1); background: none; cursor: pointer;
+  font-size: 12px; color: var(--text-3); text-align: left;
+  transition: color var(--m-ui) var(--ease);
+}
+.dp-clear:hover { color: var(--text-1); }
+@media (prefers-reduced-motion: reduce) {
+  .dp-day:active, .dp-step:active { transform: none; }
+}
 .space .urgent::before, .focus-card .when-sub.urgent::before {
   content: ''; display: inline-block; width: 5px; height: 5px;
   border-radius: 50%; background: var(--bad-ink); margin-right: 6px; vertical-align: middle;
@@ -792,13 +1032,13 @@
 
 /* Exploration details, carried into the quiet page. Surface, not more chrome. */
 .space {
-  border-radius: 21px;
-  border-color: color-mix(in srgb, var(--line-1) 76%, transparent);
-  box-shadow: 0 2px 5px rgba(0,0,0,.018), 0 9px 25px rgba(0,0,0,.025), inset 0 1px 0 rgba(255,255,255,.55);
-  transition: border-color 220ms var(--ease), box-shadow 220ms var(--ease);
+  border-radius: 18px;
+  border-color: var(--line-1);
+  box-shadow: 0 1px 2px rgba(0,0,0,.025), 0 5px 16px rgba(0,0,0,.018);
+  transition: border-color var(--m-depth) var(--ease), box-shadow var(--m-depth) var(--ease);
 }
 .space:hover:not(.ghost) {
-  box-shadow: 0 3px 8px rgba(0,0,0,.025), 0 12px 28px rgba(0,0,0,.04), inset 0 1px 0 rgba(255,255,255,.65);
+  box-shadow: 0 2px 4px rgba(0,0,0,.035), 0 6px 18px rgba(0,0,0,.025);
 }
 .space .block + .block { border-top-color: color-mix(in srgb, var(--line-1) 65%, transparent); }
 .space .card-tools {
@@ -808,7 +1048,7 @@
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .space .card-tool { border-radius: 50%; }
-.focus-card { animation: pocket-focus-in 380ms var(--ease-expo) both; }
+.focus-card { animation: pocket-focus-in var(--m-struct) var(--ease-expo) both; }
 @keyframes pocket-focus-in {
   from { opacity: 0; transform: translateY(9px) scale(.985); filter: blur(3px); }
   to { opacity: 1; transform: none; filter: blur(0); }
@@ -820,14 +1060,14 @@
   display: flex; align-items: center; gap: 6px; width: fit-content;
   padding: 6px 10px; margin-left: -10px; border-radius: 12px;
   list-style: none; cursor: pointer; font-size: 11px; color: var(--text-3);
-  transition: background 180ms var(--ease), color 180ms var(--ease);
+  transition: background var(--m-depth) var(--ease), color var(--m-depth) var(--ease);
 }
 .list-preview summary::-webkit-details-marker { display: none; }
 .list-preview summary:hover { background: var(--surface-2); color: var(--text-2); }
 .list-preview summary:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 .list-preview .list-collapse, .list-preview[open] .list-expand { display: none; }
 .list-preview[open] .list-collapse { display: inline; }
-.list-preview .list-chevron { display: inline-block; transition: transform 180ms var(--ease); }
+.list-preview .list-chevron { display: inline-block; transition: transform var(--m-depth) var(--ease); }
 .list-preview[open] .list-chevron { transform: rotate(180deg); }
 .list-preview[open] { padding-bottom: 3px; }
 @media (prefers-reduced-motion: reduce) {
@@ -841,7 +1081,7 @@
 .focus-card .card-tools .surface-close { margin-left: 5px; }
 
 /* Press feedback stays local; it never moves the card or its neighbours. */
-.card-tool, .surface-close { transition:transform 160ms var(--ease-out), background 160ms var(--ease), color 160ms var(--ease); }
+.card-tool, .surface-close { transition:transform var(--m-ui) var(--ease-out), background var(--m-ui) var(--ease), color var(--m-ui) var(--ease); }
 .card-tool:active, .surface-close:active { transform:scale(.94); }
 .row:active .tick { transform:scale(.88); }
 .list-preview summary:active { background:var(--surface-2); }
@@ -854,20 +1094,16 @@
    after completion; the transient drawing follows measured text fragments. */
 .ink-host { position: relative; }
 .ink-feedback { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; color: var(--text-2); animation: ink-release 1500ms linear both; }
-.ink-feedback path { fill: none; stroke: currentColor; stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: ink-write 340ms steps(6,end) both; }
+.ink-feedback path { fill: none; stroke: currentColor; stroke-width: 1.2; vector-effect: non-scaling-stroke; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: ink-write var(--m-enter) steps(6,end) both; }
 .ink-strike { animation-duration: 640ms; }
 .ink-strike path { stroke-width: 1; animation-duration: 280ms; }
 .row.done .row-text.ink-strike-active { text-decoration-color: transparent; }
 @keyframes ink-write { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ink-release { 0%,70% { opacity: .7; } 100% { opacity: 0; } }
 /* Numbers stay in neutral ink. Their annotation occupies no layout space. */
-.bump { animation: status-swap 280ms var(--ease-out); }
+.bump { animation: status-swap var(--m-enter) var(--ease-out); }
 .tracker-count, .goal-count, .ledger-total { position: relative; }
 .delta { position: absolute; left: 0; top: 100%; margin: 1px 0 0; padding: 0 4px; border-radius: 4px; background: var(--elevated); color: var(--text-3); white-space: nowrap; z-index: 2; pointer-events: none; font: 10px/1.4 var(--font-sans); }
-/* A filed card resolves from its title into its contents. */
-.space.forming > .space-name { animation-delay: 35ms; }
-.space.forming > .block { animation-delay: 80ms; }
-.space.forming > .block ~ .block { animation-delay: 125ms; }
 @media (prefers-reduced-motion: reduce) {
   .ink-feedback { display: none; animation: none; }
   .row.done .row-text.ink-strike-active { text-decoration-color: var(--line-2); }
@@ -883,7 +1119,136 @@
 @media(prefers-reduced-motion:reduce){.commit-tick-live{display:none}}
 
 /* Keep opening a single-task card separate from completing its task. */
-.solo.solo-task { display: flex; align-items: flex-start; gap: 10px; }
+.solo.solo-task { align-items: flex-start; gap: 0 10px; }
 .space .row.solo-check { flex: 0 0 28px; width: 28px; min-height: 32px; padding: 7px 5px; margin-left: -5px; }
-.solo-task .solo-text { flex: 1; min-width: 0; }
+.solo-task .solo-text { flex: 1 1 0; min-width: 55%; }
+.solo-task .solo-sub { line-height: 32px; }
 .solo-check.done + .solo-text { text-decoration: line-through; color: var(--text-3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .space.building > * { opacity: 1; filter: none; }
+}
+
+/* Compact card details stay on the board, with one quiet disclosure. */
+.space .completed-list { margin-top: 6px; }
+.space .completed-list > summary {
+  min-height: 30px;
+  margin-left: 20px;
+  padding: 5px 10px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.space .completed-list > summary:hover { color: var(--text-1); }
+.space .completed-list .completed-rows { padding-top: 4px; }
+.space .completed-list[open] > summary .list-chevron { transform: rotate(180deg); }
+@media (hover: none) { .space > .space-name { padding-right: 88px; } }
+
+/* A small margin mark shows the current space without turning the rail
+   into a panel. Long names remain available through their native title. */
+.rail a { position: relative; padding-left: 7px; }
+.rail-label { padding-left: 7px; }
+.rail a.current { font-weight: 500; }
+.rail a.current::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: 2px; height: 12px; margin-top: -6px;
+  background: var(--accent-muted); border-radius: 2px;
+}
+
+/* The margin mark changes without shifting the name beside it. */
+.rail a.current { font-weight: inherit; }
+.rail a::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: 2px; height: 12px; margin-top: -6px;
+  background: var(--accent-muted); border-radius: 2px;
+  opacity: 0; transform: scaleY(.4);
+  transition: opacity 220ms ease, transform 320ms cubic-bezier(.32,.08,.2,1);
+}
+.rail a.current::before { opacity: 1; transform: scaleY(1); }
+.pop[data-side="above"] { transform: translateY(3px) scale(.985); }
+.pop[data-side="above"].open { transform: none; }
+.pop[data-side="above"].leaving { transform: translateY(2px) scale(.99); }
+@media (pointer: coarse) {
+  .menu { width: min(280px, calc(100vw - 16px)); }
+  .menu-item { min-height: 44px; }
+  .day-picker { width: min(340px, calc(100vw - 16px)); padding: 10px; }
+  .dp-day, .dp-step, .dp-clear { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail a::before { transition: none; }
+  .pop[data-side="above"] { transform: none; }
+}
+
+/* The real detail surface travels from its compact card. */
+.focus-card.spatial-focus { animation: none; transform-origin: top left; }
+/* and the page goes out of focus behind it on the same clock: a backdrop
+   that opened with a travelling card belongs to focus-motion.js, which pulls
+   the blur and the tint in together. A fade of a full-strength blur read as
+   the blur arriving ahead of the card. Sheets that do not travel (the day,
+   the year, a question) keep fade-in; every exit is focus-motion's. */
+.focus-backdrop.spatial-backdrop { animation: none; }
+/* The gutter is reserved in every mode — scrolling, locked under a surface,
+   locked under a leaving ghost, locked for task focus — so the page is the
+   same width in all of them. Where scrollbars take room, the lock still
+   empties the gutter while it holds; that is the platform's, left alone. */
+:root { scrollbar-gutter: stable; }
+#spaces { overflow-anchor: none; }
+/* the frosted material resolves as the card lands, with its shadow */
+.focus-card.spatial-focus { transition: box-shadow 180ms ease, background-color 180ms ease; }
+.focus-card.spatial-moving {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background: var(--elevated); box-shadow: none;
+}
+@media (prefers-reduced-motion: reduce) { .focus-card.spatial-focus { transition: none; } }
+
+/* A quieter page of subjects: stronger titles, fewer interior dividers. */
+.space { border-radius: 16px; }
+.space > .space-name { font-size: 22px; line-height: 1.22; letter-spacing: -.018em; margin-bottom: 16px; }
+.space .block + .block { border-top-color: transparent; padding-top: 10px; }
+.space .block-title { color: var(--text-3); font-size: 11px; letter-spacing: .015em; }
+.rail a { white-space: normal; overflow-wrap: anywhere; padding-block: 4px; line-height: 1.35; }
+.rail-label { letter-spacing: .01em; padding-bottom: 4px; }
+.rail-area { margin-bottom: 15px; }
+@media (hover: hover) {
+  .space .card-tools { opacity: 0; transition: opacity 160ms var(--ease); }
+  .space:hover .card-tools, .space:focus-within .card-tools { opacity: 1; }
+}
+
+/* Quiet canvas: the contents lead; boundaries stay visible without a stack of shadows. */
+.space { box-shadow: 0 1px 3px rgba(0,0,0,.025); border-color: color-mix(in srgb,var(--line-1) 80%,transparent); }
+.space:hover:not(.ghost) { box-shadow: 0 2px 8px rgba(0,0,0,.035); }
+.space .row:hover:not(.done) { background-color: color-mix(in srgb,var(--surface-1) 55%,transparent); }
+
+/* Painted Card Form: overscan contains the original stray pencil marks. */
+.space > .card-drawing.painted-card-frame,
+.space.building > .card-drawing.painted-card-frame {
+  inset: -24px;
+  width: calc(100% + 48px);
+  height: calc(100% + 48px);
+  filter: none;
+  pointer-events: none;
+  transition: none;
+}
+.space.building > :not(.card-tools):not(.card-drawing),
+.space.forming > :not(.card-tools):not(.card-drawing) {
+  transition: opacity 420ms cubic-bezier(.2,.7,.2,1), filter 420ms cubic-bezier(.2,.7,.2,1);
+}
+
+/* Keyed rail updates own movement; area remounts must not replay rise. */
+.rail-area { animation: none; }
+
+/* Numbers belong to the heading; one quiet rule separates the receipts.
+   Scope to subject cards so the year summary keeps its own hierarchy. */
+.space:has(> .figs) > .space-name { margin-bottom: 10px; }
+.space > .figs, .focus-card[data-sid] > .figs {
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-1);
+}
+.space > .figs > .fig, .focus-card[data-sid] > .figs > .fig {
+  padding-top: 0;
+  border-top: 0;
+}
+.space > .figs > .fig:not(:first-child) b { font-size: 18px; color: var(--text-2); }
+.focus-card[data-sid] > .figs { margin-top: -10px; margin-bottom: 14px; }

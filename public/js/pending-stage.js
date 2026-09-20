@@ -22,7 +22,7 @@ function refreshQueue(state) {
   })
   for (const row of [...list.children]) if (!keep.has(row)) row.remove()
   dialog.querySelector('.pending-summary').textContent = state.queue.length
-    ? `${state.queue.length} ${state.queue.length === 1 ? 'note' : 'notes'}${state.mode === 'working' ? ' · December is working' : ''}`
+    ? `${state.queue.length} ${state.queue.length === 1 ? 'note' : 'notes'}`
     : 'Nothing left in the queue.'
   const retry = dialog.querySelector('.retry')
   retry.hidden = !state.retryLocal && !state.retryAgent
@@ -48,15 +48,31 @@ function showQueue(state) {
   refreshQueue(state)
 }
 
+// where the sentence comes from when it was not typed: a chosen chip
+// hands its own place to the settling row, so the words travel from the
+// chip, not from the empty line
+let origin = null
+export function settleFrom(rect) { origin = { rect, at: Date.now() } }
+
 export function renderPendingStage(box, {queue = [], show = false, mode = 'working', retryLocal = false, retryAgent = false} = {}) {
   let state = states.get(box)
   if (!state) {
-    box.innerHTML = '<button type="button" class="pending-lines" aria-haspopup="dialog"><span class="pending-previous" aria-hidden="true"></span><span class="working"><span class="working-word"></span><span class="pending-compact-label" aria-hidden="true"></span></span></button><div class="pending-meta"><span role="status" aria-live="polite"></span><button type="button" class="retry" hidden>retry</button></div>'
-    state = {queue:[],mode:null,lines:box.querySelector('.pending-lines'),row:box.querySelector('.working'),previous:box.querySelector('.pending-previous'),word:box.querySelector('.working-word'),compact:box.querySelector('.pending-compact-label'),status:box.querySelector('[role="status"]'),retry:box.querySelector('.retry')}
+    box.innerHTML = '<button type="button" class="pending-lines" aria-haspopup="dialog"><span class="pending-previous" aria-hidden="true"></span><span class="working"><span class="working-word"></span><span class="pending-more" aria-hidden="true"></span><span class="pending-compact-label" aria-hidden="true"></span></span></button><div class="pending-meta"><span role="status" aria-live="polite"></span><button type="button" class="retry" hidden>retry</button></div>'
+    state = {queue:[],mode:null,lines:box.querySelector('.pending-lines'),row:box.querySelector('.working'),previous:box.querySelector('.pending-previous'),word:box.querySelector('.working-word'),more:box.querySelector('.pending-more'),compact:box.querySelector('.pending-compact-label'),status:box.querySelector('[role="status"]'),retry:box.querySelector('.retry')}
     state.lines.addEventListener('click',()=>showQueue(state))
     states.set(box,state)
   }
-  const changed = queue.at(-1)?.id !== state.queue.at(-1)?.id || queue.at(-1)?.text !== state.queue.at(-1)?.text
+  // One sentence enters once. Its id is renamed retaining → local → server
+  // on the way, and an older note becomes the front line when a newer one
+  // files; neither is a new sentence, so entrances are keyed on the words.
+  const line = document.querySelector('#capture')
+  const newest = queue.at(-1)?.text || ''
+  // still sitting in the line: the yarn starts now, the words wait to leave
+  const held = !!newest && !state.seen?.has(newest) && line?.value.trim() === newest
+  const lines = held ? queue.slice(0,-1) : queue
+  const text = lines.at(-1)?.text || ''
+  const changed = !!text && !state.seen?.has(text)
+  state.seen = new Set(lines.map(entry=>entry.text))
   Object.assign(state,{queue,mode,retryLocal,retryAgent})
   refreshQueue(state)
   box.hidden = !show
@@ -64,25 +80,51 @@ export function renderPendingStage(box, {queue = [], show = false, mode = 'worki
     state.row.querySelectorAll('.wind').forEach(mark=>stopWind(mark))
     return
   }
-  state.previous.textContent = queue.length > 1 ? queue.at(-2).text : ''
-  state.previous.hidden = queue.length < 2
-  state.word.textContent = queue.at(-1)?.text || 'Putting things in place'
+  state.previous.textContent = lines.length > 1 ? lines.at(-2).text : ''
+  state.previous.hidden = lines.length < 2
+  // with nothing left to read, the yarn alone says the last change is landing
+  state.word.textContent = text
   state.lines.disabled = !queue.length
   state.lines.setAttribute('aria-label',`View ${queue.length} pending ${queue.length === 1 ? 'note' : 'notes'}`)
-  const label = mode === 'send-failed' ? 'Not sent yet · saved here' : mode === 'sending' ? 'Saved here · waiting to send' : mode === 'failed' ? 'Some notes still need filing' : mode === 'saved' ? 'Saved in December' : mode === 'waiting' ? 'Waiting to be filed' : mode === 'filing' ? 'Putting changes in place' : 'December is working'
+  const label = mode === 'retaining' ? 'Keeping your note' : mode === 'send-failed' ? 'Not sent yet · saved here' : mode === 'sending' ? 'Saved here · waiting to send' : mode === 'failed' ? 'Some notes still need filing' : mode === 'saved' ? 'Saved in December' : mode === 'waiting' ? 'Waiting to be filed' : mode === 'filing' ? 'Putting changes in place' : 'December is working'
   const status = `${label}${queue.length ? ` · ${queue.length} ${queue.length === 1 ? 'note' : 'notes'}` : ''}${mode === 'working' && retryLocal ? ' · some notes not sent' : ''}`
   if (state.status.textContent !== status) state.status.textContent = status
   state.compact.textContent = status
+  // how many more wait behind this one — a number, not a sentence
+  state.more.textContent = queue.length > 1 ? `${queue.length - 1} more` : ''
   state.retry.hidden = !retryAgent && !retryLocal
   state.retry.textContent = retryLocal ? 'retry sending' : 'retry'
-  state.row.classList.toggle('alive',mode === 'working')
+  const active = ['retaining', 'sending', 'waiting', 'working', 'filing'].includes(mode)
+  state.row.classList.toggle('alive', active)
   const mark = state.row.querySelector('.wind')
-  if (mode === 'working') {
+  if (active) {
     if (mark?.dataset.unwinding) stopWind(mark)
     if (!state.row.querySelector('.wind')) state.row.prepend(windMark())
   } else if (mark) unwind(mark)
   if (changed && !document.hidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     state.word.getAnimations().forEach(animation=>animation.cancel())
-    state.word.animate([{opacity:0,transform:'translateY(7px)',filter:'blur(3px)'},{opacity:1,transform:'none',filter:'blur(0)'}],{duration:340,easing:'cubic-bezier(.22,1,.36,1)'})
+    // the sentence you just wrote comes DOWN from the line, at the line's
+    // size, and settles into its smaller place: one thing moving, not one
+    // thing vanishing and another appearing
+    const chip = origin && Date.now() - origin.at < 2000 ? origin.rect : null
+    origin = null
+    const queuedAt = performance.now()
+    requestAnimationFrame(() => {
+      // Measure after renderStage has selected its final, fixed-slot layout.
+      if (box.hidden || document.hidden || performance.now() - queuedAt > 150 || state.word.textContent !== text || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      const from = chip || (line && line.getBoundingClientRect()), to = state.word.getBoundingClientRect()
+      // ask the line itself: the stage's mode is only repainted after this render,
+      // and a line holding other words is not where this sentence comes from
+      const fromLine = from && to.height && (chip || !line.value.trim())
+      const dy = fromLine ? Math.round(from.top - to.top) : 7
+      const scale = chip ? 1 : fromLine ? Math.min(1.35, 17 / 13) : 1
+      state.word.style.transformOrigin = 'left top'
+      state.word.animate(
+        fromLine
+          ? [{opacity:.9,transform:`translateY(${dy}px) scale(${scale})`,filter:'blur(0)'},{opacity:1,transform:'none',filter:'blur(0)'}]
+          : [{opacity:0,transform:'translateY(7px)',filter:'blur(3px)'},{opacity:1,transform:'none',filter:'blur(0)'}],
+        {duration:180,easing:'cubic-bezier(.32,.08,.2,1)'}
+      )
+    })
   }
 }

@@ -26,3 +26,10 @@ data/pocket.json
 # Internal dev log — local only, public notes live in GitHub Releases
 CHANGELOG.md
 .tmp-*
+
+# Local provider credentials, runtime state and machine-specific MCP configuration
+data/
+.env*
+*.key
+*.pem
+mcp*.json

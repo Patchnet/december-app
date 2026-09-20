@@ -57,6 +57,8 @@ export const page = {
   attentionCount: 0,
   queuedTexts: [],
   queuedCaptures: [],
+  retainingCaptures: [],
+  expecting: [], // room the page made for words still on their way: {key, sid, lines, at}
   captureError: null,
   reachedFor: false,
   coIndex: 0,

@@ -38,7 +38,8 @@ export function updateCardContent(card,html) {
         children(node,desired)
       } else if(node.nodeValue!==desired.nodeValue)node.nodeValue=desired.nodeValue
     }
-    for(const node of [...parent.childNodes])if(!keep.has(node) && node!==field)node.remove()
+    // the building frame's drawing is the card's own overlay, not content
+    for(const node of [...parent.childNodes])if(!keep.has(node) && node!==field && !node.classList?.contains('card-drawing'))node.remove()
   }
   children(card,template.content)
   // A moved focused checkbox can lose focus during DOM insertion.

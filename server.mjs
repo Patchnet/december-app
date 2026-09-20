@@ -10,20 +10,26 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, readJournal, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { parseCaptureInput } from './public/js/capture-input.js'
 import { TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
-import { startWatch } from './lib/watch.mjs'
+import { startWatch, nudgeWatch } from './lib/watch.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
 import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
 import { createPocketSync } from './lib/pocket-sync.mjs'
 import { createPreviewStore } from './lib/previews.mjs'
+import { foreignFetchSite } from './lib/fetch-site.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const previews = createPreviewStore(DATA_DIR)
+const changeStreams = new Set()
+const broadcastChange = () => {
+  for (const stream of changeStreams) stream.write('data: changed\n\n')
+}
+settle.observeSettled(broadcastChange)
 const PORT = Number(process.env.PORT || 3008)
 // The shipped version, from the package manifest beside this file.
 const APP_VERSION = (() => {
@@ -64,8 +70,10 @@ const pocketUploads = createLatestWorkQueue(async (page) => {
   onError: (error) => console.log('Pocket page upload failed:', String(error?.message || error).slice(0, 200)),
 })
 observePersists(() => {
+  broadcastChange()
   const page = project(settleStatus())
   pocketUploads.schedule(page, page.revision)
+  nudgeWatch() // a watch laid by the filing that just landed looks now
 })
 const newYearTimer = watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
@@ -73,11 +81,11 @@ let surfacingScheduled = false
 const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
 const settleStatus = () => {
   const status = settle.status()
-  if (selectedEngineAvailable()) return status
+  if (selectedEngineAvailable() || status.jev.ready && status.jev.mode !== 'off') return status
   return { ...status, running: false, pending: hasInbox(), lastError: null, captureOnly: true }
 }
 const scheduleSettle = (delay) => {
-  if (selectedEngineAvailable()) settle.schedule(delay)
+  if (selectedEngineAvailable() || settle.jevStatus().ready && settle.jevStatus().mode !== 'off') settle.schedule(delay)
 }
 const scheduleSurfacing = () => {
   if (!surfacingScheduled && selectedEngineAvailable()) {
@@ -272,17 +280,7 @@ export function foreignHost(host, port = PORT) {
   }
 }
 
-// Browsers stamp Sec-Fetch-Site on every request they make. same-origin is
-// December's own page, none is a person typing the address; anything else is
-// another site reaching in and is refused whether or not it sends an Origin.
-// Clients that are not browsers — the MCP adapter, the desktop shell, curl —
-// send no such header and are yours.
-const OWN_FETCH_SITES = new Set(['same-origin', 'none'])
-export function foreignFetchSite(headers) {
-  const site = headers['sec-fetch-site']
-  if (!site) return false
-  return !OWN_FETCH_SITES.has(String(site))
-}
+export { foreignFetchSite }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
@@ -291,7 +289,7 @@ const server = createServer(async (req, res) => {
   if (foreignHost(req.headers.host)) {
     return json(res, 403, { error: 'refused: December only answers to localhost' })
   }
-  if (foreignFetchSite(req.headers)) {
+  if (foreignFetchSite(req.headers, req.method)) {
     return json(res, 403, { error: 'refused: this request came from another site' })
   }
   if (req.method === 'POST' && foreignOrigin(req)) {
@@ -305,6 +303,14 @@ const server = createServer(async (req, res) => {
     return json(res, 403, { error: 'refused: Pocket needs December\'s own page' })
   }
   try {
+    if (path === '/api/changes' && req.method === 'GET') {
+      if (settle.jevStatus().mode === 'off') return json(res, 404, { error: 'not enabled' })
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+      res.write('data: connected\n\n')
+      changeStreams.add(res)
+      req.on('close', () => changeStreams.delete(res))
+      return
+    }
     if (path === '/api/state' && req.method === 'GET') {
       const fingerprint = `${stateFingerprint()}:${previews.revision()}`
       if (url.searchParams.get('since') === fingerprint) {
@@ -554,6 +560,17 @@ const server = createServer(async (req, res) => {
     }
 
     // Past years, read-only.
+    if (path.startsWith('/api/journal') && req.method === 'GET') {
+      const y = path.slice('/api/journal/'.length) || undefined
+      const out = readJournal(y)
+      // a live year writes what it has not written yet, in the background;
+      // the page asks again while anything is pending
+      if (out.live) {
+        out.pending = settle.journalPending()
+        if (out.pending) settle.scheduleJournal()
+      }
+      return json(res, 200, out)
+    }
     if (path === '/api/years' && req.method === 'GET') {
       return json(res, 200, { years: listYears() })
     }
@@ -729,6 +746,8 @@ export async function shutdown({ exit = true } = {}) {
   clearInterval(pocketTimer)
   clearInterval(newYearTimer)
   stopWatch()
+  for (const stream of changeStreams) stream.end()
+  changeStreams.clear()
   const closed = new Promise((resolveClose) => server.close(resolveClose))
   let timeoutId
   const timeout = new Promise((resolveTimeout) => { timeoutId = setTimeout(resolveTimeout, 3000) })

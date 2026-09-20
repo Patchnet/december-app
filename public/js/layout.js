@@ -1,28 +1,46 @@
+import { updateRail } from './rail-motion.js'
+import { openFocusMotion, leaveFocusMotion, focusVisualRect, focusIsMoving, backdropVisual } from './focus-motion.js'
+import { animateCardShape, restHeight } from './card-shape.js'
+import { settleRows, cardHeld } from './completion-motion.js'
+import { newlyDone, playConfirmed } from './confirmed-completion.js'
+import { syncCardWriting } from './card-writing.js'
 import { updateCardContent } from './card-dom.js'
-import { highlightCardChanges } from './card-changes.js'
-import { $, esc, localDay, reduced, fmtAmount, page, hooks } from './session.js'
-import { clockOf, whenPhrase, words, spaceInner } from './blocks.js'
+import { highlightCardChanges, showAddedItem } from './card-changes.js'
+import { $, esc, reduced, fmtAmount, page, hooks } from './session.js'
+import { spaceInner } from './blocks.js'
 import { markChange, bump, travelDot, washCard, withFlip, drawMeters } from './motion.js'
 import { goalOnly } from './goals.js'
 import { renderPendingStage } from './pending-stage.js'
-import { pendingView, filingPlan } from './work-feedback.js'
+import { pendingView, filingPlan, runDestinations, passComplete } from './work-feedback.js'
+import { drawCard, eraseCard } from './card-drawing.js'
 import { syncTools, mountSurface } from './card-surface.js'
 import { invalidateYearRequest } from './year-navigation.js'
 
 // ------------------------------------------------------------ focus view
 
-let attentionItems = [], attentionReturn = null
+let attentionReturn = null
+/** A surface that opens over the page remembers what had focus, so
+    closing it puts the caret back where it was. */
+function rememberReturn(el = document.activeElement) {
+  attentionReturn = el
+}
 function buildFocus() {
   const wrap = $('#focus')
   const space = page.focusId && page.state.spaces.find((s) => s.id === page.focusId)
+  queueMicrotask(() => watchCurrent.mark?.())
   if (!space) {
     page.focusId = null
     wrap.innerHTML = ''
     return
   }
+  const origin = page.spaceEls.get(space.id)?.el?.getBoundingClientRect()
   const existing=wrap.querySelector('.focus-card')
   if(existing?.dataset.sid===space.id && !wrap.dataset.confirm) {
+    const height = existing.getBoundingClientRect().height
+    const flight = focusIsMoving(existing) && focusVisualRect(existing)
     updateCardContent(existing,spaceInner(space,true))
+    if (flight) openFocusMotion(existing, flight)
+    else animateCardShape(existing, height)
     wrap.dataset.u=space.updatedAt
     wrap.dataset.preview=space.previewKey || ''
     syncTools(existing,space)
@@ -37,6 +55,9 @@ function buildFocus() {
   const hadFocus = document.activeElement === oldField
   const caret = oldField?.selectionStart ?? draft.length
   const scrollTop = wrap.querySelector('.focus-card')?.scrollTop || 0
+  // a surface already up hands its backdrop over, so replacing it in place
+  // never flashes the page back into focus
+  const backdropFrom = backdropVisual(wrap.querySelector('.focus-backdrop'))
 
   wrap.innerHTML = `
     <div class="focus-backdrop" data-close></div>
@@ -60,6 +81,7 @@ function buildFocus() {
   // a card opens at its top; only a re-render keeps where you were
   card?.scrollTo({ top: scrollTop, behavior: 'auto' })
   mountSurface(card)
+  openFocusMotion(card, origin, backdropFrom)
 }
 
 function openStageCard(id) {
@@ -69,7 +91,14 @@ function openStageCard(id) {
   buildFocus()
 }
 
-function closeFocus() {
+// Closing releases interaction immediately. The inert visual returns home
+// independently, so Escape is responsive without making the card disappear.
+function closeFocus({ instant = false } = {}) {
+  const from = focusVisualRect($('#focus .focus-card'))
+  // read while it is still where it was painted: moving it into the ghost
+  // drops a fade in progress, and the exit must start from what was shown
+  const backdropFrom = backdropVisual($('#focus .focus-backdrop'))
+  const destinationEl = page.focusId && page.spaceEls.get(page.focusId)?.el
   invalidateYearRequest()
   $('#focus').removeAttribute('aria-busy')
   const returnTo = attentionReturn || (page.focusId && page.spaceEls.get(page.focusId)?.el) || (page.yearOpen ? $('#dateline') : null)
@@ -79,6 +108,20 @@ function closeFocus() {
   page.focusId = null
   page.yearOpen = false
   page.yearShown = null
+  watchCurrent.mark?.()
+  // the surface leaves the way it came, faster: a copy of it fades and
+  // settles back while the real one is already gone, so nothing under the
+  // hand waits on an exit
+  const leaving = $('#focus').firstElementChild ? [...$('#focus').children] : []
+  if (leaving.length && !reduced && !instant) {
+    const ghost = document.createElement('div')
+    ghost.className = 'focus-leaving'
+    ghost.inert = true
+    ghost.setAttribute('aria-hidden', 'true')
+    for (const el of leaving) ghost.append(el)
+    document.body.append(ghost)
+    leaveFocusMotion(ghost, from, destinationEl?.getBoundingClientRect(), { backdropFrom })
+  }
   $('#focus').innerHTML = ''
   $('#focus').dataset.u = ''
   $('#focus').dataset.help = ''
@@ -122,85 +165,129 @@ function renderYearline() {
   }
 }
 
-function travelTargets() {
-  const targets = new Map()
-  const ids = new Set(page.state.captures.map((c) => c.id))
-  for (const a of page.state.activity) {
-    if (!page.pending.has(a.captureId) || ids.has(a.captureId)) continue
-    const space = page.state.spaces.find((s) => s.name === a.space)
-    if (space) targets.set(a.captureId, space.id)
+// One agent pass is one run. It gathers the cards it is changing as the polls
+// come in, and only when the pass completes does each card get its one dot.
+// Saving never waits on any of this: the run reads state, it owns none.
+let run = null
+const landing = new Map() // sid → the element a dot is on its way to
+const released = [] // destinations of a finished run that resolve without a flight
+
+const heldNow = () => new Set([...(run?.dests || []), ...landing.keys()])
+
+/** What the page has not shown of a space yet. A new space only counts once
+    there is a previous state to be new against. */
+function unshown(space) {
+  const known = page.spaceEls.get(space.id)
+  // resting and goal-only spaces have no card either, and are not new
+  if (!known) return page.prev && !page.prev.spaces.some((s) => s.id === space.id) ? 'new' : false
+  return known.updatedAt !== space.updatedAt || known.previewKey !== space.previewKey ? 'edit' : false
+}
+
+/** Every render adds what this poll proves about the run; replayed polls add
+    nothing. Returns the cards whose new content waits for a landing: a new
+    card stays a hollow frame, an existing card keeps its old content usable. */
+function collectRun() {
+  const inbox = page.state.captures.map((c) => c.id)
+  if (!run && inbox.length) run = { captures: new Set(), dests: new Set(), revealed: new Set(), ran: false }
+  if (run) {
+    for (const id of inbox) run.captures.add(id)
+    run.ran ||= !!page.state.settle.running
+    for (const sid of runDestinations(page.state, run.captures, unshown)) run.dests.add(sid)
   }
-  return targets
+  return heldNow()
 }
 
-/** Spaces that appeared while something is still settling. The agent
-    creates a space BEFORE it files the capture, so without this the card
-    materializes whole on one poll and the mote arrives on the next — the
-    card beating its own animation. Held cards stay a hollow frame until
-    the mote lands on them. */
-function heldSpaces() {
-  if (!page.state.captures.length || !page.state.settle.running || !page.prev) return []
-  const before = new Set(page.prev.spaces.map((s) => s.id))
-  return page.state.spaces.filter((s) => !before.has(s.id)).map((s) => s.id)
-}
-
-// The building moment: a card under construction is a hollow dashed frame
-// with its content still forming; when the mote lands, it inks in.
+// The building moment: a card under construction is a hollow hand-drawn frame
+// with provisional ink; the dot landing and blue swipe solidify that ink.
 function unbuild(el) {
   if (!el?.classList.contains('building')) return
   el.classList.remove('building')
   el.classList.add('forming')
-  setTimeout(() => el.classList.remove('forming'), 700)
+  eraseCard(el)
+  setTimeout(() => el.classList.remove('forming'), 950)
   drawMeters(el)
 }
 
-/** Nothing left settling: release any frame still waiting on a mote that
-    is never coming (a failed pass, a capture filed to nothing). */
-function releaseHeld(targets) {
-  if (page.state.captures.length && page.state.settle.running) return
-  const landing = page.state.settle.lastError ? new Set() : new Set(targets.values())
+/** A landing, or a release with no flight: the frame resolves and the content
+    that was held is adopted once, with its usual arrival and sheen. */
+function resolveCards(sids, landed = false) {
+  const cards = []
+  for (const sid of sids) {
+    const el = landing.get(sid) || page.spaceEls.get(sid)?.el
+    landing.delete(sid)
+    if (el) el._filing = false
+    // a later run that wanted the same card sees it resolve now, and has
+    // nothing left to land on unless the agent changes the card again
+    if (run?.dests.delete(sid)) run.revealed.add(sid)
+    if (el?.classList.contains('goal')) { if (landed) bump(el.querySelector('.goal-count')) }
+    else if (el) cards.push(el)
+  }
+  // the swipe solidifies a frame that was being built: a new card, never an edit
+  const built = cards.filter((el) => el.classList.contains('building'))
+  for (const el of cards) unbuild(el)
+  if (page.state) withFlip(() => renderSpaces(heldNow()))
+  if (landed) for (const el of built) if (el.isConnected && !el.classList.contains('washed')) washCard(el)
+}
+
+/** After every render: finish what needs no flight, and release any frame
+    nothing is coming for (a failed pass, a capture filed to nothing). */
+function releaseHeld() {
+  if (released.length) resolveCards(released.splice(0))
+  const held = heldNow()
   for (const el of document.querySelectorAll('.space.building')) {
-    if (!landing.has(el.dataset.sid)) unbuild(el)
+    if (!held.has(el.dataset.sid) && !el._filing) unbuild(el)
+  }
+}
+
+/** The pass is complete: one flight per destination card, a stream and not a
+    swarm. A card that cannot be seen, already showed its change, or belongs to
+    a failed pass resolves where it is. */
+function landRun(box) {
+  const done = run
+  run = null
+  const failed = !page.state.settle.running && !!page.state.settle.lastError
+  const origin = box.querySelector('.working')?.getBoundingClientRect()
+  const sidOf = new Map()
+  for (const sid of done.dests) {
+    if (landing.has(sid)) continue
+    const el = page.spaceEls.get(sid)?.el || document.querySelector(`#goals [data-goal-open="${sid}"]`)
+    if (el) sidOf.set(el, sid)
+  }
+  const canMove = !failed && !document.hidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const visible = rect => rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth
+  // A dot flies to a card that is new to the page (its frame is still being
+  // built) or to a goal's row. A card already here resolves without a flight:
+  // its edit or completion is acknowledged in its own ink when it is released.
+  const lands = el => el.classList.contains('building') || el.classList.contains('goal')
+  const plan = filingPlan([...sidOf.keys()], el => canMove && lands(el) && !done.revealed.has(sidOf.get(el)) && visible(origin) && visible(el.getBoundingClientRect()))
+  for (const {target, delay} of plan) {
+    const sid = sidOf.get(target)
+    if (delay === null) { released.push(sid); continue }
+    landing.set(sid, target)
+    target._filing = true
+    page.flying++
+    setTimeout(() => {
+      let arrived = false
+      travelDot(origin, target, () => {
+        if (arrived) return
+        arrived = true
+        page.flying = Math.max(0, page.flying - 1)
+        resolveCards([sid], true)
+        // Update both the label and pane once the last visual acknowledgement lands.
+        renderInbox()
+        releaseHeld()
+        hooks.render()
+      })
+    }, delay)
   }
 }
 
 /** Keep the existing thought stack, with truthful delivery/work status.
     Filing acknowledges a bounded set of visible saved destinations. */
-function renderInbox(targets = new Map()) {
+function renderInbox() {
   const box = $('#inbox')
-  const ids = new Set(page.state.captures.map((c) => c.id))
-
-  // anything that left the inbox since the last pass flies to its card;
-  // a batch launches as a stream, not a swarm
-  const origin = box.querySelector('.working')?.getBoundingClientRect()
-  const candidates = []
-  for (const cid of [...page.pending]) {
-    if (ids.has(cid)) continue
-    page.pending.delete(cid)
-    const targetEl = page.spaceEls.get(targets.get(cid))?.el ||
-      document.querySelector(`#goals [data-goal-open="${targets.get(cid)}"]`)
-    if (targetEl) candidates.push(targetEl)
-  }
-  const canMove = !document.hidden && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const visible = rect => rect && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth
-  const plan = filingPlan(candidates, el => canMove && visible(origin) && visible(el.getBoundingClientRect()))
-  for (const {target:targetEl, delay} of plan) {
-    if (delay === null) { unbuild(targetEl); continue }
-    page.flying++
-    setTimeout(() => {
-      travelDot(origin, targetEl, () => {
-        if (targetEl.classList.contains('goal')) bump(targetEl.querySelector('.goal-count'))
-        else { unbuild(targetEl); washCard(targetEl) }
-        page.flying = Math.max(0, page.flying - 1)
-        // Update both the label and pane once the last visual acknowledgement lands.
-        renderInbox()
-        hooks.renderStage()
-      })
-    }, delay)
-  }
-  for (const c of page.state.captures) page.pending.add(c.id)
-
-  const view = pendingView(page.state, page.queuedCaptures, page.flying)
+  if (run && passComplete(page.state, run.ran)) landRun(box)
+  const view = pendingView(page.state, page.queuedCaptures, page.flying, page.retainingCaptures)
   renderPendingStage(box, view)
 }
 
@@ -266,19 +353,41 @@ function openThings(space) {
 // own the columns instead: a card is assigned one and keeps it, so growth
 // only ever pushes what is directly below it.
 
-const colCount = () => (innerWidth <= 720 ? 1 : 2)
+// three columns once the window can hold three readable cards; two on a
+// laptop, one on a phone. The shell widens with it (tokens.css).
+const colCount = () => (innerWidth <= 720 ? 1 : innerWidth < 1100 ? 2 : 3)
+// never more columns than there are cards: a page with one card is one
+// column, centered, not a card in the left third of an empty grid
+const wantColumns = (cards) => Math.max(1, Math.min(colCount(), cards))
 
-function ensureColumns(box) {
-  const want = colCount()
-  if (box.children.length === want && box.firstElementChild?.classList.contains('col')) return
+function moveCard(parent, el, before = null) {
+  if (parent.moveBefore && el.isConnected) parent.moveBefore(el, before)
+  else {
+    const focus = el.contains(document.activeElement) ? document.activeElement : null
+    parent.insertBefore(el, before)
+    focus?.focus({preventScroll:true})
+  }
+}
+function ensureColumns(box, count = box.querySelectorAll('.space').length) {
+  const want = wantColumns(count)
+  const old = [...box.querySelectorAll(':scope > .col')]
+  if (old.length === want) return
   const cards = [...box.querySelectorAll('.space')]
-  box.innerHTML = ''
-  for (let i = 0; i < want; i++) {
+  for (const el of cards) {
+    el._columnHomes ||= {}
+    el._columnHomes[old.length] = old.indexOf(el.parentElement)
+    el.dataset.needsColumn = '1'
+  }
+  while (box.children.length < want) {
     const col = document.createElement('div')
     col.className = 'col'
     box.appendChild(col)
   }
-  for (const c of cards) box.firstElementChild.appendChild(c)
+  while (box.children.length > want) {
+    const last = box.lastElementChild
+    for (const el of [...last.children]) moveCard(box.firstElementChild, el)
+    last.remove()
+  }
 }
 
 /** Place cards in order, each into the currently shortest column. Cards
@@ -288,17 +397,19 @@ function placeCards(box, ordered) {
   if (!cols.length) return
   const heights = cols.map(() => 0)
   const want = cols.map(() => [])
-  const STICK = 140 // px of imbalance a card tolerates to stay put
   for (const el of ordered) {
     let target = 0
     for (let i = 1; i < cols.length; i++) if (heights[i] < heights[target]) target = i
-    // a card that already lives somewhere stays there unless the shortest
-    // column is genuinely shorter: re-balancing on every small height change
-    // is what makes the page churn
+    // Content growth is not a request to move a card across the page.
+    // Only new cards or a changed column count need a new assignment.
     const cur = cols.indexOf(el.parentElement)
-    if (cur !== -1 && heights[cur] <= heights[target] + STICK) target = cur
+    if (cur !== -1 && !el.dataset.needsColumn) target = cur
+    else if (el._columnHomes?.[cols.length] >= 0 && el._columnHomes[cols.length] < cols.length) target = el._columnHomes[cols.length]
+    el._columnHomes ||= {}
+    el._columnHomes[cols.length] = target
+    delete el.dataset.needsColumn
     want[target].push(el)
-    heights[target] += el.offsetHeight + 14
+    heights[target] += restHeight(el) + 14
   }
   // touch the DOM only where it actually differs: re-appending a node
   // restarts its animations, so a needless move replays the sheen
@@ -306,28 +417,8 @@ function placeCards(box, ordered) {
     const have = [...col.children]
     const need = want[i]
     if (have.length === need.length && have.every((el, n) => el === need[n])) return
-    for (const el of need) col.appendChild(el)
+    need.forEach((el, n) => { if (col.children[n] !== el) moveCard(col, el, col.children[n] || null) })
   })
-}
-
-/** A card that changed content grows or shrinks into its new size. */
-function animateHeight(el, from) {
-  if (reduced) return
-  const to = el.offsetHeight
-  if (from === to || !from) return
-  el.style.height = `${from}px`
-  el.style.overflow = 'hidden'
-  void el.offsetHeight
-  el.style.transition = 'height var(--m-struct) var(--ease-expo)'
-  el.style.height = `${to}px`
-  const done = () => {
-    el.style.height = ''
-    el.style.overflow = ''
-    el.style.transition = ''
-    el.removeEventListener('transitionend', done)
-  }
-  el.addEventListener('transitionend', done)
-  setTimeout(done, 500)
 }
 
 const DORMANT_MS = 30 * 86400000
@@ -342,18 +433,57 @@ function resortCard(sid) {
   withFlip(() => renderSpaces())
 }
 
+/** The end of a completion. Both renderings of the card adopt the latest
+    confirmed state in one real-layout move: no FLIP to compound with it and
+    no sheen, because this was the person's own hand. An opened card still in
+    flight keeps its one owner and only retargets. */
+function settleCard(sid, keys) {
+  const space = page.state.spaces.find((s) => s.id === sid)
+  if (!space) {
+    hooks.render()
+    return Promise.resolve()
+  }
+  const runs = []
+  const known = page.spaceEls.get(sid)
+  if (known) {
+    runs.push(settleRows(known.el, keys, () => updateCardContent(known.el, spaceInner(space))))
+    syncTools(known.el, space)
+    known.el.classList.toggle('pinned', !!space.pinned)
+    known.quiet = false
+    known.updatedAt = space.updatedAt
+    known.previewKey = space.previewKey
+    known.shown = space
+    // the hand's own settlement showed whatever the agent had written by now
+    if (run && page.state.settle.running) run.revealed.add(sid)
+  }
+  const wrap = $('#focus')
+  const opened = wrap.querySelector('.focus-card')
+  if (page.focusId === sid && opened?.dataset.sid === sid && !wrap.dataset.confirm) {
+    if (focusIsMoving(opened)) {
+      const flight = focusVisualRect(opened)
+      updateCardContent(opened, spaceInner(space, true))
+      openFocusMotion(opened, flight)
+    } else runs.push(settleRows(opened, keys, () => updateCardContent(opened, spaceInner(space, true))))
+    wrap.dataset.u = space.updatedAt
+    wrap.dataset.preview = space.previewKey || ''
+    syncTools(opened, space)
+  }
+  return Promise.all(runs)
+}
+
 function renderSpaces(delayWash = new Set()) {
   const box = $('#spaces')
   const seen = new Set()
   const now = Date.now()
   // a space that is nothing but its goal is already on the page, in the
   // band over the cards — a card for it would say the same thing twice
-  const live = page.state.spaces.filter((s) => !s.finished && !goalOnly(s))
+  const live = page.state.spaces.filter((s) => !s.finished && !goalOnly(s) && !(delayWash.has(s.id) && !s.blocks.length))
   const finished = page.state.spaces.filter((s) => s.finished)
   const active = live.filter((s) => now - new Date(s.updatedAt) < DORMANT_MS || page.awake.has(s.id))
   const resting = live.filter((s) => !active.includes(s))
 
-  ensureColumns(box)
+  const arriving = []
+  ensureColumns(box, active.length)
   active.forEach((space, i) => {
     seen.add(space.id)
     // whatever branch runs below, the tools reflect the space afterwards
@@ -361,10 +491,10 @@ function renderSpaces(delayWash = new Set()) {
     const known = page.spaceEls.get(space.id)
     if (!known) {
       const el = document.createElement('article')
-      // a card born from a settling capture arrives as a hollow frame and
-      // inks in when the dot lands; anything else materializes whole
+      // Actual structured content determines the frame and destination.
+      // It grows in place, then the landing resolves its provisional ink.
       const building = delayWash.has(space.id) && !reduced
-      el.className = building ? 'space fresh building' : 'space fresh'
+      el.className = building ? 'space settled building' : 'space fresh'
       el.tabIndex = 0
       el.setAttribute('role', 'button')
       el.setAttribute('aria-label', `${space.name}, open`)
@@ -374,6 +504,7 @@ function renderSpaces(delayWash = new Set()) {
         ? `${260 + Math.min(i * 55, 660)}ms`
         : '0ms'
       el.dataset.sid = space.id
+      el.dataset.needsColumn = '1'
       el.innerHTML = spaceInner(space)
       el.classList.toggle('pinned', !!space.pinned)
       // once the entrance ends, stop its fill so FLIP transforms can act
@@ -383,28 +514,51 @@ function renderSpaces(delayWash = new Set()) {
         el.removeEventListener('animationend', finishArrival)
       }
       el.addEventListener('animationend', finishArrival)
-      ;(box.querySelector('.col') || box).appendChild(el)
-      page.spaceEls.set(space.id, { el, updatedAt: space.updatedAt, previewKey: space.previewKey })
+      if (!el.isConnected) (box.querySelector('.col') || box).appendChild(el)
+      if (building) { arriving.push(el); drawCard(el) }
+      page.spaceEls.set(space.id, { el, updatedAt: space.updatedAt, previewKey: space.previewKey, shown: space })
+      layoutObserver.observe(el)
       if (!building) drawMeters(el)
-    } else if (known.updatedAt !== space.updatedAt || known.previewKey !== space.previewKey) {
-      const prevSpace = page.prev?.spaces.find((s) => s.id === space.id)
-      const heightBefore = known.el.offsetHeight
-      if(known.quiet)updateCardContent(known.el,spaceInner(space))
-      else known.el.innerHTML = spaceInner(space)
-      animateHeight(known.el, heightBefore)
+    // A card inside a completion's moment is left alone: a poll that adopted
+    // the check early would pull the row out from under the hand. Its
+    // settlement reconciles it, from whatever is true by then.
+    } else if (!cardHeld(space.id) && (known.updatedAt !== space.updatedAt || known.previewKey !== space.previewKey)) {
+      // A run destination keeps the content it has, fully usable, until the
+      // pass releases it. A frame still building grows with its provisional ink, and
+      // the person's own re-sort is never held.
+      const building = known.el.classList.contains('building')
+      if (delayWash.has(space.id) && !building && !known.quiet) return
+      if (run && !building && page.state.settle.running) run.revealed.add(space.id)
+      // Hold confirmed completions until their shared check-and-collapse settles.
+      if (!building && !known.quiet && playConfirmed(space.id, newlyDone(known.shown, space))) return
+      // diff against what this card last showed: a held card skipped polls
+      const prevSpace = known.shown || page.prev?.spaces.find((s) => s.id === space.id)
+      const heightBefore = known.el.getBoundingClientRect().height
+      updateCardContent(known.el, spaceInner(space))
+      syncCardWriting(known.el)
+      animateCardShape(known.el, heightBefore)
       known.el.classList.toggle('pinned', !!space.pinned)
       known.el.style.animationDelay = '0ms'
       known.el.classList.remove('fresh')
-      // blocks the agent just added rise in individually
-      const before = new Set((prevSpace?.blocks || []).map((b) => b.id))
-      let n = 0
-      for (const bel of known.el.querySelectorAll('[data-bid]')) {
-        if (!before.has(bel.dataset.bid)) {
-          bel.classList.add('arrive')
-          bel.style.setProperty('--d', `${Math.min(n++, 4) * 45}ms`)
+      // New ink fades in where it already sits; the growing frame is the only
+      // thing that moves. A frame still being built resolves at its landing.
+      if (!known.el.classList.contains('building')) {
+        const before = new Set((prevSpace?.blocks || []).map((b) => b.id))
+        for (const bel of known.el.querySelectorAll('[data-bid]')) {
+          if (!before.has(bel.dataset.bid)) bel.classList.add('arrive')
+        }
+        if (!known.quiet) {
+          // a row inside a new block arrives with its block, not a second time
+          const priorItems = new Set((prevSpace?.blocks || []).flatMap(b => (b.items || []).map(item => `${b.id}/${item.id}`)))
+          for (const row of known.el.querySelectorAll('.row[data-item]')) {
+            if (before.has(row.dataset.block) && !priorItems.has(`${row.dataset.block}/${row.dataset.item}`)) showAddedItem(row)
+          }
         }
       }
-      highlightCardChanges(known.el, prevSpace, space)
+      // While a capture is being filed, the landing is the one confirmation:
+      // the dot arrives, the swipe runs once. Other edits keep their own tint.
+      const landingOwns = known.el._filing || delayWash.has(space.id)
+      if (!landingOwns) highlightCardChanges(known.el, prevSpace, space)
       // changed numbers beat; changed meters glide from where they were
       for (const b of space.blocks) {
         const pb = prevSpace?.blocks.find((x) => x.id === b.id)
@@ -428,23 +582,25 @@ function renderSpaces(delayWash = new Set()) {
           bump(bel.querySelector('.ledger-total'))
           const delta = (b.total ?? 0) - (pb.total ?? 0)
           markChange(bel.querySelector('.ledger-total'), `${delta < 0 ? '−' : '+'}${fmtAmount(Math.abs(delta), b.unit)}`)
-          bel.querySelector('.ledger-entry')?.classList.add('entry-in')
+          if (!known.el.classList.contains('building')) bel.querySelector('.ledger-entry')?.classList.add('entry-in')
         }
         if (b.type === 'streak' && b.dates.length > (pb.dates?.length ?? 0)) {
           const dots = bel.querySelectorAll('.streak-dots i.on')
           dots[dots.length - 1]?.classList.add('just-marked')
         }
       }
-      // cards receiving a travel dot wash when the dot lands, not before;
-      // quiet re-sorts (the person's own hand) get no sheen at all
-      if (!delayWash.has(space.id) && !known.quiet) washCard(known.el)
+      // no sheen here: the swipe belongs to a new card's landing alone. An
+      // edit to a card already on the page is said by its changed ink.
       known.quiet = false
       known.updatedAt = space.updatedAt
       known.previewKey = space.previewKey
+      known.shown = space
     }
   })
   for (const [id, { el }] of page.spaceEls) {
-    if (!seen.has(id)) {
+    if (!seen.has(id) && !cardHeld(id)) {
+      layoutObserver.unobserve(el)
+      eraseCard(el)
       el.remove()
       page.spaceEls.delete(id)
     }
@@ -452,6 +608,7 @@ function renderSpaces(delayWash = new Set()) {
 
   // ordering is a placement decision, made once, for all columns
   placeCards(box, active.map((s) => page.spaceEls.get(s.id)?.el).filter(Boolean))
+  for (const el of arriving) animateCardShape(el, 8, { enter: true })
 
   renderResting(finished, resting)
 }
@@ -540,18 +697,38 @@ function renderResting(finished, resting) {
   requestAnimationFrame(() => panel.classList.add('on'))
 }
 
-/** A rotation should become the new layout immediately, not after the next
-    ten-second state poll. Only rebuild the column shells when the breakpoint
-    actually changes; CSS handles all fluid resizing within a layout. */
-function resizeLayout() {
-  clearTimeout(resizeLayout._t)
-  resizeLayout._t = setTimeout(() => {
-    if (!page.state) return
-    const box = $('#spaces')
-    if (box.children.length !== colCount()) withFlip(() => renderSpaces())
+// Keep the last layout in document coordinates. A resize event arrives
+// after CSS has reflowed, so measuring only then has already lost the origin.
+const resizePositions = new Map()
+function rememberLayoutPositions() {
+  for (const [el] of resizePositions) if (!el.isConnected) resizePositions.delete(el)
+  for (const el of document.querySelectorAll('#spaces .space')) {
+    const r = el.getBoundingClientRect()
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(el).transform)
+    resizePositions.set(el, {left:r.left + scrollX - matrix.m41, top:r.top + scrollY - matrix.m42, width:r.width, height:r.height})
+  }
+}
+const layoutObserver = new ResizeObserver(rememberLayoutPositions)
+queueMicrotask(() => { const box = $('#spaces'); if (box) layoutObserver.observe(box) })
 
+function resizeLayout() {
+  if (resizeLayout._frame) return
+  resizeLayout._frame = requestAnimationFrame(() => {
+    resizeLayout._frame = null
+    if (!page.state) return
+    const prior = new Map()
+    for (const [el, r] of resizePositions) {
+      if (!el.isConnected) continue
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(el).transform)
+      prior.set(el, {...r, left:r.left-scrollX+matrix.m41, top:r.top-scrollY+matrix.m42})
+    }
+    const box = $('#spaces')
+    withFlip(() => {
+      if (box.children.length !== wantColumns(box.querySelectorAll('.space').length)) renderSpaces()
+    }, prior)
+    rememberLayoutPositions()
     if ($('#capture')?.value) hooks.fitCapture()
-  }, 120)
+  })
 }
 window.addEventListener('resize', resizeLayout)
 
@@ -560,13 +737,49 @@ function renderRail() {
   const on = page.state.spaces.filter((s) => !s.finished && !goalOnly(s)).length >= 6
   rail.classList.toggle('on', on)
   if (!on) return
-  const key = page.state.spaces.map((s) => s.id + s.name + s.finished).join()
-  if (rail.dataset.key === key) return
-  rail.dataset.key = key
-  // A flat list of pointers, nothing more. Areas still exist on the cards;
-  // the rail's one job is taking your eye to a card.
-  const live = page.state.spaces.filter((s) => !s.finished && !goalOnly(s))
-  rail.innerHTML = live.map((s) => `<a href="#" data-jump="${s.id}">${esc(s.name)}</a>`).join('')
+  const key = page.state.spaces.map((s) => s.id + s.name + s.finished + (s.area || '')).join()
+  if (rail.dataset.key !== key) {
+    rail.dataset.key = key
+    updateRail(rail, page.state.spaces.filter(s => !s.finished && !goalOnly(s)))
+  }
+  watchCurrent()
+}
+
+// the card you are beside is the one the rail marks, and it follows you
+// down the page; while a card is open, that card
+let currentWatch
+const railSeen = new Map()
+const railObserved = new Set()
+function watchCurrent() {
+  const rail = $('#rail')
+  if (!rail.classList.contains('on') || !('IntersectionObserver' in window)) return
+  const seen = railSeen
+  const mark = () => {
+    const open = page.focusId
+    let best = open
+    if (!best) {
+      let top = Infinity
+      for (const [sid, r] of seen) if (r < top) { top = r; best = sid }
+    }
+    for (const a of rail.querySelectorAll('a')) {
+      const current = a.dataset.jump === best
+      a.classList.toggle('current', current)
+      if (current) a.setAttribute('aria-current', 'location')
+      else a.removeAttribute('aria-current')
+    }
+  }
+  if (!currentWatch) currentWatch = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      const sid = en.target.dataset.sid
+      if (en.isIntersecting) seen.set(sid, Math.abs(en.boundingClientRect.top - 80))
+      else seen.delete(sid)
+    }
+    mark()
+  }, { rootMargin: '-72px 0px -40% 0px', threshold: [0, .25] })
+  for (const el of [...railObserved]) if (!el.isConnected) { currentWatch.unobserve(el); railObserved.delete(el); seen.delete(el.dataset.sid) }
+  for (const el of $('#spaces').querySelectorAll('.space[data-sid]')) if (!railObserved.has(el)) { railObserved.add(el); currentWatch.observe(el) }
+  mark()
+  watchCurrent.mark = mark
 }
 
 
@@ -642,185 +855,6 @@ function renderAsk() {
   }
 }
 
-/** The page faces the day: what has become relevant rises to the top —
-    due and tomorrow's reminders, evening-open streaks, and whatever the
-    surfacing sense pinned, each with its reason. */
-/** A day the way you would say it inside a week: "fri 14". */
-function weekdayOf(iso) {
-  const dt = new Date(`${iso}T12:00:00`)
-  return `${dt.toLocaleString('en', { weekday: 'short' }).toLowerCase()} ${dt.getDate()}`
-}
-
-function attentionRow(i) {
-  const sub = i.sub ? `<span class="today-sub ${i.urgent ? 'overdue' : ''}">${esc(i.sub)}</span>` : ''
-  if (i.kind === 'ahead') {
-    return `<button class="today-row ahead" aria-label="${esc(i.label)}, ${esc(i.sub)}"><span class="tick-slot"></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
-  }
-  if (i.kind === 'surfaced') {
-    return `<button class="today-row plain"><span class="tick-slot"></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
-  }
-  return `<button class="row today-row" data-block="${i.bid}" role="checkbox" aria-checked="false" aria-label="${esc(i.label)}${i.sub ? `, ${esc(i.sub)}` : ''}"><span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span><span class="row-text">${esc(i.label)}</span>${sub}</button>`
-}
-function attentionBand(label, rows, hidden = 0) {
-  if (!rows.length) return ''
-  return `<div class="band"><span class="band-label">${label}</span><div class="band-body">${rows
-    .map((i, n) => `<div class="today-item" data-sid="${i.sid || ''}">${attentionRow(i)}${
-      hidden && n === rows.length - 1
-        ? `<button class="today-more" data-attention-open aria-haspopup="dialog" aria-controls="focus" aria-label="Show all ${attentionItems.length} Today and This week items; ${hidden} more hidden">View ${hidden} more</button>`
-        : ''
-    }</div>`)
-    .join('')}</div></div>`
-}
-function openAttention() {
-  if (!attentionItems.length) return
-  attentionReturn = document.activeElement
-  const now = attentionItems.filter((i) => i.kind !== 'ahead')
-  const week = attentionItems.filter((i) => i.kind === 'ahead')
-  const wrap = $('#focus')
-  wrap.innerHTML = `
-    <div class="focus-backdrop" data-close></div>
-    <div class="focus-wrap" data-close>
-      <article class="focus-card attention-card" role="dialog" aria-modal="true" aria-labelledby="attention-title">
-        <div class="attention-head">
-          <h2 class="space-name" id="attention-title">Today and this week</h2>
-          <button class="btn-quiet attention-close" data-close data-attention-close>Close and return</button>
-        </div>
-        <div class="attention-list">
-          ${attentionBand('today', now)}
-          ${attentionBand('this week', week)}
-        </div>
-      </article>
-    </div>`
-  document.documentElement.classList.add('modal-open')
-  wrap.querySelector('[data-attention-close]')?.focus({ preventScroll: true })
-}
-
-// Task-focus gets first say in capture; the rest keep strip navigation.
-document.addEventListener('click', (e) => {
-  if (e.target.closest('[data-attention-open]')) {
-    e.stopImmediatePropagation(); openAttention(); return
-  }
-  const row = e.target.closest('#focus .attention-list .today-row')
-  const keyboardCheck = row?.matches('.row[data-block]') && e.detail === 0
-  if (!row || e.target.closest('.tick') || keyboardCheck) return
-  const sid = row.closest('.today-item')?.dataset.sid
-  if (!sid) return
-  e.stopImmediatePropagation()
-  closeFocus()
-  hooks.jumpToSpace(sid)
-})
-
-document.addEventListener('keydown', (e) => {
-  const card = document.querySelector('.attention-card')
-  if (e.key !== 'Tab' || !card) return
-  const controls = [...card.querySelectorAll('button:not([disabled])')]
-  const [first, last] = [controls[0], controls.at(-1)]
-  if (e.shiftKey && (document.activeElement === first || !card.contains(document.activeElement))) {
-    e.preventDefault(); last?.focus()
-  } else if (!e.shiftKey && (document.activeElement === last || !card.contains(document.activeElement))) {
-    e.preventDefault(); first?.focus()
-  }
-})
-
-/** What needs you, in two bands: what is due now, and what is coming.
-    The horizon used to stop at tomorrow, so a page holding eight dated
-    things could tell you about none of them — everything you had written
-    down stayed invisible until the night before, and the only reason
-    anything further out ever appeared was that the agent happened to
-    guess it was worth surfacing. Dates the page already holds are not a
-    matter of judgment. */
-function renderToday() {
-  const box = $('#today')
-  const today = localDay()
-  const horizon = localDay(new Date(Date.now() + 7 * 86400000))
-  const now = [] // due today, or already past
-  const week = [] // dated, ahead of today, inside the next seven days
-  const seen = new Set()
-  for (const s of page.state.spaces) {
-    for (const b of s.blocks) {
-      if (b.type !== 'reminder' || b.done || !b.when || b.when > horizon) continue
-      const w = whenPhrase(b)
-      const base = { bid: b.id, sid: s.id, label: b.text, when: `${b.when} ${b.at || '99:99'}` }
-      if (b.when <= today) {
-        // under a band that already says today, a bare "today" says nothing
-        now.push({ ...base, kind: 'reminder', sub: w && w.text !== 'today' ? w.text : '', urgent: !!w?.urgent })
-      } else {
-        // the day rides where every card row already puts its date — on the
-        // right. Putting it in a left column of its own knocked the week's
-        // text out of line with today's, which reads as two lists rather
-        // than two bands of one.
-        week.push({ ...base, kind: 'ahead', sub: b.at ? `${weekdayOf(b.when)}, ${clockOf(b.at)}` : weekdayOf(b.when) })
-      }
-      seen.add(`${s.id}|${b.text.toLowerCase()}`)
-    }
-  }
-  const items = now
-  // the page must not say the same thing twice: an open ask already puts
-  // this question on screen, so surfacing it again reads as a flicker where
-  // one replaces the other
-  const askWords = page.state.ask ? words(page.state.ask.question) : null
-  const echoesAsk = (label) => {
-    if (!askWords || !askWords.size) return false
-    const mine = words(label)
-    if (!mine.size) return false
-    let hit = 0
-    for (const w of mine) if (askWords.has(w)) hit++
-    return hit / mine.size >= 0.5
-  }
-  for (const su of page.state.surfaced || []) {
-    if (seen.has(`${su.spaceId}|${su.label.toLowerCase()}`)) continue
-    if (echoesAsk(su.label)) continue
-    items.push({ kind: 'surfaced', sid: su.spaceId, label: su.label, sub: su.reason })
-  }
-  // soonest first, so each band reads like a morning
-  const bySoonest = (a, x) => (a.when || '').localeCompare(x.when || '')
-  now.sort(bySoonest)
-  week.sort(bySoonest)
-  page.attentionCount = now.length + week.length
-  maybeNotify(now)
-  const all = [...now, ...week]
-  attentionItems = all
-  const key = all.map((i) => i.kind + (i.bid || i.sid) + i.label + i.sub).join()
-  if (box.dataset.key === key) return
-  // rows animate in only on the strip's first appearance; later reshuffles
-  // must not replay entrances
-  if (box.dataset.key !== undefined) box.classList.add('norise')
-  box.dataset.key = key
-
-  // How much fits is a question about pixels, and pixels are something the
-  // page can measure. Three times now this was a hand-picked number that
-  // was right until a font or a margin moved and then quietly clipped the
-  // last line. Paint what there is, then drop from the end until it truly
-  // fits, counting whatever came off. The stage cannot scroll, so nothing
-  // may be left hanging past its edge.
-  const paint = (nCount, wCount) => {
-    const a = now.slice(0, nCount)
-    const b = week.slice(0, wCount)
-    const left = now.length - a.length + (week.length - b.length)
-    box.innerHTML =
-      attentionBand('today', a, b.length ? 0 : left) +
-      attentionBand('this week', b, left) +
-      (!a.length && !b.length && left
-        ? `<div class="band attention-overflow-only"><span class="band-label">attention</span><button class="today-more" data-attention-open aria-haspopup="dialog" aria-controls="focus" aria-label="Show all ${left} Today and This week items">View all ${left} items</button></div>`
-        : '')
-  }
-  const floor = () => document.querySelector('.moment')?.getBoundingClientRect().bottom ?? 0
-  const overflows = () => {
-    const edge = floor()
-    if (!edge) return false // nothing laid out yet; nothing to measure against
-    return [...box.children].some((el) => el.getBoundingClientRect().bottom > edge + 1)
-  }
-
-  let nCount = now.length
-  let wCount = week.length
-  paint(nCount, wCount)
-  while (overflows() && nCount + wCount > 0) {
-    if (wCount) wCount--
-    else nCount--
-    paint(nCount, wCount)
-  }
-}
-
 // what you can say, once, when you want it
 const CAN_DO = [
   ['just write it', 'paid rent 2300 · ran 3 miles · call the landlord thursday'],
@@ -851,27 +885,4 @@ function showIntro() {
   mountSurface(wrap.querySelector('.focus-card'), true)
 }
 
-// --------------------------------------------------------- notifications
-// A due date only matters if it reaches you. Quiet, deduped per day.
-
-function maybeNotify(items) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return
-  const today = localDay()
-  let seen
-  try {
-    seen = JSON.parse(localStorage.getItem('dec-notified') || '{}')
-  } catch {
-    seen = {}
-  }
-  if (seen.date !== today) seen = { date: today, keys: [] }
-  for (const i of items) {
-    const key = `${i.label}|${i.sub}`
-    if (seen.keys.includes(key)) continue
-    seen.keys.push(key)
-    try {
-      new Notification('December', { body: i.sub ? `${i.label} · ${i.sub}` : i.label, silent: true, tag: key })
-    } catch {}
-  }
-  localStorage.setItem('dec-notified', JSON.stringify(seen))
-}
-export { attentionBand, openStageCard, buildFocus, closeFocus, renderYearline, travelTargets, heldSpaces, renderInbox, renderActivity, askToFinish, resortCard, renderSpaces, renderResting, resizeLayout, renderRail, renderSuggestions, renderAsk, renderToday, showIntro, releaseHeld }
+export { rememberReturn, openStageCard, buildFocus, closeFocus, renderYearline, collectRun, renderInbox, renderActivity, askToFinish, resortCard, settleCard, renderSpaces, renderResting, resizeLayout, renderRail, renderSuggestions, renderAsk, showIntro, releaseHeld }

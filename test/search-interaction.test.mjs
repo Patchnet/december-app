@@ -5,8 +5,8 @@ import { runInNewContext } from 'node:vm'
 
 function harness(lineEnding='\n') {
   const listeners = new Map()
-  const results = {innerHTML:'',classList:{add(){},remove(){}},querySelector(){return null},addEventListener(){}}
-  const field = {value:'',addEventListener(name,fn){listeners.set(name,fn)}}
+  const results = {innerHTML:'',classList:{add(){},remove(){}},querySelector(){return null},querySelectorAll(){return []},setAttribute(){},addEventListener(){}}
+  const field = {value:'',setAttribute(){},removeAttribute(){},addEventListener(name,fn){listeners.set(name,fn)}}
   let resolve
   const context = {
     $: selector => selector === '#search' ? field : results,

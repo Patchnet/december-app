@@ -1,9 +1,6 @@
 // Adapted from December Relay 9b0a352, public/app.mjs. Runs only while work is pending.
 const WIND_BOX = 24;
 
-// Drawn marks run on twos: 12 held poses a second inside 24fps playback.
-const onTwos = (ms) => `steps(${Math.max(1, Math.round(ms / (1000 / 12)))}, end)`;
-
 function windPath({ turns = 3, steps = 160, inset = 2.2 } = {}) {
   const points = [];
   for (let i = 0; i <= steps; i++) {
@@ -51,33 +48,29 @@ function windMark() {
   requestAnimationFrame(() => {
     if (!svg.isConnected || !active.has(svg)) return stopWind(svg)
     const total = line.getTotalLength(), lit = total * .14
-    line.setAttribute('stroke-dasharray', total)
-    run(svg, svg, [{opacity:0,transform:'scale(.7)'},{opacity:1,transform:'scale(1)'}],
-      {duration:300,delay:110,easing:onTwos(300),fill:'backwards'})
-    const wound = run(svg,line,[{strokeDashoffset:total},{strokeDashoffset:0}],
-      {duration:460,delay:110,easing:onTwos(460),fill:'both'})
-    wound.addEventListener('finish', () => {
-      if (!svg.isConnected || !active.has(svg)) return
-      // Release the entrance before the chase takes ownership of the path.
-      wound.cancel()
-      active.get(svg).delete(wound)
-      line.setAttribute('stroke-dasharray', `${lit} ${total-lit}`)
-      run(svg,line,[{strokeDashoffset:0},{strokeDashoffset:-total}],
-        {duration:3200,iterations:Infinity,easing:onTwos(3200)})
-    }, {once:true})
+    // Start the continuous chase immediately. No stepped poses or switch
+    // from a fully drawn path to a short segment at the end of an entrance.
+    line.setAttribute('stroke-dasharray', `${lit} ${total-lit}`)
+    run(svg, svg, [{opacity:.65,transform:'scale(.96)'},{opacity:1,transform:'scale(1)'}],
+      {duration:360,easing:'cubic-bezier(.32,.08,.2,1)',fill:'backwards'})
+    run(svg,line,[{strokeDashoffset:0},{strokeDashoffset:-total}],
+      {duration:4000,iterations:Infinity,easing:'linear'})
   })
   return svg
 }
 function unwind(mark) {
   if (!mark || mark.dataset.unwinding) return
+  const line = mark.querySelector('.wind-thread')
+  const visible = getComputedStyle(mark), thread = getComputedStyle(line)
+  const opacity = visible.opacity, transform = visible.transform
+  const offset = parseFloat(thread.strokeDashoffset) || 0
   stopWind(mark, false)
   if (reducedMotion() || !mark.isConnected) return mark.remove()
   mark.dataset.unwinding = 'true'
   active.set(mark,new Set())
-  const line = mark.querySelector('.wind-thread'), total = line.getTotalLength()
-  line.setAttribute('stroke-dasharray', total)
-  run(mark,line,[{strokeDashoffset:0},{strokeDashoffset:total}],{duration:260,easing:onTwos(260),fill:'forwards'})
-  const out = run(mark,mark,[{opacity:1,transform:'scale(1)'},{opacity:0,transform:'scale(.82)'}],{duration:260,easing:onTwos(260),fill:'forwards'})
+  const total = line.getTotalLength()
+  run(mark,line,[{strokeDashoffset:offset},{strokeDashoffset:offset-total*.1}],{duration:400,easing:'linear',fill:'forwards'})
+  const out = run(mark,mark,[{opacity,transform},{opacity:0,transform:'scale(.94)'}],{duration:400,easing:'cubic-bezier(.32,.08,.2,1)',fill:'forwards'})
   out.addEventListener('finish',()=>stopWind(mark),{once:true})
 }
 document.addEventListener('visibilitychange',()=>{

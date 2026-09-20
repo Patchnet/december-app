@@ -1,3 +1,4 @@
+import { coalescedRefresh } from './js/coalesced-refresh.js'
 // December — client. No framework, no build step.
 // Boot, poll, and the session live here. Everything else is a module
 // under public/js/: a new surface gets a new file.
@@ -24,6 +25,7 @@ import { closeFocus } from './js/layout.js'
 import { loadConnections, renderSettings, shouldOnboard, launchParams, onboarding } from './js/connections.js'
 import { firstRunDemo } from './js/demo.js'
 import { showIntro } from './js/layout.js'
+import { checkMorningNotification } from './js/attention.js'
 document.documentElement.classList.add('booting')
 
 hooks.fitCapture = fitCapture
@@ -37,18 +39,20 @@ function schedulePoll() {
 }
 let pollRequest = 0
 
-async function poll() {
+const poll = coalescedRefresh(async () => {
   const request = ++pollRequest
   try {
     const since = page.state?.fingerprint
     const incoming = await api(`/api/state${since ? `?since=${encodeURIComponent(since)}` : ''}`)
     if (request !== pollRequest) return
     if (adoptState(incoming)) render()
+    // The clock can enter morning while the page's data is unchanged.
+    checkMorningNotification()
   } catch {
     /* transient */
   }
   if (request === pollRequest) schedulePoll()
-}
+})
 
 hooks.schedulePoll = schedulePoll
 
@@ -77,6 +81,17 @@ async function boot() {
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
+    if (page.state.settle?.jev?.mode && page.state.settle.jev.mode !== 'off') {
+      // Push invalidations remove the polling delay from a completed fast path.
+      // Polling remains the reconnect/failure fallback.
+      const changes = new EventSource('/api/changes')
+      let refreshTimer
+      changes.onmessage = () => {
+        clearTimeout(refreshTimer)
+        refreshTimer = setTimeout(poll, 0)
+      }
+      window.addEventListener('pagehide', () => { clearTimeout(refreshTimer); changes.close() }, { once: true })
+    }
     await hooks.startCaptureOutbox()
     if (!page.state.spaces.length && !page.state.captures.length && !page.queuedTexts.length && !page.state.carryover) {
       if (!reduced) firstRunDemo()

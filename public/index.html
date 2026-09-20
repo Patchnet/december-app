@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
 <script>document.documentElement.dataset.theme = localStorage.getItem('dec-theme') || 'light'</script>
 <link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/css/jev.css" />
 </head>
 <body>
   <div class="shell" id="shell">
@@ -24,22 +25,17 @@
     <section class="settings-pop" id="settings-pop" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1" hidden>
       <div class="surface-heading"><h2 class="settings-title" id="settings-title">Settings</h2><button type="button" class="surface-close" id="settings-close" aria-label="Close settings">Close</button></div>
 
-      <div class="set-list">
-        <div class="set-row">
-          <span class="set-label">Appearance</span>
-          <div class="seg" id="theme-seg" role="radiogroup" aria-label="Appearance">
-            <button type="button" data-theme-set="light" role="radio" aria-checked="false">light</button>
-            <button type="button" data-theme-set="dark" role="radio" aria-checked="false">dark</button>
-          </div>
-        </div>
-        <div class="set-row">
-          <span class="set-label">Engine</span>
-          <div class="seg" id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
-        </div>
-        <label class="set-row" for="model-input">
-          <span class="set-label">Model</span>
-          <input class="set-input" id="model-input" placeholder="engine default" spellcheck="false" autocomplete="off" />
-        </label>
+      <div class="settings-content">
+        <section class="model-settings" aria-labelledby="models-heading">
+          <div class="model-heading"><h3 id="models-heading">Models</h3><button type="button" class="settings-text-action" id="models-refresh">Check setup</button></div>
+          <p class="settings-description">Jev handles supported quick actions. Your organizer handles broader work.</p>
+          <div id="settings-jev"></div>
+          <div class="organizer-heading">Organizer</div>
+          <div id="engine-seg" role="radiogroup" aria-label="Organizing engine"></div>
+          <label class="set-row" for="model-input"><span class="set-label">Model</span><input class="set-input" id="model-input" placeholder="Engine default" spellcheck="false" autocomplete="off" /></label>
+          <details name="settings-detail" class="settings-disclosure settings-advanced"><summary>Set up an organizer</summary>
+            <p class="settings-description">Install Claude Code or Codex, then open its command-line app and sign in. Restart December and check setup when you're done. Detection here confirms installation, not sign-in.</p>
+            <p class="settings-description">Paths are detected automatically. Override them only for a custom installation.</p>
         <label class="set-row" for="claude-path">
           <span class="set-label">Claude path</span>
           <input class="set-input set-path" id="claude-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
@@ -48,17 +44,21 @@
           <span class="set-label">Codex path</span>
           <input class="set-input set-path" id="codex-path" placeholder="auto-detect" spellcheck="false" autocomplete="off" />
         </label>
-        <div class="set-row">
-          <span class="set-label">What you can say</span>
-          <div class="seg"><button type="button" id="open-can">open</button></div>
+          </details>
+          <p id="settings-save-state" class="settings-save-state" role="status" aria-live="polite"></p>
+        </section>
+        <div class="set-row appearance-row"><span class="set-label">Appearance</span>
+          <div id="theme-seg" role="radiogroup" aria-label="Appearance">
+            <button type="button" data-theme-set="light" role="radio" aria-checked="false"><i aria-hidden="true"></i>Light</button>
+            <button type="button" data-theme-set="dark" role="radio" aria-checked="false"><i aria-hidden="true"></i>Dark</button>
+          </div>
         </div>
-      </div>
-
+        <details name="settings-detail" class="settings-disclosure"><summary>Phone <span>December Pocket</span></summary>
       <section class="pocket-settings" id="pocket-settings" aria-labelledby="pocket-title">
         <div class="pocket-heading">
           <div>
             <h3 id="pocket-title">Pocket</h3>
-            <p>Access your December page from your phone. View the current page and send notes back to this computer.</p>
+            <p>Your page on your phone. Send a thought back to this computer.</p>
           </div>
           <span class="pocket-state-mark" id="pocket-state-mark" aria-hidden="true"></span>
         </div>
@@ -82,23 +82,18 @@
         </div>
       </section>
 
+        </details>
+        <details name="settings-detail" class="settings-disclosure"><summary>Connected apps <span>Access to your page</span></summary>
       <section class="connection-settings" aria-labelledby="connections-title">
-        <h3 id="connections-title">Connections</h3>
+        <h3 id="connections-title">Connected assistants</h3>
         <p>Your assistants can use this same page while December is running.</p>
         <div class="connection-list" id="connection-list" aria-live="polite"></div>
       </section>
 
-      <a class="settings-about" href="https://github.com/Patchnet/december-app" target="_blank" rel="noopener noreferrer"
-        aria-label="About December on GitHub (opens in a new tab)">
-        <span class="about-copy">
-          <strong>About December <span class="about-version" id="about-version"></span></strong>
-          <span class="about-note" aria-hidden="true">
-            <span class="about-note-rest">takes you to GitHub</span>
-            <span class="about-note-hover">made with love by louie305</span>
-          </span>
-        </span>
-        <span class="about-arrow" aria-hidden="true">↗</span>
-      </a>
+        </details>
+      </div>
+      <footer class="settings-footer"><span>December <span id="about-version"></span></span><a href="https://github.com/Patchnet/december-app" target="_blank" rel="noopener noreferrer">GitHub ↗</a></footer>
+      <button id="open-can" hidden>Examples</button>
     </section>
 
     <section class="pocket-pairing" id="pocket-pairing" role="dialog" aria-modal="true"
@@ -163,20 +158,20 @@
           <div class="inbox" id="inbox"></div>
           <div class="activity" id="activity" aria-live="polite"></div>
         </div>
+        <!-- At rest the stage says the shape of the day in two lines — the
+             next dated thing, and the counts that open the full sheet —
+             with the year's goals as figures beside them. Nothing here is
+             a task to tick; the cards are where that happens. -->
         <div class="pane pane-idle">
           <div class="co-nudge" id="co-nudge"></div>
           <div class="chips" id="suggest"></div>
-          <div id="stage-context"></div>
-          <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
+          <div class="day">
+            <div class="today" id="today" aria-live="polite" aria-label="Today"></div>
+            <section class="goals" id="goals" aria-label="Goals" hidden></section>
+          </div>
+          <div class="stage-foot"><button type="button" class="stage-help">What can I say?</button></div>
         </div>
       </div>
-      <!-- The year's standing goals: what you said you would reach and
-           whether the year is ahead of you. It lives INSIDE the stage's
-           fixed height, anchored to its bottom edge, so a goal arriving
-           never moves the cards below — the room it takes comes out of the
-           attention strip's budget, which already measures itself against
-           the moment's floor. Absent until there is one. -->
-      <section class="goals" id="goals" aria-label="Goals" hidden></section>
     </div>
 
     <header class="corner">

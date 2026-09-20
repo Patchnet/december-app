@@ -18,6 +18,9 @@ export const WEATHER_CODES = {
 }
 
 export const ASSET_NAME = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/
+// A reading is good for an hour and looked at every half hour; past two, a
+// refresh has been missed and the card should say so.
+export const STALE_AFTER_MS = 2 * 60 * 60 * 1000
 const text = (v, max = 180) => typeof v === 'string' ? v.trim().slice(0, max) : ''
 export function sourceURL(raw) {
   try {
@@ -90,10 +93,21 @@ export function previewHTML(raw, now = Date.now(), sceneInHeader = false) {
   const caption = `<figcaption><a href="${esc(p.source)}" target="_blank" rel="noopener noreferrer">${esc(credit)} ↗</a>${p.sample ? '<span>Sample</span>' : ''}</figcaption>`
   if (p.kind === 'image') return `<figure class="note-preview image-preview"><img src="/api/preview-assets/${p.asset}" alt="${esc(p.alt)}" loading="lazy" decoding="async" width="640" height="400" style="object-fit:${p.fit}" data-preview-image><div class="image-unavailable" hidden>Image unavailable · your note is still here</div>${caption}</figure>`
   const missing = p.status === 'unavailable'
-  const stale = !missing && (p.status === 'stale' || !p.expiresAt || Date.parse(p.expiresAt) <= now)
+  // expiresAt says when to FETCH again; it is not when the reading stops
+  // being worth showing. The watch looks every half hour on an hour-long
+  // reading, so a card that cried stale the second the hour lapsed would
+  // carry the warning for half of every hour and mean nothing by it. It is
+  // out of date once a refresh has actually been missed.
+  const at = p.observedAt ? new Date(p.observedAt) : null
+  const age = at ? now - at.getTime() : Infinity
+  const stale = !missing && (p.status === 'stale' || age > STALE_AFTER_MS)
   const { label } = missing ? weatherFor(null, null) : weatherFor(p.code, p.isDay)
-  const time = p.observedAt ? new Date(p.observedAt).toLocaleString('en', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : ''
-  return `<figure class="note-preview weather-preview${sceneInHeader ? ' weather-below' : ''}">${sceneInHeader ? '' : weatherScene(p)}<div class="weather-reading"><div><p class="preview-place">${esc(p.location || 'Location unavailable')}</p><div class="preview-temperature">${missing ? '—' : temperature(p.celsius, p.unit)}</div></div><div class="weather-description"><p class="preview-condition">${esc(label)}</p>${!missing && p.feelsCelsius !== null ? `<p class="preview-feels">Feels like ${temperature(p.feelsCelsius, p.unit)}</p>` : ''}</div></div><p class="preview-freshness">${missing ? 'Weather unavailable' : stale ? 'Saved forecast · may be out of date' : 'Forecast snapshot'}${time ? ` · ${esc(time)}` : ''}</p>${caption}</figure>`
+  // when the reading was taken: the time alone if it was today, else the
+  // day too — a fact in the meta register, never a caption about itself
+  const sameDay = at && at.toDateString() === new Date(now).toDateString()
+  const time = at ? at.toLocaleString('en', sameDay ? {hour:'numeric',minute:'2-digit'} : {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).toLowerCase() : ''
+  const freshness = missing ? 'Weather unavailable' : [time ? `as of ${esc(time)}` : '', stale ? 'may be out of date' : ''].filter(Boolean).join(' · ')
+  return `<figure class="note-preview weather-preview${sceneInHeader ? ' weather-below' : ''}">${sceneInHeader ? '' : weatherScene(p)}<div class="weather-reading"><div><p class="preview-place">${esc(p.location || 'Location unavailable')}</p><div class="preview-temperature">${missing ? '—' : temperature(p.celsius, p.unit)}</div></div><div class="weather-description"><p class="preview-condition">${esc(label)}</p>${!missing && p.feelsCelsius !== null ? `<p class="preview-feels">Feels like ${temperature(p.feelsCelsius, p.unit)}</p>` : ''}</div></div>${freshness ? `<p class="preview-freshness">${freshness}</p>` : ''}${caption}</figure>`
 }
 
 // One delegated handler also covers a card that is opened or repainted later.
