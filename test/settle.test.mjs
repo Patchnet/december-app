@@ -36,6 +36,7 @@ if (mode === 'early-close') {
   process.exit(0)
 }
 
+
 const chunks = []
 process.stdin.on('data', (chunk) => chunks.push(chunk))
 process.stdin.on('end', () => {
@@ -164,4 +165,18 @@ test('capture passes avoid housekeeping while preserving ordered durable filing'
  assert.match(prompt,/never file in parallel with its writes/)
  assert.match(prompt,/re-read on a conflict, uncertain result, or a new dependency/)
  assert.match(prompt,/appliedOperations for interrupted captures/)
+})
+
+test('read-only engine calls use a restricted MCP connection and cancellation kills the subprocess',async t=>{
+  const fixture=await fakeCli(t)
+  for(const engine of ['claude','codex']) {
+    await runEnginePrompt(engine,'Synthetic question',{binary:process.execPath,prefixArgs:[fixture.script],env:{...process.env,FAKE_CLI_RECORD:fixture.record},readOnly:true,timeout:2000,maxBuffer:1024})
+    const {argv}=JSON.parse(await readFile(fixture.record,'utf8'))
+    if(engine==='codex')assert.ok(argv.some(a=>a.includes('DECEMBER_ACCESS="read"')))
+    else {assert.ok(argv.includes('--mcp-config'));assert.ok(argv.some(a=>a.includes('mcp.read.')))}
+  }
+  const controller=new AbortController()
+  const request=runEnginePrompt('claude','Synthetic question',{binary:process.execPath,prefixArgs:[fixture.script],env:{...process.env,FAKE_CLI_RECORD:fixture.record,FAKE_CLI_MODE:'timeout'},signal:controller.signal,timeout:2000,maxBuffer:1024})
+  controller.abort()
+  await assert.rejects(request,error=>error.name==='AbortError')
 })

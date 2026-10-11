@@ -1,11 +1,18 @@
 ---
 enabled: true
-current: 0.18.0
+current: 0.19.0
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.19.0 - unreleased
+
+Refine the workspace and drawn feedback while removing experimental Jev
+execution. Deliver generic push updates, scheduled agent work, bounded context,
+complete page queries, versioned block edits, durable receipt archival, and
+identity-based search and reminder ordering. Publication remains a separate gate.
 
 ## 0.18.0 - 2026-09-08
 

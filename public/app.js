@@ -81,7 +81,7 @@ async function boot() {
     }
     if (launchParams.has('capture')) $('#capture').focus()
     schedulePoll()
-    if (page.state.settle?.jev?.mode && page.state.settle.jev.mode !== 'off') {
+    if (typeof EventSource !== 'undefined') {
       // Push invalidations remove the polling delay from a completed fast path.
       // Polling remains the reconnect/failure fallback.
       const changes = new EventSource('/api/changes')

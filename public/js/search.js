@@ -1,3 +1,4 @@
+import {createSearchIndex, searchIndex} from './search-index.js'
 import { $, esc, api, page, hooks } from './session.js'
 
 // a question ends in '?' or opens like one: answered, never filed
@@ -8,7 +9,12 @@ const looksLikeQuestion = (t) => t.endsWith('?') || QUESTION_RE.test(t.trim())
     the search results, and leaves when the search does. */
 let searchRevision = 0
 let lastQuestion = ''
+let questionController=null
+const cancelQuestion=()=>{questionController?.abort();questionController=null}
 async function askThePage(question) {
+  cancelQuestion()
+  questionController=new AbortController()
+  const signal=questionController.signal
   lastQuestion = question
   const revision = ++searchRevision
   const box = $('#search-results')
@@ -17,7 +23,7 @@ async function askThePage(question) {
   searchEl.removeAttribute('aria-activedescendant')
   box.innerHTML = `<div class="search-asked waiting" role="status">${esc(question)}</div>`
   try {
-    const { answer } = await api('/api/query', { question })
+    const { answer } = await api('/api/query', { question },{signal})
     if (revision !== searchRevision) return
     box.innerHTML = `<div class="search-asked">${esc(question)}</div><div class="search-answer" role="status">${esc(answer)}</div>`
   } catch (err) {
@@ -59,43 +65,17 @@ function matchInk(label, q) {
   return at < 0 ? esc(label) : `${esc(label.slice(0, at))}<mark>${esc(label.slice(at, at + q.length))}</mark>${esc(label.slice(at + q.length))}`
 }
 
+let indexedRevision=null,indexedSpaces=null,index=[]
 function searchEverything(q) {
-  q = q.toLowerCase()
-  const out = []
-  // the same words filed under two cards are one answer; the first card
-  // whose name the words carry keeps it, else the first card found
-  const seen = new Map()
-  const add = (label, space, sid) => {
-    if (!label.toLowerCase().includes(q)) return
-    const key = label.trim().toLowerCase()
-    const named = space && key.includes(space.toLowerCase())
-    const have = seen.get(key)
-    if (have) {
-      if (named && !have.named) Object.assign(have.hit, { space, sid }); have.named ||= named
-      return
-    }
-    if (out.length >= 8) return
-    const hit = { label, space, sid }
-    out.push(hit)
-    seen.set(key, { hit, named })
+  if(indexedSpaces!==page.state.spaces || indexedRevision!==page.state.revision) {
+    index=createSearchIndex(page.state.spaces)
+    indexedSpaces=page.state.spaces;indexedRevision=page.state.revision
   }
-  for (const s of page.state.spaces) {
-    add(s.name, '', s.id)
-    for (const b of s.blocks) {
-      if (b.title) add(b.title, s.name, s.id)
-      if (b.type === 'list') for (const i of b.items) add(i.text, s.name, s.id)
-      if (b.type === 'reminder') add(b.text, s.name, s.id)
-      if (b.type === 'note') {
-        const at = b.text.toLowerCase().indexOf(q)
-        if (at >= 0 && out.length < 8) out.push({ label: `…${b.text.slice(Math.max(0, at - 12), at + 28)}…`, space: s.name, sid: s.id })
-      }
-      if (b.type === 'ledger') for (const en of b.entries) add(en.label, s.name, s.id)
-    }
-  }
-  return out
+  return searchIndex(index,q,{spaceId:page.focusId})
 }
 
 function closeSearch() {
+  cancelQuestion()
   searchRevision++
   resultsEl.innerHTML = ''
   resultsEl.classList.remove('on')
@@ -105,6 +85,7 @@ function closeSearch() {
 }
 
 searchEl.addEventListener('input', () => {
+  cancelQuestion()
   searchRevision++
   const q = searchEl.value.trim()
   if (q.length < 2) return closeSearch()

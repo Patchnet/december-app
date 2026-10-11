@@ -1,3 +1,4 @@
+import {localDayAfter, reminderIdentity} from './calendar-order.js'
 import { $, esc, localDay, page, hooks } from './session.js'
 import { clockOf, whenPhrase, words } from './blocks.js'
 import { closeFocus, rememberReturn, showIntro } from './layout.js'
@@ -124,20 +125,13 @@ function placeWords(space, label, ...rest) {
 function renderToday() {
   const box = $('#today')
   const today = localDay()
-  const horizon = localDay(new Date(Date.now() + 7 * 86400000))
-  // The same reminder filed under two cards is one thing to do, not two:
-  // a course's exam also mirrored into the school's card was counting
-  // twice and reading as a longer day than it was. Keep the copy whose
-  // card the text itself names, else the first.
+  const horizon = localDayAfter(7)
+  // Independent tasks retain their identity even when their text matches.
   const byKey = new Map()
   for (const s of page.state.spaces) {
     for (const b of s.blocks) {
       if (b.type !== 'reminder' || b.done || !b.when || b.when > horizon) continue
-      const key = `${b.text.trim().toLowerCase()}|${b.when}`
-      const named = b.text.toLowerCase().includes(s.name.toLowerCase())
-      const have = byKey.get(key)
-      if (have && (have.named || !named)) continue
-      byKey.set(key, { s, b, named })
+      byKey.set(reminderIdentity(s,b),{s,b})
     }
   }
   const now = [] // due today, or already past

@@ -37,11 +37,11 @@ test('the stage says the shape of the day: one next thing and counts, never a li
   assert.doesNotMatch(pageCss, /--goals-h/)
 })
 
-test('a reminder mirrored into two cards is one row, under the card its text names', () => {
+test('attention keeps independent reminder identities instead of collapsing equal text', () => {
   const render = functionBody(strip, 'renderToday', 'maybeNotify')
-  assert.match(render, /const key = `\$\{b\.text\.trim\(\)\.toLowerCase\(\)\}\|\$\{b\.when\}`/)
-  assert.match(render, /const named = b\.text\.toLowerCase\(\)\.includes\(s\.name\.toLowerCase\(\)\)/)
-  assert.match(render, /if \(have && \(have\.named \|\| !named\)\) continue/)
+  assert.match(render, /byKey.set\(reminderIdentity\(s,b\),\{s,b\}\)/)
+  assert.doesNotMatch(render, /b\.text\.trim\(\)\.toLowerCase\(\)/)
+  assert.match(render, /localDayAfter\(7\)/)
 })
 
 test('every row is one line in one grammar: the thing on the left, the card and the day on the right', () => {

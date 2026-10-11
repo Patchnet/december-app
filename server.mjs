@@ -12,7 +12,7 @@ import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
 import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, readJournal, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { parseCaptureInput } from './public/js/capture-input.js'
-import { TOOLS, callTool } from './lib/tools.mjs'
+import { TOOLS, READ_TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
 import { startWatch, nudgeWatch } from './lib/watch.mjs'
@@ -27,7 +27,10 @@ const PUBLIC = join(ROOT, 'public')
 const previews = createPreviewStore(DATA_DIR)
 const changeStreams = new Set()
 const broadcastChange = () => {
-  for (const stream of changeStreams) stream.write('data: changed\n\n')
+  const event=JSON.stringify({kind:'changed',revision:stateRevision(),sequence:settle.status().sequence})
+  for (const stream of changeStreams) {
+    if(stream.destroyed || !stream.write(`data: ${event}\n\n`)){stream.destroy();changeStreams.delete(stream)}
+  }
 }
 settle.observeSettled(broadcastChange)
 const PORT = Number(process.env.PORT || 3008)
@@ -71,8 +74,10 @@ const pocketUploads = createLatestWorkQueue(async (page) => {
 })
 observePersists(() => {
   broadcastChange()
-  const page = project(settleStatus())
-  pocketUploads.schedule(page, page.revision)
+  if(pocket.status().paired){
+    const page = project(settleStatus())
+    pocketUploads.schedule(page,page.revision)
+  }
   nudgeWatch() // a watch laid by the filing that just landed looks now
 })
 const newYearTimer = watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
@@ -81,11 +86,11 @@ let surfacingScheduled = false
 const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
 const settleStatus = () => {
   const status = settle.status()
-  if (selectedEngineAvailable() || status.jev.ready && status.jev.mode !== 'off') return status
+  if (selectedEngineAvailable()) return status
   return { ...status, running: false, pending: hasInbox(), lastError: null, captureOnly: true }
 }
 const scheduleSettle = (delay) => {
-  if (selectedEngineAvailable() || settle.jevStatus().ready && settle.jevStatus().mode !== 'off') settle.schedule(delay)
+  if (selectedEngineAvailable()) settle.schedule(delay)
 }
 const scheduleSurfacing = () => {
   if (!surfacingScheduled && selectedEngineAvailable()) {
@@ -130,6 +135,8 @@ function backup() {
     mkdirSync(dir, { recursive: true })
     const src = join(DATA_DIR, 'state.json')
     const dest = join(dir, `state-${new Date().toISOString().slice(0, 10)}.json`)
+    const archive=join(DATA_DIR,'operation-archive.json')
+    if(fsExists(archive))copyFileSync(archive,join(dir,'operation-archive.json'))
     if (fsExists(src) && !fsExists(dest)) copyFileSync(src, dest)
     const all = readdirSync(dir).filter((f) => f.startsWith('state-')).sort()
     while (all.length > 30) unlinkSync(join(dir, all.shift()))
@@ -304,7 +311,6 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (path === '/api/changes' && req.method === 'GET') {
-      if (settle.jevStatus().mode === 'off') return json(res, 404, { error: 'not enabled' })
       res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
       res.write('data: connected\n\n')
       changeStreams.add(res)
@@ -470,14 +476,21 @@ const server = createServer(async (req, res) => {
     if (path === '/api/query' && req.method === 'POST') {
       const { question } = await readBody(req)
       if (!selectedEngineAvailable()) {
+        const {answerPageFact}=await import('./lib/core.mjs')
+        const fact=answerPageFact(String(question||''))
+        if(fact)return json(res,200,{answer:fact.answer})
         return json(res, 503, { error: 'no engine connected, so nothing can read the page back to you' })
       }
+      const controller=new AbortController()
+      const disconnect=()=>{if(!res.writableEnded)controller.abort()}
+      res.on('close',disconnect)
       try {
-        const answer = await settle.answerQuestion(String(question || ''))
-        return json(res, 200, { answer })
+        const answer = await settle.answerQuestion(String(question || ''),{signal:controller.signal})
+        if(!res.destroyed)return json(res, 200, { answer })
       } catch (e) {
-        return json(res, 502, { error: e.message })
-      }
+        if(!res.destroyed)return json(res, 502, { error: e.message })
+      } finally {res.off('close',disconnect)}
+      return
     }
 
     // What matters this year, and what is finished.
@@ -700,7 +713,7 @@ const server = createServer(async (req, res) => {
 
     // The assistant seam: MCP adapters (and anything else) call tools here.
     if (path === '/api/tools' && req.method === 'GET') {
-      return json(res, 200, { tools: TOOLS })
+      return json(res, 200, { tools: req.headers['x-december-access']==='read'?TOOLS.filter(t=>READ_TOOLS.has(t.name)):TOOLS })
     }
     // The manners that govern those tools, read live so a connected assistant
     // is never held to a copy older than the server it is writing to.
@@ -708,14 +721,15 @@ const server = createServer(async (req, res) => {
       return json(res, 200, await manners())
     }
     if (path === '/api/tool' && req.method === 'POST') {
+      if(req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']!==settle.organizerToken)return json(res,403,{error:'Organizer session expired'})
       const { name, arguments: args } = await readBody(req)
       try {
-        const result = await callTool(name, args || {}, settleStatus())
+        const result = await callTool(name, args || {}, {...settleStatus(),readOnly:req.headers['x-december-access']==='read',organizer:req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']===settle.organizerToken})
         if (process.env.DECEMBER_DEBUG) console.log('  tool', name)
         return json(res, 200, { result })
       } catch (e) {
         if (process.env.DECEMBER_DEBUG) console.log('  tool', name, 'FAILED:', e.message)
-        return json(res, 400, { error: e.message })
+        return json(res, e.statusCode || 400, { error: e.message,code:e.code,currentVersion:e.currentVersion })
       }
     }
 
@@ -746,6 +760,7 @@ export async function shutdown({ exit = true } = {}) {
   clearInterval(pocketTimer)
   clearInterval(newYearTimer)
   stopWatch()
+  settle.stop()
   for (const stream of changeStreams) stream.end()
   changeStreams.clear()
   const closed = new Promise((resolveClose) => server.close(resolveClose))
