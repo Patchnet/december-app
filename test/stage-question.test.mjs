@@ -10,7 +10,7 @@ test('a pending clarification exclusively owns the stage, then restores working 
   const stage={dataset:{},classList:classes(),querySelector:s=>s==='.moment'?moment:s==='.stage-foot'?null:panes[s.replace('.pane-','')]}
   const page={field:{value:''},state:{ask:{id:'question'},captures:[{id:'pending'}],settle:{running:false}},queuedTexts:[],flying:0}
   const source=readFileSync(new URL('../public/js/paint.js',import.meta.url),'utf8')
-  const code=source.slice(source.indexOf('export function renderStage'),source.indexOf("import { renderJevStatus")).replace('export ','')
+  const code=source.slice(source.indexOf('export function renderStage'),source.indexOf("import { measureCapturePaint")).replace('export ','')
   const render=runInNewContext(code+';renderStage',{$:()=>stage,page,hooks:{fitCapture(){}},localStorage:{getItem:()=> '6'}})
   for(const running of [false,true]){
     page.state.settle.running=running;render()

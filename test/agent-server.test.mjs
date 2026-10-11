@@ -71,7 +71,7 @@ test('Jev-free server pushes durable changes, preserves capture-only mode and en
   const reader=stream.body.getReader()
   assert.match(new TextDecoder().decode((await reader.read()).value),/connected/)
   const capture=await api('/api/capture',{text:'Add oat milk',requestId:'retained'})
-  assert.equal(capture.body.settle.jev.mode,'off')
+  assert.equal('jev' in capture.body.settle,false)
   assert.equal(capture.body.settle.captureOnly,true)
   assert.equal(capture.body.captures.length,1)
   assert.match(new TextDecoder().decode((await reader.read()).value),/revision/)

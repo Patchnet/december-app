@@ -51,11 +51,9 @@ export function renderStage() {
   if (workChanged && composing) hooks.fitCapture()
 }
 
-import { renderJevStatus } from './jev-status.js'
 import { measureCapturePaint } from './capture-timing.js'
 
 export function render() {
-  renderJevStatus()
   paintLetter()
   renderYearline()
   $('#shell').classList.toggle('settling', page.state.captures.length > 0)

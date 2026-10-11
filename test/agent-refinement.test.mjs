@@ -142,8 +142,32 @@ test('date-filtered ledger totals use complete entries independently of record p
     {id:'new',label:'Fuel',amount:2.2,at:'2026-10-10T12:00:00Z'},
   ]}]}]}
   const result=queryContext(page,'car',{from:'2026-09-01',until:'2026-09-30',maxBytes:1})
-  assert.equal(result.coverage.complete,false)
+  assert.equal(result.coverage.complete,true)
+  assert.equal(result.coverage.overBudget,true)
   assert.equal(result.aggregates[0].total,'3.10')
   assert.equal(result.aggregates[0].complete,true)
   assert.throws(()=>queryContext(page,'car',{from:'2026-02-30'}))
+})
+
+
+test('oversized query records advance pagination without losing source content',()=>{
+  const large='long label '.repeat(6000)
+  const page={revision:1,spaces:[{id:'s',name:'Costs',blocks:[{id:'b',type:'ledger',entries:[{id:'large',label:large,amount:1},{id:'small',label:'Second',amount:2}]}]}]}
+  const first=queryContext(page,'costs')
+  assert.equal(first.records[0].entry.label,large)
+  assert.equal(first.coverage.overBudget,true)
+  assert.equal(first.coverage.nextOffset,1)
+  const second=queryContext(page,'costs',{offset:first.coverage.nextOffset})
+  assert.equal(second.records[0].entry.id,'small')
+  assert.equal(second.coverage.complete,true)
+})
+
+test('queue saturation rejects excess work and shutdown cancels pending jobs',async()=>{
+  const scheduler=createAgentScheduler()
+  const active=scheduler.enqueue('active',signal=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true})))
+  const activeResult=assert.rejects(active,/aborted/)
+  await tick()
+  const queued=Array.from({length:16},(_,i)=>assert.rejects(scheduler.enqueue(`q${i}`,()=>assert.fail('queued work ran')),/stopped/))
+  await assert.rejects(scheduler.enqueue('overflow',()=>{}),/queue is full/)
+  scheduler.close();await Promise.all([activeResult,...queued])
 })
