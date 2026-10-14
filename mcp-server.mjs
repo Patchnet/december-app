@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // December MCP adapter — stdio, zero dependencies, and deliberately thin.
-// It holds NO state and touches no files: every page tool call forwards over
-// loopback HTTP to the running December server, the one writer. The adapter
+// It holds NO page state: every page tool call forwards over loopback HTTP
+// to the running December server, the one writer. Inside a git repo it first
+// starts (or finds) that repo's board server; see lib/board-host.mjs. The adapter
 // contributes only the page's organization tools; retrieval belongs to the
 // connected agent's native capabilities and configured permissions.
 //
@@ -9,8 +10,14 @@
 // Connect from Claude Desktop: add the same command under mcpServers.
 
 import { createInterface } from 'node:readline'
+import { detectMode } from './lib/board-mode.mjs'
+import { ensureBoard } from './lib/board-host.mjs'
 
-const BASE = process.env.DECEMBER_URL || 'http://localhost:3008'
+// Started inside a git repo, the connection gets that repo's own board
+// instead (see lib/board-mode.mjs), and BASE moves to the board's server.
+let BASE = process.env.DECEMBER_URL || 'http://localhost:3008'
+let boardError = null
+let connected = null
 const access=process.env.DECEMBER_ACCESS || 'external'
 const accessHeaders={'x-december-access':access,'x-december-organizer-token':process.env.DECEMBER_ORGANIZER_TOKEN || ''}
 const SERVER_INFO = { name: 'december', version: '0.1.0' }
@@ -18,6 +25,7 @@ const SERVER_INFO = { name: 'december', version: '0.1.0' }
 let toolsCache = null
 async function fetchTools() {
   if (toolsCache) return toolsCache
+  if (boardError) throw new Error(boardError)
   const res = await fetch(`${BASE}/api/tools`,{headers:accessHeaders})
   toolsCache = (await res.json()).tools
   return toolsCache
@@ -40,6 +48,7 @@ async function fetchInstructions() {
 }
 
 async function forwardTool(name, args) {
+  if (boardError) throw new Error(boardError)
   let res
   try {
     res = await fetch(`${BASE}/api/tool`, {
@@ -53,6 +62,29 @@ async function forwardTool(name, args) {
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || 'tool call failed')
   return data.result
+}
+
+// A coding session: start or reuse the repo's board, then lead the
+// instructions with its address so the agent opens it before anything else.
+// A board that cannot start never falls back to the person's page.
+const OPENER = { darwin: 'open', win32: 'start ""' }[process.platform] || 'xdg-open'
+async function connect(params) {
+  const info = detectMode({ cwd: process.cwd(), clientName: params?.clientInfo?.name })
+  if (info.mode !== 'board') return fetchInstructions()
+  const name = [info.repo, info.branch].filter(Boolean).join(' · ')
+  try {
+    BASE = (await ensureBoard(info)).url.replace(/\/$/, '')
+  } catch (err) {
+    boardError = `December's board for ${name} did not start: ${err.message}`
+    return boardError
+  }
+  const url = `${BASE}/`
+  const manners = await fetchInstructions()
+  return [
+    `December board for ${name}: ${url}`,
+    `Open ${url} in your browser now, before anything else: the harness's built-in browser if it has one, otherwise run \`${OPENER} ${url}\`. The person watches this session's work there.`,
+    manners,
+  ].filter(Boolean).join('\n\n')
 }
 
 // ------------------------------------------------- JSON-RPC over stdio
@@ -71,8 +103,11 @@ rl.on('line', async (line) => {
   }
   const { id, method, params } = req
   try {
+    // nothing is forwarded until the handshake has settled where BASE points
+    if (method !== 'initialize' && connected) await connected
     if (method === 'initialize') {
-      const instructions = await fetchInstructions()
+      connected = connect(params)
+      const instructions = await connected
       send({
         jsonrpc: '2.0',
         id,

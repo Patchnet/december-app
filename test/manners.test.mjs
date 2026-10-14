@@ -42,7 +42,8 @@ async function waitForServer(url, child) {
 async function initializeAdapter(env) {
   const child = spawn(process.execPath, ['mcp-server.mjs'], {
     cwd: ROOT,
-    env: { ...process.env, ...env },
+    // the checkout is a git repo, which would mean a board; these are page tests
+    env: { ...process.env, DECEMBER_MODE: 'page', ...env },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const lines = createInterface({ input: child.stdout })
