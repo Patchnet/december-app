@@ -11,6 +11,7 @@ import { renderGoals } from './goals.js'
 import { paintLetter } from './about.js'
 import { renderToday } from './attention.js'
 import { cardHeld, completionPending } from './completion-motion.js'
+import { paintBoard } from './board.js'
 
 export function renderStage() {
   const stage = $('#stage')
@@ -55,7 +56,7 @@ import { measureCapturePaint } from './capture-timing.js'
 
 export function render() {
   paintLetter()
-  renderYearline()
+  if (!paintBoard()) renderYearline()
   $('#shell').classList.toggle('settling', page.state.captures.length > 0)
   // the run gathers this poll's destinations; their new content waits for
   // the one landing at the end of the pass
