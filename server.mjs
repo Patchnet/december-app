@@ -22,6 +22,20 @@ import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, 
 import { createPocketSync } from './lib/pocket-sync.mjs'
 import { createPreviewStore } from './lib/previews.mjs'
 import { foreignFetchSite } from './lib/fetch-site.mjs'
+import { boardFromEnv, currentBranch, BOARD_MANNERS } from './lib/board-mode.mjs'
+
+// A board (DECEMBER_MODE=board) is a coding agent's own December: the agent
+// writes, the person watches. No organizer, no Pocket, no watch, no journal.
+// What the person types stays in the inbox as a note to the agent.
+const BOARD = boardFromEnv()
+let branchReadAt = 0
+const boardState = () => {
+  if (Date.now() - branchReadAt > 5000) {
+    branchReadAt = Date.now()
+    BOARD.branch = currentBranch(BOARD.root) || BOARD.branch
+  }
+  return BOARD
+}
 
 const PUBLIC = join(ROOT, 'public')
 const previews = createPreviewStore(DATA_DIR)
@@ -60,7 +74,7 @@ const MIME = {
   '.ico': 'image/x-icon',
 }
 
-await settle.writeMcpConfig()
+if (!BOARD) await settle.writeMcpConfig()
 await rolloverIfNeeded() // the turn of the year happens before anything else
 const pocket = await createPocketSync({ dataDir: DATA_DIR })
 const pocketUploads = createLatestWorkQueue(async (page) => {
@@ -74,6 +88,7 @@ const pocketUploads = createLatestWorkQueue(async (page) => {
 })
 observePersists(() => {
   broadcastChange()
+  if (BOARD) return
   if(pocket.status().paired){
     const page = project(settleStatus())
     pocketUploads.schedule(page,page.revision)
@@ -81,9 +96,10 @@ observePersists(() => {
   nudgeWatch() // a watch laid by the filing that just landed looks now
 })
 const newYearTimer = watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
-let engineAvailability = await detectEngines()
+let engineAvailability = BOARD ? {} : await detectEngines()
 let surfacingScheduled = false
-const selectedEngineAvailable = () => !!engineAvailability[getSettings().engine]
+// On a board the agent is the only writer, so no engine ever runs here.
+const selectedEngineAvailable = () => !BOARD && !!engineAvailability[getSettings().engine]
 const settleStatus = () => {
   const status = settle.status()
   if (selectedEngineAvailable()) return status
@@ -106,7 +122,7 @@ if (hasInbox()) scheduleSettle(5000)
 // touches the network only for blocks a person tagged, and what it brings
 // back arrives as an ordinary capture, so the settle pass files it the way
 // it files everything else.
-const stopWatch = startWatch({ onCaptured: () => scheduleSettle() })
+const stopWatch = BOARD ? () => {} : startWatch({ onCaptured: () => scheduleSettle() })
 
 async function pullPocketCaptures() {
   let captured = 0
@@ -119,12 +135,12 @@ async function pullPocketCaptures() {
   return result
 }
 
-if (pocket.status().paired) {
+if (!BOARD && pocket.status().paired) {
   const page = project(settleStatus())
   pocketUploads.schedule(page, page.revision)
 }
-void pullPocketCaptures().catch((error) => console.log('Pocket capture pull failed:', String(error?.message || error).slice(0, 200)))
-const pocketTimer = setInterval(() => {
+if (!BOARD) void pullPocketCaptures().catch((error) => console.log('Pocket capture pull failed:', String(error?.message || error).slice(0, 200)))
+const pocketTimer = BOARD ? null : setInterval(() => {
   void pullPocketCaptures().catch((error) => console.log('Pocket capture pull failed:', String(error?.message || error).slice(0, 200)))
 }, 10_000)
 
@@ -318,7 +334,8 @@ const server = createServer(async (req, res) => {
       return
     }
     if (path === '/api/state' && req.method === 'GET') {
-      const fingerprint = `${stateFingerprint()}:${previews.revision()}`
+      const board = BOARD && boardState()
+      const fingerprint = `${stateFingerprint()}:${previews.revision()}${board ? `:${board.branch}` : ''}`
       if (url.searchParams.get('since') === fingerprint) {
         return json(res, 200, {
           unchanged: true,
@@ -329,7 +346,10 @@ const server = createServer(async (req, res) => {
           canUndoManual: canUndoManual(),
         })
       }
-      return json(res, 200, { ...project(settleStatus()), fingerprint })
+      return json(res, 200, { ...project(settleStatus()), fingerprint, ...(board ? { board } : {}) })
+    }
+    if (BOARD && path.startsWith('/api/pocket')) {
+      return json(res, 404, { error: 'a board has no Pocket' })
     }
 
     // Handed to December's own page and to nothing else. A cross-site page
@@ -460,8 +480,11 @@ const server = createServer(async (req, res) => {
     }
 
     // Answer (or dismiss) the ask. A chosen option files as if typed.
+    // On a board the answer always travels with its question, so the note
+    // reads on its own: "Push feat/agent-board to origin? Push".
     if (path === '/api/answer' && req.method === 'POST') {
-      const receipt=await answerAsk(await readBody(req))
+      const answer = await readBody(req)
+      const receipt=await answerAsk(BOARD ? { ...answer, typed: true } : answer)
       if(receipt.captureId)scheduleSettle()
       return json(res, 200, project(settleStatus()))
     }
@@ -579,7 +602,7 @@ const server = createServer(async (req, res) => {
       // a live year writes what it has not written yet, in the background;
       // the page asks again while anything is pending
       if (out.live) {
-        out.pending = settle.journalPending()
+        out.pending = !BOARD && settle.journalPending()
         if (out.pending) settle.scheduleJournal()
       }
       return json(res, 200, out)
@@ -718,7 +741,7 @@ const server = createServer(async (req, res) => {
     // The manners that govern those tools, read live so a connected assistant
     // is never held to a copy older than the server it is writing to.
     if (path === '/api/manners' && req.method === 'GET') {
-      return json(res, 200, await manners())
+      return json(res, 200, BOARD ? { manners: BOARD_MANNERS, version: '0.1.0' } : await manners())
     }
     if (path === '/api/tool' && req.method === 'POST') {
       if(req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']!==settle.organizerToken)return json(res,403,{error:'Organizer session expired'})
@@ -739,7 +762,7 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': asset.type, 'content-length': asset.bytes.length, 'cache-control': 'private, max-age=31536000, immutable' })
       return res.end(asset.bytes)
     }
-    if (path === '/api/health') return json(res, 200, { ok: true, port: PORT })
+    if (path === '/api/health') return json(res, 200, { ok: true, port: PORT, ...(BOARD ? { board: { dir: DATA_DIR, ...BOARD } } : {}) })
 
     return serveStatic(res, path)
   } catch (err) {
