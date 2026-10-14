@@ -7,12 +7,16 @@ test_gate: local
 
 # Version History
 
-## 0.19.0 - unreleased
+## 0.19.0 - 2026-10-14
 
 Refine the workspace and drawn feedback while removing experimental Jev
 execution. Deliver generic push updates, scheduled agent work, bounded context,
 complete page queries, versioned block edits, durable receipt archival, and
 identity-based search and reminder ordering. Publication remains a separate gate.
+
+Also new: a year journal writes short monthly summaries in the background,
+and watched weather blocks look up forecasts from open-meteo (only the place
+name is sent).
 
 ## 0.18.0 - 2026-09-08
 
