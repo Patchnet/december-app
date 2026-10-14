@@ -1,3 +1,4 @@
+import {createSearchIndex,searchIndex} from '../public/js/search-index.js'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -5,16 +6,17 @@ import { runInNewContext } from 'node:vm'
 
 function harness(lineEnding='\n') {
   const listeners = new Map()
-  const results = {innerHTML:'',classList:{add(){},remove(){}},querySelector(){return null},addEventListener(){}}
-  const field = {value:'',addEventListener(name,fn){listeners.set(name,fn)}}
+  const results = {innerHTML:'',classList:{add(){},remove(){}},querySelector(){return null},querySelectorAll(){return []},setAttribute(){},addEventListener(){}}
+  const field = {value:'',setAttribute(){},removeAttribute(){},addEventListener(name,fn){listeners.set(name,fn)}}
   let resolve
   const context = {
+    AbortController,createSearchIndex,searchIndex,
     $: selector => selector === '#search' ? field : results,
     esc: String, hooks: {}, page:{state:{spaces:[]}},
     document:{addEventListener(){}},
     api: () => new Promise(done=>{resolve=done}),
   }
-  const source = readFileSync(new URL('../public/js/search.js',import.meta.url),'utf8').replace(/\r?\n/g,lineEnding).replace(/^import[^\r\n]*\r?\n/,'')
+  const source = readFileSync(new URL('../public/js/search.js',import.meta.url),'utf8').replace(/\r?\n/g,lineEnding).replace(/^import[^\r\n]*\r?\n/gm,'')
   const app = runInNewContext(source+'\n;({askThePage,closeSearch})',context)
   return {app,results,field,listeners,resolve:value=>resolve(value)}
 }

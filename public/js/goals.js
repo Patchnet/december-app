@@ -1,12 +1,11 @@
 import { $, esc, fmtAmount, page } from './session.js'
 import { markChange, bump, pop, celebrate } from './motion.js'
 
-/** The goals band: what you said you would reach this year, as the numbers
-    themselves. No bars — the card has the bar. Each goal is the count set in
-    the serif the page keeps for the day and the big ledger totals, the name
-    above it, and one quiet line under it saying whether the year is ahead of
-    you. It wraps, so six goals are a row and twelve are two; there is no cap.
-    It is not there at all until there is a goal. */
+/** The goals: what you said you would reach this year, each a small
+    figure beside the day's lines — the name, the count in the page's
+    serif, a hairline meter whose tick is today, and one quiet line
+    saying whether the year is ahead of you. More goals sit side by side.
+    Not there at all until there is a goal. */
 function liveGoals(state) {
   const out = []
   for (const s of state?.spaces || []) {
@@ -48,12 +47,10 @@ function renderGoals() {
   if (!band) return
   const goals = liveGoals(page.state)
   band.hidden = goals.length === 0
-  // The band is out of the flow: it says how much of the stage's fixed
-  // height it needs, and the attention strip's own measuring does the rest.
-  const claim = () => $('#stage')?.style.setProperty('--goals-h', goals.length ? `${band.offsetHeight + 10}px` : '0px')
+  // The band sits in the flow at the foot of the stage and takes its own
+  // room; nothing else has to measure around it.
   if (!goals.length) {
     band.innerHTML = ''
-    claim()
     return
   }
   const before = new Map(liveGoals(page.prev).map((x) => [x.block.id, x.goal]))
@@ -74,7 +71,6 @@ function renderGoals() {
       </a>`
     })
     .join('')
-  claim()
   // a goal that just moved says so where it moved; one that just landed is a moment
   for (const { block, goal: g } of goals) {
     const was = before.get(block.id)

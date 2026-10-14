@@ -17,6 +17,9 @@ installed by `npm ci`; lint never skips when they are absent. Use
 
 ## What's covered
 
+- `test/agent-refinement.test.mjs` — scheduling, cancellation, fixed batches, context coverage, complete queries, version conflicts, receipt compaction/replay, and search identity.
+- `test/agent-server.test.mjs` — generic push, read-only MCP enforcement, and multiple capture batches through a portable simulated streaming CLI. No paid inference.
+
 - `test/blocks.test.mjs` — the six-block-type table: make/update contracts,
   verb translation, entity validation, clamping, unknown-type rejection.
 - `test/core.test.mjs` — event append/read, pin and finish behavior, injected-

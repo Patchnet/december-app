@@ -10,7 +10,7 @@ function harness() {
   const field={value:'first note',style:{},offsetHeight:20,closest:()=>({classList:classes,dataset:{}})}
   const page={field,enterHint:{classList:classes},state:{spaces:[{id:'a',name:'Work'},{id:'b',name:'Home'}]},focusId:'a'}
   const errors=[]
-  const context={page,retainSubmission:(...args)=>{submitted=args;return retained},deliverCaptures:()=>{delivered++},document:{documentElement:{style:{setProperty(){}}},addEventListener:(_,fn)=>{focused=fn}},$:()=>({classList:classes}),nextPrompt(){},localStorage:{getItem(){},setItem(){}},window:{},hooks:{render(){}},toast:message=>errors.push(message)}
+  const context={page,retainSubmission:(...args)=>{submitted=args;return retained},deliverCaptures:()=>{delivered++},expect(){},document:{documentElement:{style:{setProperty(){}}},addEventListener:(_,fn)=>{focused=fn}},$:()=>({classList:classes}),nextPrompt(){},localStorage:{getItem(){},setItem(){}},window:{},hooks:{render(){}},toast:message=>errors.push(message)}
   const source=readFileSync(new URL('../public/js/capture.js',import.meta.url),'utf8')
   const main=source.slice(source.indexOf('let retainingMain'),source.indexOf('// The page greets'))
   const focus=source.slice(source.indexOf('const retainingFields'),source.indexOf('// the page opens quiet'))

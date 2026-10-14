@@ -1,3 +1,4 @@
+import {createSearchIndex, searchIndex} from './search-index.js'
 import { $, esc, api, page, hooks } from './session.js'
 
 // a question ends in '?' or opens like one: answered, never filed
@@ -7,18 +8,27 @@ const looksLikeQuestion = (t) => t.endsWith('?') || QUESTION_RE.test(t.trim())
 /** Questions belong with finding, not with writing: the answer appears in
     the search results, and leaves when the search does. */
 let searchRevision = 0
+let lastQuestion = ''
+let questionController=null
+const cancelQuestion=()=>{questionController?.abort();questionController=null}
 async function askThePage(question) {
+  cancelQuestion()
+  questionController=new AbortController()
+  const signal=questionController.signal
+  lastQuestion = question
   const revision = ++searchRevision
   const box = $('#search-results')
-  box.classList.add('on')
-  box.innerHTML = `<div class="search-answer thinking">thinking<span class="a-dots"><i>.</i><i>.</i><i>.</i></span></div>`
+  showResults(false)
+  active = -1
+  searchEl.removeAttribute('aria-activedescendant')
+  box.innerHTML = `<div class="search-asked waiting" role="status">${esc(question)}</div>`
   try {
-    const { answer } = await api('/api/query', { question })
+    const { answer } = await api('/api/query', { question },{signal})
     if (revision !== searchRevision) return
-    box.innerHTML = `<div class="search-answer" role="status">${esc(answer)}</div>`
+    box.innerHTML = `<div class="search-asked">${esc(question)}</div><div class="search-answer" role="status">${esc(answer)}</div>`
   } catch (err) {
     if (revision !== searchRevision) return
-    box.innerHTML = `<div class="search-answer">couldn't answer: ${esc(err.message)}</div>`
+    box.innerHTML = `<div class="search-asked">${esc(question)}</div><div class="search-answer" role="status">Couldn’t answer. ${esc(err.message)}</div><button class="search-retry" type="button">Try again</button>`
   }
 }
 
@@ -27,36 +37,55 @@ async function askThePage(question) {
 
 const searchEl = $('#search')
 const resultsEl = $('#search-results')
+let active = -1
+searchEl.setAttribute('role', 'combobox')
+searchEl.setAttribute('aria-autocomplete', 'list')
+searchEl.setAttribute('aria-controls', 'search-results')
+searchEl.setAttribute('aria-expanded', 'false')
+function showResults(list = true) {
+  resultsEl.classList.add('on')
+  resultsEl.setAttribute('role', list ? 'listbox' : 'region')
+  resultsEl.setAttribute('aria-label', list ? 'Matching spaces and notes' : 'Answer')
+  searchEl.setAttribute('aria-expanded', 'true')
+}
+function setActive(index) {
+  const hits = [...resultsEl.querySelectorAll('.search-hit')]
+  active = Math.max(-1, Math.min(index, hits.length - 1))
+  hits.forEach((el, i) => {
+    el.classList.toggle('active', i === active)
+    el.setAttribute('aria-selected', String(i === active))
+  })
+  if (hits[active]) {
+    searchEl.setAttribute('aria-activedescendant', hits[active].id)
+    hits[active].scrollIntoView({block: 'nearest'})
+  } else searchEl.removeAttribute('aria-activedescendant')
+}
+function matchInk(label, q) {
+  const at = label.toLowerCase().indexOf(q.toLowerCase())
+  return at < 0 ? esc(label) : `${esc(label.slice(0, at))}<mark>${esc(label.slice(at, at + q.length))}</mark>${esc(label.slice(at + q.length))}`
+}
 
+let indexedRevision=null,indexedSpaces=null,index=[]
 function searchEverything(q) {
-  q = q.toLowerCase()
-  const out = []
-  const add = (label, space, sid) => {
-    if (out.length < 8 && label.toLowerCase().includes(q)) out.push({ label, space, sid })
+  if(indexedSpaces!==page.state.spaces || indexedRevision!==page.state.revision) {
+    index=createSearchIndex(page.state.spaces)
+    indexedSpaces=page.state.spaces;indexedRevision=page.state.revision
   }
-  for (const s of page.state.spaces) {
-    add(s.name, '', s.id)
-    for (const b of s.blocks) {
-      if (b.title) add(b.title, s.name, s.id)
-      if (b.type === 'list') for (const i of b.items) add(i.text, s.name, s.id)
-      if (b.type === 'reminder') add(b.text, s.name, s.id)
-      if (b.type === 'note') {
-        const at = b.text.toLowerCase().indexOf(q)
-        if (at >= 0 && out.length < 8) out.push({ label: `…${b.text.slice(Math.max(0, at - 12), at + 28)}…`, space: s.name, sid: s.id })
-      }
-      if (b.type === 'ledger') for (const en of b.entries) add(en.label, s.name, s.id)
-    }
-  }
-  return out
+  return searchIndex(index,q,{spaceId:page.focusId})
 }
 
 function closeSearch() {
+  cancelQuestion()
   searchRevision++
   resultsEl.innerHTML = ''
   resultsEl.classList.remove('on')
+  active = -1
+  searchEl.setAttribute('aria-expanded', 'false')
+  searchEl.removeAttribute('aria-activedescendant')
 }
 
 searchEl.addEventListener('input', () => {
+  cancelQuestion()
   searchRevision++
   const q = searchEl.value.trim()
   if (q.length < 2) return closeSearch()
@@ -64,16 +93,18 @@ searchEl.addEventListener('input', () => {
   const hits = searchEverything(q)
   resultsEl.innerHTML = hits.length
     ? hits
-        .map((h, i) => `<button class="search-hit" data-hit="${h.sid}" style="--d:${Math.min(i * 28, 140)}ms"><span class="sh-label">${esc(h.label.slice(0, 44))}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
+        .map((h, i) => `<button type="button" role="option" aria-selected="false" tabindex="-1" id="search-hit-${i}" class="search-hit${h.space ? '' : ' is-card'}" data-hit="${esc(h.sid)}"><span class="sh-label">${matchInk(h.label, q)}</span>${h.space ? `<span class="sh-space">${esc(h.space)}</span>` : ''}</button>`)
         .join('')
     : '<div class="search-none" role="status">No matches. Try a different word.</div>'
-  resultsEl.classList.add('on')
+  if (looksLikeQuestion(q) && q.length > 6) resultsEl.insertAdjacentHTML('beforeend', '<div class="search-foot">Press Return to ask</div>')
+  showResults()
+  setActive(-1)
 })
 
 searchEl.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown') {
-    const first = resultsEl.querySelector('.search-hit')
-    if (first) { e.preventDefault(); first.focus() }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    setActive(active + (e.key === 'ArrowDown' ? 1 : -1))
     return
   }
   if (e.key === 'Escape') {
@@ -84,14 +115,13 @@ searchEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     const q = searchEl.value.trim()
     // a question is asked; a word is looked up
-    if (looksLikeQuestion(q) && q.length > 6) {
+    if (active < 0 && looksLikeQuestion(q) && q.length > 6) {
       askThePage(q)
-      searchEl.value = ''
       return
     }
-    const first = resultsEl.querySelector('.search-hit')
-    if (first) {
-      hooks.jumpToSpace(first.dataset.hit)
+    const hit = resultsEl.querySelectorAll('.search-hit')[Math.max(0, active)]
+    if (hit) {
+      hooks.jumpToSpace(hit.dataset.hit)
       searchEl.value = ''
       closeSearch()
       searchEl.blur()
@@ -100,6 +130,7 @@ searchEl.addEventListener('keydown', (e) => {
 })
 
 document.addEventListener('click', (e) => {
+  if (e.target.closest('.search-retry')) { askThePage(lastQuestion); return }
   const hit = e.target.closest('.search-hit')
   if (hit) {
     hooks.jumpToSpace(hit.dataset.hit)
@@ -110,22 +141,10 @@ document.addEventListener('click', (e) => {
   if (!e.target.closest('.search-wrap')) closeSearch()
 })
 
-// Native buttons own Enter; arrow keys move through the local results.
 resultsEl.addEventListener('keydown', (e) => {
-  const hits = [...resultsEl.querySelectorAll('.search-hit')]
-  const at = hits.indexOf(document.activeElement)
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    closeSearch()
-    searchEl.focus()
-    return
-  }
-  if (at < 0 || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
-  e.preventDefault()
-  if (e.key === 'ArrowUp' && at === 0) return searchEl.focus()
-  const next = e.key === 'Home' ? 0 : e.key === 'End' ? hits.length - 1 : Math.max(0, Math.min(hits.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))
-  hits[next]?.focus()
+  if (e.key === 'Escape') { e.preventDefault(); closeSearch(); searchEl.focus() }
 })
+
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !document.documentElement.classList.contains('modal-open') && !document.querySelector('dialog[open]')) {
     e.preventDefault()

@@ -10,20 +10,29 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, extname, normalize, basename } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
-import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
+import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, readJournal, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { parseCaptureInput } from './public/js/capture-input.js'
-import { TOOLS, callTool } from './lib/tools.mjs'
+import { TOOLS, READ_TOOLS, callTool } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
-import { startWatch } from './lib/watch.mjs'
+import { startWatch, nudgeWatch } from './lib/watch.mjs'
 import { ENGINES, getSettings, updateSettings, detectEngines } from './lib/settings.mjs'
 import { docxText } from './lib/docx.mjs'
 import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, statuses as connectionStatuses, verify as verifyClient } from './lib/connect.mjs'
 import { createPocketSync } from './lib/pocket-sync.mjs'
 import { createPreviewStore } from './lib/previews.mjs'
+import { foreignFetchSite } from './lib/fetch-site.mjs'
 
 const PUBLIC = join(ROOT, 'public')
 const previews = createPreviewStore(DATA_DIR)
+const changeStreams = new Set()
+const broadcastChange = () => {
+  const event=JSON.stringify({kind:'changed',revision:stateRevision(),sequence:settle.status().sequence})
+  for (const stream of changeStreams) {
+    if(stream.destroyed || !stream.write(`data: ${event}\n\n`)){stream.destroy();changeStreams.delete(stream)}
+  }
+}
+settle.observeSettled(broadcastChange)
 const PORT = Number(process.env.PORT || 3008)
 // The shipped version, from the package manifest beside this file.
 const APP_VERSION = (() => {
@@ -64,8 +73,12 @@ const pocketUploads = createLatestWorkQueue(async (page) => {
   onError: (error) => console.log('Pocket page upload failed:', String(error?.message || error).slice(0, 200)),
 })
 observePersists(() => {
-  const page = project(settleStatus())
-  pocketUploads.schedule(page, page.revision)
+  broadcastChange()
+  if(pocket.status().paired){
+    const page = project(settleStatus())
+    pocketUploads.schedule(page,page.revision)
+  }
+  nudgeWatch() // a watch laid by the filing that just landed looks now
 })
 const newYearTimer = watchForNewYear((y) => console.log(`the page turned: ${y} archived`))
 let engineAvailability = await detectEngines()
@@ -122,6 +135,8 @@ function backup() {
     mkdirSync(dir, { recursive: true })
     const src = join(DATA_DIR, 'state.json')
     const dest = join(dir, `state-${new Date().toISOString().slice(0, 10)}.json`)
+    const archive=join(DATA_DIR,'operation-archive.json')
+    if(fsExists(archive))copyFileSync(archive,join(dir,'operation-archive.json'))
     if (fsExists(src) && !fsExists(dest)) copyFileSync(src, dest)
     const all = readdirSync(dir).filter((f) => f.startsWith('state-')).sort()
     while (all.length > 30) unlinkSync(join(dir, all.shift()))
@@ -272,17 +287,7 @@ export function foreignHost(host, port = PORT) {
   }
 }
 
-// Browsers stamp Sec-Fetch-Site on every request they make. same-origin is
-// December's own page, none is a person typing the address; anything else is
-// another site reaching in and is refused whether or not it sends an Origin.
-// Clients that are not browsers — the MCP adapter, the desktop shell, curl —
-// send no such header and are yours.
-const OWN_FETCH_SITES = new Set(['same-origin', 'none'])
-export function foreignFetchSite(headers) {
-  const site = headers['sec-fetch-site']
-  if (!site) return false
-  return !OWN_FETCH_SITES.has(String(site))
-}
+export { foreignFetchSite }
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
@@ -291,7 +296,7 @@ const server = createServer(async (req, res) => {
   if (foreignHost(req.headers.host)) {
     return json(res, 403, { error: 'refused: December only answers to localhost' })
   }
-  if (foreignFetchSite(req.headers)) {
+  if (foreignFetchSite(req.headers, req.method)) {
     return json(res, 403, { error: 'refused: this request came from another site' })
   }
   if (req.method === 'POST' && foreignOrigin(req)) {
@@ -305,6 +310,13 @@ const server = createServer(async (req, res) => {
     return json(res, 403, { error: 'refused: Pocket needs December\'s own page' })
   }
   try {
+    if (path === '/api/changes' && req.method === 'GET') {
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+      res.write('data: connected\n\n')
+      changeStreams.add(res)
+      req.on('close', () => changeStreams.delete(res))
+      return
+    }
     if (path === '/api/state' && req.method === 'GET') {
       const fingerprint = `${stateFingerprint()}:${previews.revision()}`
       if (url.searchParams.get('since') === fingerprint) {
@@ -464,14 +476,21 @@ const server = createServer(async (req, res) => {
     if (path === '/api/query' && req.method === 'POST') {
       const { question } = await readBody(req)
       if (!selectedEngineAvailable()) {
+        const {answerPageFact}=await import('./lib/core.mjs')
+        const fact=answerPageFact(String(question||''))
+        if(fact)return json(res,200,{answer:fact.answer})
         return json(res, 503, { error: 'no engine connected, so nothing can read the page back to you' })
       }
+      const controller=new AbortController()
+      const disconnect=()=>{if(!res.writableEnded)controller.abort()}
+      res.on('close',disconnect)
       try {
-        const answer = await settle.answerQuestion(String(question || ''))
-        return json(res, 200, { answer })
+        const answer = await settle.answerQuestion(String(question || ''),{signal:controller.signal})
+        if(!res.destroyed)return json(res, 200, { answer })
       } catch (e) {
-        return json(res, 502, { error: e.message })
-      }
+        if(!res.destroyed)return json(res, 502, { error: e.message })
+      } finally {res.off('close',disconnect)}
+      return
     }
 
     // What matters this year, and what is finished.
@@ -554,6 +573,17 @@ const server = createServer(async (req, res) => {
     }
 
     // Past years, read-only.
+    if (path.startsWith('/api/journal') && req.method === 'GET') {
+      const y = path.slice('/api/journal/'.length) || undefined
+      const out = readJournal(y)
+      // a live year writes what it has not written yet, in the background;
+      // the page asks again while anything is pending
+      if (out.live) {
+        out.pending = settle.journalPending()
+        if (out.pending) settle.scheduleJournal()
+      }
+      return json(res, 200, out)
+    }
     if (path === '/api/years' && req.method === 'GET') {
       return json(res, 200, { years: listYears() })
     }
@@ -683,7 +713,7 @@ const server = createServer(async (req, res) => {
 
     // The assistant seam: MCP adapters (and anything else) call tools here.
     if (path === '/api/tools' && req.method === 'GET') {
-      return json(res, 200, { tools: TOOLS })
+      return json(res, 200, { tools: req.headers['x-december-access']==='read'?TOOLS.filter(t=>READ_TOOLS.has(t.name)):TOOLS })
     }
     // The manners that govern those tools, read live so a connected assistant
     // is never held to a copy older than the server it is writing to.
@@ -691,14 +721,15 @@ const server = createServer(async (req, res) => {
       return json(res, 200, await manners())
     }
     if (path === '/api/tool' && req.method === 'POST') {
+      if(req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']!==settle.organizerToken)return json(res,403,{error:'Organizer session expired'})
       const { name, arguments: args } = await readBody(req)
       try {
-        const result = await callTool(name, args || {}, settleStatus())
+        const result = await callTool(name, args || {}, {...settleStatus(),readOnly:req.headers['x-december-access']==='read',organizer:req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']===settle.organizerToken})
         if (process.env.DECEMBER_DEBUG) console.log('  tool', name)
         return json(res, 200, { result })
       } catch (e) {
         if (process.env.DECEMBER_DEBUG) console.log('  tool', name, 'FAILED:', e.message)
-        return json(res, 400, { error: e.message })
+        return json(res, e.statusCode || 400, { error: e.message,code:e.code,currentVersion:e.currentVersion })
       }
     }
 
@@ -729,6 +760,9 @@ export async function shutdown({ exit = true } = {}) {
   clearInterval(pocketTimer)
   clearInterval(newYearTimer)
   stopWatch()
+  settle.stop()
+  for (const stream of changeStreams) stream.end()
+  changeStreams.clear()
   const closed = new Promise((resolveClose) => server.close(resolveClose))
   let timeoutId
   const timeout = new Promise((resolveTimeout) => { timeoutId = setTimeout(resolveTimeout, 3000) })

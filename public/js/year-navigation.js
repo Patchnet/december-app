@@ -10,9 +10,10 @@ export function yearPosition(year, now = new Date()) {
   return {through,daysToDecember:Math.max(0,Math.ceil((december-now)/86400000)),daysLeft:Math.max(0,Math.ceil((end-now)/86400000))}
 }
 
-export function showYearSurface(wrap, html, direction = 1) {
+// Keep the reading frame stationary. Populate a page before revealing it;
+// calendar hydration must never become a second geometry transition.
+export function showYearSurface(wrap, html, direction = 1, prepare) {
   const previous = wrap.querySelector('.year-card, .month-card')
-  const oldHeight = previous?.getBoundingClientRect().height
   const frame = wrap.querySelector('.focus-wrap')
   if (previous && frame) {
     const template = document.createElement('template')
@@ -20,11 +21,15 @@ export function showYearSurface(wrap, html, direction = 1) {
     frame.replaceChildren(template.content.querySelector('.focus-card'))
   } else wrap.innerHTML = html
   const card = wrap.querySelector('.focus-card')
-  if (card && !window.matchMedia('(prefers-reduced-motion: reduce)').matches && card.animate) {
-    const height = card.getBoundingClientRect().height
-    card.animate([
-      {height:`${oldHeight || height}px`,opacity:previous ? .65 : 0,transform:`translate${previous ? 'X' : 'Y'}(${previous ? direction*16 : 10}px) scale(.99)`},
-      {height:`${height}px`,opacity:1,transform:'none'},
-    ],{duration:380,easing:'cubic-bezier(.22,1,.36,1)'})
-  }
+  prepare?.(card)
+  if (!card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  // The toolbar and surface stay anchored during navigation. Only the new
+  // reading content arrives, without scaling text or changing scroll geometry.
+  const targets = previous
+    ? [...card.children].filter(el => !el.matches('.year-toolbar, .month-toolbar'))
+    : [card]
+  for (const target of targets) target.animate?.([
+    { opacity: 0, transform: `translate${previous ? 'X' : 'Y'}(${previous ? direction * 6 : 6}px)` },
+    { opacity: 1, transform: 'none' },
+  ], { duration: 200, easing: 'cubic-bezier(.22,1,.36,1)' })
 }

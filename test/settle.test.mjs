@@ -36,6 +36,7 @@ if (mode === 'early-close') {
   process.exit(0)
 }
 
+
 const chunks = []
 process.stdin.on('data', (chunk) => chunks.push(chunk))
 process.stdin.on('end', () => {
@@ -101,6 +102,24 @@ test('the standing instructions use native retrieval only on an explicit ask and
   assert.match(prompt, /naming the source/)
 })
 
+test('the standing instructions keep rows as names and things in one place', () => {
+  const prompt = PROMPT()
+  // a row is a name; the sentence around it is a note, once
+  assert.match(prompt, /A ROW IS A NAME, NOT A SENTENCE/)
+  assert.match(prompt, /Never begin a row with the space's own name/)
+  assert.match(prompt, /goes in a note on the same space, once/)
+  // one thing lives in one place: parents never get copies, per-class means move
+  assert.match(prompt, /ONE THING LIVES IN ONE PLACE/)
+  assert.match(prompt, /never gets a copy/)
+  assert.match(prompt, /MOVE what belongs to each/)
+  assert.match(prompt, /A duplicate on two cards is a mistake/)
+  // a lone dated thing is a row, not a card that repeats it
+  assert.match(prompt, /A SPACE IS A SUBJECT, NOT A TASK/)
+  assert.match(prompt, /Never create a space whose name merely restates its only block/)
+  assert.match(prompt, /plain "Reminders" space/)
+  assert.match(prompt, /when the person gives it a second thing/)
+})
+
 test('a Codex settle adds December MCP without overriding native sandbox configuration', async (t) => {
   const fixture = await fakeCli(t)
   await runEnginePrompt('codex', 'sentinel', {
@@ -134,4 +153,30 @@ test('one-shot engine process failures stay bounded and controlled', async (t) =
     run('overflow', { maxBuffer: 128 }),
     (error) => error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
   )
+})
+
+test('capture passes avoid housekeeping while preserving ordered durable filing',()=>{
+ const prompt=PROMPT()
+ assert.match(prompt,/not a page-wide housekeeping review/)
+ assert.match(prompt,/Do not repair unrelated spaces/)
+ assert.match(prompt,/leave suggestions unchanged and skip the tool/)
+ assert.match(prompt,/otherwise skip it/)
+ assert.match(prompt,/Changes to the same block must stay ordered/)
+ assert.match(prompt,/never file in parallel with its writes/)
+ assert.match(prompt,/re-read on a conflict, uncertain result, or a new dependency/)
+ assert.match(prompt,/appliedOperations for interrupted captures/)
+})
+
+test('read-only engine calls use a restricted MCP connection and cancellation kills the subprocess',async t=>{
+  const fixture=await fakeCli(t)
+  for(const engine of ['claude','codex']) {
+    await runEnginePrompt(engine,'Synthetic question',{binary:process.execPath,prefixArgs:[fixture.script],env:{...process.env,FAKE_CLI_RECORD:fixture.record},readOnly:true,timeout:2000,maxBuffer:1024})
+    const {argv}=JSON.parse(await readFile(fixture.record,'utf8'))
+    if(engine==='codex')assert.ok(argv.some(a=>a.includes('DECEMBER_ACCESS="read"')))
+    else {assert.ok(argv.includes('--mcp-config'));assert.ok(argv.some(a=>a.includes('mcp.read.')))}
+  }
+  const controller=new AbortController()
+  const request=runEnginePrompt('claude','Synthetic question',{binary:process.execPath,prefixArgs:[fixture.script],env:{...process.env,FAKE_CLI_RECORD:fixture.record,FAKE_CLI_MODE:'timeout'},signal:controller.signal,timeout:2000,maxBuffer:1024})
+  controller.abort()
+  await assert.rejects(request,error=>error.name==='AbortError')
 })

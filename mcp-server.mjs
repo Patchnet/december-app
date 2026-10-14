@@ -11,12 +11,14 @@
 import { createInterface } from 'node:readline'
 
 const BASE = process.env.DECEMBER_URL || 'http://localhost:3008'
+const access=process.env.DECEMBER_ACCESS || 'external'
+const accessHeaders={'x-december-access':access,'x-december-organizer-token':process.env.DECEMBER_ORGANIZER_TOKEN || ''}
 const SERVER_INFO = { name: 'december', version: '0.1.0' }
 
 let toolsCache = null
 async function fetchTools() {
   if (toolsCache) return toolsCache
-  const res = await fetch(`${BASE}/api/tools`)
+  const res = await fetch(`${BASE}/api/tools`,{headers:accessHeaders})
   toolsCache = (await res.json()).tools
   return toolsCache
 }
@@ -42,7 +44,7 @@ async function forwardTool(name, args) {
   try {
     res = await fetch(`${BASE}/api/tool`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json',...accessHeaders },
       body: JSON.stringify({ name, arguments: args }),
     })
   } catch {

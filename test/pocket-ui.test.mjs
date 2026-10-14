@@ -140,7 +140,7 @@ test('every request has progress, fixed failure copy, and an actionable retry', 
 
 test('Pocket uses paired-device language and states the phone outcome', () => {
   const pocketMarkup = html.slice(html.indexOf('<section class="pocket-settings"'), html.indexOf('<section class="connection-settings"'))
-  assert.match(pocketMarkup, /Access your December page from your phone\. View the current page and send notes back to this computer\./)
+  assert.match(pocketMarkup, /Your page on your phone\. Send a thought back to this computer\./)
   assert.doesNotMatch(pocketMarkup, /account|sign[ -]?in/i)
   assert.match(pocket, /No phone paired/)
   assert.match(pocket, /Phone paired/)
@@ -163,8 +163,7 @@ test('the local server refuses anything that is not December reaching itself', (
   // Loopback name and our own port; a name pointed at some other port is
   // another server borrowing these answers.
   assert.match(server, /if \(!LOCAL_HOSTS\.has\(parsed\.hostname\)\) return true\s+return parsed\.port !== '' && parsed\.port !== String\(port\)/)
-  assert.match(server, /const OWN_FETCH_SITES = new Set\(\['same-origin', 'none'\]\)/)
-  assert.match(server, /if \(foreignFetchSite\(req\.headers\)\) \{/)
+  assert.match(server, /if \(foreignFetchSite\(req\.headers, req\.method\)\) \{/)
   // Acting on Pocket needs the capability; plain status does not.
   assert.match(server, /path\.startsWith\('\/api\/pocket\/'\) && req\.method === 'POST' && !capabilityMatches\(req\.headers\['x-december-capability'\]\)/)
   assert.match(server, /const POCKET_CAPABILITY = randomBytes\(32\)\.toString\('base64url'\)/)

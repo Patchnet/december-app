@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { weekCaret } from '../public/js/year-week-caret.js'
 import { beginYearRequest, invalidateYearRequest, currentYearRequest, yearPosition } from '../public/js/year-navigation.js'
+import { yearHead } from '../public/js/year-head.js'
 
 function harness() {
   const pending = [], painted = [], errors = []
@@ -11,14 +12,15 @@ function harness() {
   const page = {state:{year:{year:2026,month:8,months:Array.from({length:12},()=>({events:0})),weeks:[]},archivedYears:[]}}
   const context = {
     $:()=>wrap, esc:String, page, hooks:{}, document:{addEventListener(){}},
-    beginYearRequest, invalidateYearRequest, currentYearRequest, yearPosition, weekCaret,
+    beginYearRequest, invalidateYearRequest, currentYearRequest, yearPosition, weekCaret, yearHead,
     showYearSurface:(wrap,html)=>painted.push(html),mountSurface(){},
     liveGoals:()=>[],toast:message=>errors.push(message),
     api:()=>new Promise((resolve,reject)=>pending.push({resolve,reject})),
   }
   const source = readFileSync(new URL('../public/js/year.js',import.meta.url),'utf8')
     .replace(/^import .*$/gm,'').replace(/export \{[\s\S]*?\}\s*$/,'')
-  const app = runInNewContext(source+'\n;({buildYear,openMonth,openPastYear})',context)
+  const calendar = readFileSync(new URL('../public/js/year-calendar.js',import.meta.url),'utf8').replace(/^import .*$/gm,'').replaceAll('export function','function')
+  const app = runInNewContext(calendar+'\n'+source+'\n;({buildYear,openMonth,openPastYear})',context)
   return {app,page,pending,painted,errors}
 }
 const month = (month,label='A month')=>({month,label,weeks:[],spaces:[],total:0,ahead:0,overdue:0})
@@ -78,17 +80,21 @@ test('a dismissed archive request does not show a stale error',async()=>{
 })
 
 
-test('the drawn marker belongs to the current week and plays only on entering the current year',()=>{
+test('the hybrid figures and week strip preserve live and archived navigation',()=>{
   const h=harness()
   h.page.state.year.year=new Date().getFullYear()
   h.page.state.year.weeks=Array(53).fill(0)
   h.app.buildYear()
-  assert.equal((h.painted[0].match(/class="yr-week-caret"/g)||[]).length,1)
-  assert.match(h.painted[0],/class="w wnow"><svg class="yr-week-caret"/)
+  assert.match(h.painted[0],/class="figs yr-figs"/)
+  assert.match(h.painted[0],/class="yr-week-caret"/)
+  assert.match(h.painted[0],/class="yr-weeks"/)
+  assert.doesNotMatch(h.painted[0],/class="yr-progress"/)
   h.page.monthShown=`${h.page.state.year.year}-09`
   h.app.buildYear()
   assert.doesNotMatch(h.painted[1],/class="yr-week-caret"/)
   h.page.yearShown={...h.page.state.year,year:h.page.state.year.year-1}
   h.app.buildYear()
   assert.doesNotMatch(h.painted[2],/class="yr-week-caret"/)
+  assert.match(h.painted[2],/class="figs yr-figs"/)
+  assert.match(h.painted[2],/100%/)
 })

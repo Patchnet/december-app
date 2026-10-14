@@ -75,11 +75,30 @@ test('Custom reveals editing without saving a sentinel and saves an exact trimme
 
 test('the stable model input is enhanced into an accessible keyboard picker', () => {
   assert.match(html, /<input class="set-input" id="model-input"/)
-  assert.match(source, /document\.createElement\('select'\)/)
+  // December's own menu, not the system's: a button that says the current
+  // model and opens the shared popover. No <select> survives anywhere.
+  assert.match(source, /document\.createElement\('button'\)/)
+  assert.doesNotMatch(source, /createElement\('select'\)/)
+  assert.doesNotMatch(html, /<select/)
+  assert.match(source, /openMenu\(modelSelect, \{/)
   assert.match(source, /modelSelect\.setAttribute\('aria-labelledby', modelLabel\.id\)/)
   assert.match(source, /modelInput\.setAttribute\('aria-label', 'Custom model'\)/)
-  assert.match(source, /select:not\(:disabled\)/)
+  // the row says which model is in use without being opened
+  assert.match(source, /modelSelect\.textContent = state\.custom \? 'Custom…' : modelName\(state\.selected\)/)
   assert.doesNotMatch(`${html}\n${source}`, /<datalist|createElement\('datalist'\)/)
-  assert.match(css, /\.set-input:focus \{[^}]*box-shadow: var\(--focus-ring-field\)/)
+  // reachable and visibly focused by keyboard alone
+  assert.match(source, /button:not\(:disabled\), input:not\(:disabled\)/)
+  assert.match(css, /\.set-input:focus \{[^}]*border-bottom-color: var\(--accent-edge\)/)
+  assert.match(css, /\.set-select:focus-visible \{[^}]*border-bottom-color: var\(--accent-edge\)/)
+  assert.match(css, /\.menu-item:focus-visible \{[^}]*box-shadow: var\(--focus-ring-field\)/)
   assert.match(css, /\.model-picker \.set-input/)
+})
+
+test('the menu is walkable with the arrow keys and names the current choice', () => {
+  const menu = readFileSync(new URL('../public/js/menu.js', import.meta.url), 'utf8')
+  assert.match(menu, /ArrowDown/)
+  assert.match(menu, /ArrowUp/)
+  assert.match(menu, /role="menuitemradio" aria-checked=/)
+  // it opens through the one popover every December overlay uses
+  assert.match(menu, /import \{ openPop \} from '\.\/pop\.js'/)
 })

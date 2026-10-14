@@ -30,11 +30,15 @@ function celebrate(anchorEl) {
   setTimeout(() => layer.remove(), 1000)
 }
 
+// The class is `popping`, never `pop`: `.pop` is the popover's chrome (pop.js),
+// and an element wearing it took on a popover's padding, position and opacity.
 function pop(el) {
   if (reduced || !el) return
-  el.classList.remove('pop')
+  el.classList.remove('popping')
   void el.offsetWidth
-  el.classList.add('pop')
+  el.classList.add('popping')
+  clearTimeout(el._popT)
+  el._popT = setTimeout(() => el.classList.remove('popping'), 600)
 }
 
 /** Say what a number did, right where it happened, then let it go. */
@@ -69,9 +73,9 @@ function bump(el) {
 }
 
 /** The filing moment: a mote of light leaves your sentence and dissolves
-    into the space it landed in. A bright core, a soft halo, and echoes that
-    lag a beat behind it — blurred while it is moving fast, sharp as it
-    arrives. The page holds still while it flies. */
+    into the space it landed in. A bright core and a soft halo — blurred
+    while it is moving fast, sharp as it arrives. The page holds still
+    while it flies. */
 const inViewport = (r) => r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
 
 function travelDot(fromRect, toEl, then, hue) {
@@ -85,24 +89,25 @@ function travelDot(fromRect, toEl, then, hue) {
   const dx = to.left + 22 - x0
   const dy = to.top + 22 - y0
 
-  // one arc, walked by every part; blur tracks speed, so it smears through
-  // the fast middle and resolves at both ends
-  const arc = (blur) => [
-    { transform: 'translate(0, 0) scale(0.45)', opacity: 0, filter: `blur(${blur * 0.6}px)`, offset: 0 },
-    { transform: `translate(${dx * 0.16}px, ${dy * 0.16 - 26}px) scale(1.18)`, opacity: 1, filter: `blur(${blur * 1.6}px)`, offset: 0.26 },
-    { transform: `translate(${dx * 0.62}px, ${dy * 0.62 - 30}px) scale(1)`, opacity: 1, filter: `blur(${blur}px)`, offset: 0.66 },
-    { transform: `translate(${dx}px, ${dy}px) scale(0.4)`, opacity: 0, filter: `blur(${blur * 0.4}px)`, offset: 1 },
-  ]
+  // Sample a continuous cubic arc: the old four-point path changed
+  // direction at each keyframe, which read as little jolts in flight.
+  const duration = Math.round(Math.min(440, 280 + Math.hypot(dx, dy) * .16))
+  const arc = (blur) => Array.from({ length: 49 }, (_, i) => {
+    const t = i / 48, u = 1 - t
+    const x = 3*u*u*t*dx*.22 + 3*u*t*t*dx*.78 + t*t*t*dx
+    const y = 3*u*u*t*(-24) + 3*u*t*t*(dy-24) + t*t*t*dy
+    const swell = Math.sin(Math.PI*t)
+    return { transform: `translate(${x}px, ${y}px) scale(${.45 + swell*.65})`,
+      opacity: Math.min(1, swell*3), filter: `blur(${blur*(.5+swell)}px)`, offset: t }
+  })
 
   const parts = [
     { cls: 'mote-halo', blur: 7, delay: 0 },
     { cls: 'mote-core', blur: 1.2, delay: 0 },
-    { cls: 'mote-echo', blur: 2.4, delay: 80 },
-    { cls: 'mote-echo', blur: 2.4, delay: 145 },
-    { cls: 'mote-echo', blur: 2.4, delay: 200 },
   ]
 
   let lead = null
+  const flights = []
   for (const p of parts) {
     const el = document.createElement('div')
     el.className = `mote ${p.cls}`
@@ -114,19 +119,36 @@ function travelDot(fromRect, toEl, then, hue) {
     // out of the gate and reads as a snap". Filing should leave the sentence
     // gently and arrive gently; the blur already carries the speed.
     const anim = el.animate(arc(p.blur), {
-      duration: 880,
+      duration,
       delay: p.delay,
-      easing: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      easing: 'cubic-bezier(.4, 0, .2, 1)',
       fill: 'forwards',
     })
+    flights.push({ el, anim })
     anim.addEventListener('finish', () => el.remove())
     if (p.cls === 'mote-core') lead = anim
   }
 
-  lead.addEventListener('finish', () => {
-    bloom(x0 + dx, y0 + dy)
+  let completed = false
+  const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const finish = () => {
+    if (completed) return
+    completed = true
+    clearTimeout(fallback)
+    document.removeEventListener('visibilitychange', interrupt)
+    preference.removeEventListener('change', interrupt)
+    for (const { el, anim } of flights) { anim.cancel(); el.remove() }
+    // a card answers with its own swipe; only a goal, which has none, blooms
+    if (toEl.classList?.contains('goal') && !document.hidden && !preference.matches) bloom(x0 + dx, y0 + dy)
     then?.()
-  })
+  }
+  const interrupt = () => { if (document.hidden || preference.matches) finish() }
+  // A cancelled animation or a backgrounded tab must never strand soft ink.
+  const fallback = setTimeout(finish, duration + 250)
+  document.addEventListener('visibilitychange', interrupt)
+  preference.addEventListener('change', interrupt)
+  lead.addEventListener('finish', finish)
+  lead.addEventListener('cancel', finish)
 }
 
 /** Where the mote lands: a breath of light that swells and dissolves,
@@ -147,7 +169,7 @@ function washCard(el) {
   void el.offsetWidth
   el.classList.add('washed')
   clearTimeout(el._washT)
-  el._washT = setTimeout(() => el.classList.remove('washed'), 1000)
+  el._washT = setTimeout(() => el.classList.remove('washed'), 1200)
 }
 
 // A layout move owns only its own animation. Reflow interrupts it from the
@@ -162,18 +184,24 @@ layoutPreference.addEventListener?.('change',()=>{if(layoutPreference.matches)fi
 globalThis.document?.addEventListener('visibilitychange',()=>{if(document.hidden)finishLayoutMoves()})
 
 /** FLIP: preserve where things are now, then glide to their new layout. */
-function withFlip(fn) {
+let layoutDepth = 0
+function withFlip(fn, prior = null) {
+  // Action handlers can render through another FLIP boundary. One outer
+  // transaction must own the measurements, or the two transforms compound.
+  if (layoutDepth) return fn()
   if(reduced || document.hidden){finishLayoutMoves();return fn()}
-  const before=new Map()
-  for(const el of document.querySelectorAll('#spaces .space, #rail, #resting'))before.set(el,el.getBoundingClientRect())
+  const before=prior || new Map()
+  if (!prior) for(const el of document.querySelectorAll('#spaces .space, #rail, #resting'))before.set(el,el.getBoundingClientRect())
   const rowsBefore=new Map()
-  for(const row of document.querySelectorAll('#spaces .row[data-item]'))rowsBefore.set(`${row.dataset.block}/${row.dataset.item}`,row.getBoundingClientRect())
+  if (!prior) for(const row of document.querySelectorAll('#spaces .row[data-item]'))rowsBefore.set(`${row.dataset.block}/${row.dataset.item}`,row.getBoundingClientRect())
   // Measure the displayed position before releasing interrupted transforms.
   finishLayoutMoves()
-  const result=fn()
+  let result
+  layoutDepth++
+  try { result=fn() } finally { layoutDepth-- }
   const moves=[],parentMoves=new Map()
   for(const [el,a] of before) {
-    if(!el.isConnected || (el.classList.contains('fresh') && !el.classList.contains('settled')))continue
+    if(!el.isConnected || el.classList.contains('leaving') || (el.classList.contains('fresh') && !el.classList.contains('settled')))continue
     const b=el.getBoundingClientRect(),dx=a.left-b.left,dy=a.top-b.top
     if(Math.abs(dx)>1 || Math.abs(dy)>1){moves.push({el,dx,dy,top:b.top});parentMoves.set(el,{dx,dy})}
   }
@@ -185,12 +213,11 @@ function withFlip(fn) {
     const dx=a.left-b.left-(parent?.dx || 0),dy=a.top-b.top-(parent?.dy || 0)
     if(Math.abs(dx)>1 || Math.abs(dy)>1)moves.push({el:row,dx,dy,top:b.top})
   }
-  const ease=getComputedStyle(document.documentElement).getPropertyValue('--ease-settle').trim() || 'cubic-bezier(.32,.72,0,1)'
-  moves.sort((a,b)=>a.top-b.top).forEach((move,i)=>{
+  moves.sort((a,b)=>a.top-b.top).forEach((move)=>{
     if(!move.el.animate)return
     const animation=move.el.animate([
       {transform:`translate(${move.dx}px, ${move.dy}px)`},{transform:'translate(0, 0)'},
-    ],{duration:Math.round(Math.min(460,250+Math.hypot(move.dx,move.dy)*.55)),delay:Math.min(i*14,110),easing:ease,fill:'both'})
+    ],{duration:Math.round(Math.min(300,180+Math.hypot(move.dx,move.dy)*.2)),easing:'cubic-bezier(.22,.61,.36,1)',fill:'both'})
     layoutMoves.set(move.el,animation)
     animation.onfinish=()=>{
       if(layoutMoves.get(move.el)!==animation)return

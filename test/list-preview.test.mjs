@@ -84,10 +84,10 @@ test('completed cards show a receipt and retain an actionable full view', async 
     const {page}=await import('../public/js/session.js');page.state={sources:{}}
     const reminder={id:'r',type:'reminder',text:'Dinner with friends',done:true,when:'2026-09-07'}
     const space={id:'s',name:'Dinner',blocks:[reminder]}
-    assert.match(spaceInner(space),/Completed · Dinner with friends/)
+    assert.match(spaceInner(space),/Done · Dinner with friends/)
     assert.doesNotMatch(spaceInner(space),/nothing open/)
     assert.match(spaceInner(space,true),/aria-checked="true"/)
-    space.blocks=[];assert.match(spaceInner(space),/No items yet/)
+    space.blocks=[];assert.match(spaceInner(space),/Nothing here yet/)
   } finally {globalThis.window=priorWindow}
 })
 
@@ -104,4 +104,59 @@ test('single-task card text is outside its completion checkbox', async () => {
     assert.match(html,/<\/button>\s*<span class="solo-text">Call plumber/)
     assert.doesNotMatch(html,/<button[^>]*class="solo /)
   } finally {globalThis.window=priorWindow}
+})
+
+test('a compact card past eight open rows shows six and how many more; the opened card shows all', async () => {
+  const priorWindow = globalThis.window
+  globalThis.window = {matchMedia:()=>({matches:true})}
+  try {
+    const {spaceInner} = await import('../public/js/blocks.js')
+    const {page} = await import('../public/js/session.js')
+    page.state = {sources:{}}
+    const list = {id:'l',type:'list',title:'',items:Array.from({length:7},(_,i)=>({id:`i${i}`,text:`Item ${i}`,done:false})),entities:[]}
+    const rem = (i) => ({id:`r${i}`,type:'reminder',title:'',text:`Call ${i}`,done:false,when:'2026-10-01',entities:[]})
+    const sp = {id:'s',name:'Movers',updatedAt:new Date().toISOString(),blocks:[list,rem(1),rem(2),rem(3)]}
+    const compact = spaceInner(sp)
+    assert.equal((compact.match(/role="checkbox"/g)||[]).length,6)
+    assert.match(compact,/class="fold-more">4 more</)
+    const full = spaceInner(sp,true)
+    assert.equal((full.match(/role="checkbox"/g)||[]).length,10)
+    assert.doesNotMatch(full,/fold-more/)
+    // eight rows is not heavy: nothing folds
+    const light = {...sp,blocks:[{...list,items:list.items.slice(0,5)},rem(1),rem(2),rem(3)]}
+    assert.doesNotMatch(spaceInner(light),/fold-more/)
+    assert.equal((spaceInner(light).match(/role="checkbox"/g)||[]).length,8)
+  } finally {
+    if(priorWindow===undefined)delete globalThis.window
+    else globalThis.window=priorWindow
+  }
+})
+
+test('completed list rows expand in place, preserve disclosure state, and remain intact in full view', async () => {
+  const priorWindow = globalThis.window
+  globalThis.window = { matchMedia: () => ({ matches: true }) }
+  try {
+    const { spaceInner } = await import('../public/js/blocks.js')
+    const { page } = await import('../public/js/session.js')
+    page.state = { sources: {} }
+    const list = { id: 'completed-list-test', type: 'list', title: 'Groceries', items: [
+      { id: 'one', text: 'Bread', done: false },
+      { id: 'two', text: 'Milk', done: true, doneAt: '2026-09-19' },
+      { id: 'three', text: 'Apples', done: true, doneAt: '2026-09-18' },
+    ] }
+    const space = { id: 'g', name: 'Groceries', blocks: [list] }
+    const original = JSON.stringify(space)
+    const compact = spaceInner(space)
+    assert.match(compact, /2 completed/)
+    assert.match(compact, /data-list-preview="completed:completed-list-test">/)
+    assert.equal((compact.match(/role="checkbox"/g) || []).length, 3)
+    assert.ok(compact.indexOf('Milk') > compact.indexOf('<details'))
+    page.expandedLists.add('completed:completed-list-test')
+    assert.match(spaceInner(space), /data-list-preview="completed:completed-list-test" open/)
+    const full = spaceInner(space, true)
+    assert.doesNotMatch(full, /class="list-preview completed-list"/)
+    assert.equal((full.match(/role="checkbox"/g) || []).length, 3)
+    assert.equal(JSON.stringify(space), original)
+    page.expandedLists.delete('completed:completed-list-test')
+  } finally { globalThis.window = priorWindow }
 })

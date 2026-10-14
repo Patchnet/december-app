@@ -27,16 +27,15 @@ function harness(reduced=false) {
   }
   doc.createElementNS=()=>new Node()
   const source=readFileSync(new URL('../public/js/working-mark.js',import.meta.url),'utf8').replace(/export \{[^}]+\}/,'')
-  const api=runInNewContext(source+'\n;({windMark,unwind,stopWind})',{document:doc,window:{matchMedia:()=>({matches:reduced})},requestAnimationFrame:fn=>frames.push(fn)})
+  const api=runInNewContext(source+'\n;({windMark,unwind,stopWind})',{document:doc,window:{matchMedia:()=>({matches:reduced})},requestAnimationFrame:fn=>frames.push(fn),getComputedStyle:()=>({opacity:'0.8',transform:'matrix(1,0,0,1,0,0)',strokeDashoffset:'-24'})})
   return {api,frames,animations,doc,events}
 }
 
 test('yarn transitions into its loop, pauses when hidden, and releases all animations on removal',()=>{
   const h=harness(),mark=h.api.windMark()
   h.frames.shift()()
-  const entrance=h.animations.find(a=>a.options.duration===460)
-  entrance.finish()
-  assert.equal(entrance.cancelled,true)
+  assert.ok(h.animations.every(a => !a.options.delay && !a.options.easing.includes('steps')))
+  assert.ok(h.animations[0].frames[0].opacity > 0, 'visible immediately')
   const loop=h.animations.find(a=>a.options.iterations===Infinity)
   assert.ok(loop)
   h.doc.hidden=true;h.events.visibilitychange()
@@ -50,10 +49,12 @@ test('yarn transitions into its loop, pauses when hidden, and releases all anima
 
 test('unwind stops the chase and removes the mark; reduced motion is static',()=>{
   const h=harness(),mark=h.api.windMark()
-  h.frames.shift()();h.animations.find(a=>a.options.duration===460).finish()
+  h.frames.shift()()
   const loop=h.animations.find(a=>a.options.iterations===Infinity)
   h.api.unwind(mark)
   assert.equal(loop.cancelled,true)
+  assert.equal(h.animations.at(-2).frames[0].strokeDashoffset, -24, 'exit keeps the current thread position')
+  assert.equal(h.animations.at(-1).frames[0].opacity, '0.8')
   h.animations.at(-1).finish()
   assert.equal(mark.isConnected,false)
   const quiet=harness(true),still=quiet.api.windMark()

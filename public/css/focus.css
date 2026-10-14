@@ -38,14 +38,16 @@
   display: grid;
   place-items: center;
   padding: 8vh var(--space-7);
-  overflow: hidden;
+  overflow: auto;
   cursor: pointer;
 }
 
 .task-focus-card {
   cursor: auto;
   width: 100%;
-  max-width: 620px;
+  max-width: 560px;
+  margin: auto;
+  padding: 28px 20px;
   text-align: center;
   outline: none;
   animation: task-focus-rise var(--m-struct) var(--ease-expo) both;
@@ -57,7 +59,7 @@
 }
 
 .task-focus-space {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 14px;
   color: var(--text-3);
   font-size: var(--fs-small);
 }
@@ -65,32 +67,42 @@
 /* the task itself, borrowing .row only so a double-click still rewords it */
 .row.task-focus-task {
   display: block;
-  width: auto;
+  width: 100%;
+  margin: 0;
   padding: 0;
+  text-align: center;
   cursor: text;
   color: var(--text-1);
-  font-size: clamp(26px, 5vw, var(--fs-h3));
+  font-family: var(--font-serif);
+  font-size: clamp(28px, 4.5vw, 40px);
+  text-wrap: balance;
   line-height: var(--lh-h3);
   letter-spacing: var(--ls-h3);
   overflow-wrap: anywhere;
 }
-.row.task-focus-task > .row-text { flex: none; }
+.row.task-focus-task > .row-text { display: block; flex: none; width: 100%; text-align: center; }
 
 /* Counting up, never down, and never loudly: it is there if you look at it
    and it is not asking for anything. */
 .task-focus-clock {
-  margin: var(--space-8) 0 0;
+  margin: 30px 0 0;
   color: var(--text-2);
-  font-size: var(--fs-body);
+  font-size: clamp(40px, 8vw, 56px);
+  font-weight: 300;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.04em;
 }
 
 .task-focus-hint {
-  margin: var(--space-4) 0 0;
+  margin: 24px 0 0;
   color: var(--text-3);
   font-size: var(--fs-small);
 }
+
+/* Let the page come back as gently as it stepped away. The departing
+   surface is inert immediately; this never delays ending a sitting. */
+.task-focus.leaving { pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .task-focus-backdrop,
@@ -99,5 +111,17 @@
 
 @media (max-width: 720px) {
   .task-focus-wrap { padding: 6vh var(--space-6); }
-  .task-focus-clock { margin-top: var(--space-7); }
+  .task-focus-clock { margin-top: 26px; }
+}
+
+.task-focus-elapsed { position: relative; display: inline-block; }
+.task-focus-elapsed::before {
+  content: ''; position: absolute; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--accent);
+  left: -16px; top: 50%; transform: translateY(-50%);
+}
+.task-focus-hint kbd {
+  font: inherit; font-size: 11px; padding: 2px 5px;
+  border: 1px solid var(--line-2); border-radius: 4px;
+  margin-right: 5px; color: var(--text-2);
 }
