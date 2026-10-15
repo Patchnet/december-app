@@ -47,6 +47,7 @@ const PROMPTS = {
   evening: ['What did you get done?', 'What happened today?', "What's on your mind?", 'Anything to remember?'],
 }
 function nextPrompt() {
+  if (document.documentElement.dataset.mode === 'board') return // the line speaks to the agent
   const h = new Date().getHours()
   const pool = PROMPTS[h < 12 ? 'morning' : h < 17 ? 'day' : 'evening']
   let p

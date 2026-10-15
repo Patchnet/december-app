@@ -1,0 +1,254 @@
+/* Board mode: the hand-off edition and the boards sheet (board-edition.js).
+   Both are December's own sheet (.focus-backdrop, .focus-wrap, .focus-card)
+   with a front page inside. Every rule hangs off a be-* class that only
+   board-edition.js creates, so page mode never changes. */
+
+/* -------------------------------------------------------------- the sheet */
+
+/* the paper is paper: opaque, so the page behind stays behind the backdrop */
+.focus-card.be-card {
+  max-width: 1080px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  padding: 18px 30px 30px;
+  background: var(--elevated);
+  /* the scrollbar's room on both edges, so the masthead sits on the sheet's centre */
+  scrollbar-gutter: stable both-edges;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* it arrives the way December's sheets do, with a little carry past its
+     rest before it settles; it leaves on the rung below */
+  animation: be-in var(--m-enter) var(--ease-pop) both;
+}
+.focus-card.be-card[data-kind="boards"] { max-width: 620px; }
+.be-card:focus { outline: none; }
+@keyframes be-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.be-sheet.be-leaving { pointer-events: none; }
+.be-sheet.be-leaving .be-card { animation: be-out var(--m-depth) var(--ease-out) both; }
+.be-sheet.be-leaving .be-backdrop { animation: be-fade var(--m-depth) var(--ease-out) both; }
+@keyframes be-out { to { opacity: 0; transform: translateY(8px) scale(0.985); } }
+@keyframes be-fade { from { opacity: 1; } to { opacity: 0; } }
+/* opened from the keyboard, or with motion reduced: it is simply there */
+.be-sheet.be-still .be-card,
+.be-sheet.be-still .be-backdrop { animation: none; }
+
+/* the way back, as the year's sheet has it: quiet, at the top */
+.be-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 32px; margin: 0 -14px 4px 0;
+}
+.be-toolbar .mo-back { margin: 0 0 0 -8px; min-height: 32px; }
+.be-none { margin: 40px 0 30px; text-align: center; font: 400 22px/1.4 var(--font-serif); color: var(--text-2); }
+.be-retry {
+  padding: 4px 6px; border: 0; border-radius: var(--radius-sm); background: none; cursor: pointer;
+  font: 400 14px var(--font-sans); color: var(--text-3);
+  transition: color var(--m-ui) var(--ease);
+}
+.be-retry:hover { color: var(--text-1); }
+.be-retry:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+
+/* ------------------------------------------------------ the front page */
+
+.be-head {
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 18px;
+}
+.be-mast {
+  margin: 0; min-width: 0; color: var(--text-1); overflow-wrap: anywhere;
+  font: 400 22px/1.25 var(--font-serif); letter-spacing: -0.015em;
+}
+.be-folio { font: 12px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums lining-nums; }
+.be-hl {
+  margin: 14px 0 18px; max-width: 24ch; color: var(--text-1);
+  font: 400 42px/1.08 var(--font-serif); letter-spacing: -0.024em; text-wrap: balance;
+}
+.be-hl[data-len="long"] { max-width: 34ch; font-size: 32px; line-height: 1.12; }
+.be-hl[data-len="longer"] { max-width: 52ch; font-size: 24px; line-height: 1.3; letter-spacing: -0.012em; text-wrap: pretty; }
+.be-hl:focus { outline: none; }
+.be-card .figs.be-figs { flex-wrap: wrap; gap: 10px 32px; margin: 0 0 22px; }
+.be-card .be-figs .fig { padding-top: 0; border-top: 0; }
+/* figures in the UI face, lining and tabular, as on the board's stage */
+.be-card .be-figs .fig b {
+  font: 400 22px/1.15 var(--font-sans); letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.be-card .be-figs .fig b small { font-size: 13px; letter-spacing: 0; color: var(--text-3); }
+
+/* One column per workstream, hairlines between. The grid runs a gutter past
+   the text on each side and is clipped back to it, so the first column of a
+   row never draws a rule on its left, however many columns a row holds. */
+.be-cols {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 -20px; clip-path: inset(-1px 20px 0);
+}
+.be-cols[data-cols="1"] { grid-template-columns: minmax(0, 1fr); }
+.be-cols[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.be-cols[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.be-col {
+  min-width: 0; padding: 16px 20px 14px;
+  box-shadow: -1px 0 0 var(--line-1), 0 -1px 0 var(--line-1);
+}
+.be-cols[data-cols="1"] .be-rows { max-width: 620px; }
+.be-card .be-col > .space-name { margin: 0 0 10px; font-size: 19px; line-height: 1.25; }
+.be-card .be-col > .space-name.be-colhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-right: 0; }
+.be-colname { min-width: 0; overflow-wrap: anywhere; }
+.be-count {
+  flex: none; font: 400 13px/1 var(--font-sans); letter-spacing: 0; color: var(--text-3);
+  font-variant-numeric: tabular-nums lining-nums; white-space: nowrap;
+}
+.be-count b { font-weight: 500; color: var(--text-1); }
+.be-count.all b { font-weight: 400; color: var(--text-3); }
+
+/* rows are the record here, not controls: no hand, no give */
+.be-card .be-row { cursor: default; }
+.be-card .be-row:not(.done):hover .tick { border-color: var(--line-2); }
+.be-card .be-row:active .tick { transform: none; }
+/* in the record, done is the news: set in ink, not struck through */
+.be-card .be-row.done .row-text { color: var(--text-1); opacity: 1; text-decoration: none; }
+.be-card .be-row:not(.done) .row-text { color: var(--text-2); }
+.be-card .be-row[data-state="cancelled"] .row-text { color: var(--text-3); }
+.be-card .be-row:not(.done) > .row-text:hover { text-decoration-line: none; }
+/* a fact under a row: its proof, why it stopped */
+.be-sub {
+  margin-top: -3px; padding: 0 0 5px 28px;
+  font: 12px/1.5 var(--font-sans); color: var(--text-2); overflow-wrap: anywhere;
+}
+.be-sub span { color: var(--text-3); }
+
+/* the yarn, where work is in progress: a row's tick slot, a board's line */
+.be-slot { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; display: grid; place-items: center; }
+.be-yarn { flex: 0 0 20px; width: 20px; height: 20px; margin-top: 1px; display: grid; place-items: center; }
+.be-slot .wind, .be-yarn .wind { display: block; width: 18px; height: 18px; overflow: visible; }
+.be-yarn .wind { width: 20px; height: 20px; }
+.be-slot .wind path, .be-yarn .wind path {
+  fill: none; stroke: var(--text-3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round;
+}
+.be-slot .wind .wind-underlay, .be-yarn .wind .wind-underlay { opacity: 0.2; }
+
+.be-foot {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 40px;
+  padding-top: 26px;
+}
+.be-card .be-foot .space-name { margin: 0 0 12px; font-size: 19px; line-height: 1.25; }
+/* the one red thing: what waits on you, said in words */
+.be-card .be-foot .space-name.be-needs, .be-card .be-tag.be-needs { color: var(--bad-ink); }
+.be-ask + .be-ask { margin-top: 16px; }
+.be-card .be-ask .ask-q { margin-bottom: 8px; font-size: 16px; animation: none; }
+.be-card .be-ask .chips { margin: 0; }
+.be-card .chip-btn { animation: none; }
+.be-ask { transition: opacity var(--m-depth) var(--ease-out); }
+.be-ask.be-going { opacity: 0; }
+.be-err { margin: 6px 0 0; font-size: 12px; color: var(--text-3); }
+.be-readlist { list-style: none; margin: 0; padding: 0; counter-reset: be-read; }
+.be-readlist li {
+  counter-increment: be-read; display: grid; grid-template-columns: 22px minmax(0, 1fr);
+  padding: 4px 0; font: 14px/1.45 var(--font-sans);
+}
+.be-readlist li::before {
+  content: counter(be-read); grid-row: 1 / span 2;
+  font-size: 12px; line-height: 20px; color: var(--text-3); font-variant-numeric: tabular-nums lining-nums;
+}
+.be-readlist b { font-weight: 400; color: var(--text-1); overflow-wrap: anywhere; }
+.be-readlist span { font-size: 12px; color: var(--text-3); }
+
+.be-end {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px;
+  margin-top: 22px; font: 12px/1.5 var(--font-sans); color: var(--text-3);
+}
+.be-drift { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.be-drift span { margin-left: 6px; color: var(--text-3); }
+.be-stamp { margin: 0 0 0 auto; color: var(--text-3); }
+
+.be-past { margin-top: 30px; }
+.be-past .block-title { margin-bottom: 4px; }
+.be-past-row .next-when { flex: 0 0 3.4em; font-variant-numeric: tabular-nums; }
+.be-past-row .row-text { color: var(--text-2); }
+.be-past-row:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.be-past-row[aria-current] { cursor: default; }
+.be-past-row[aria-current] .row-text { color: var(--text-1); }
+@media (hover: hover) {
+  /* hover is tone, never position */
+  .be-past-row:not([aria-current]):hover .row-text { color: var(--accent-ink); }
+}
+
+/* ------------------------------------------------------------ the boards */
+
+.be-card[data-kind="boards"] .be-head { margin-bottom: 18px; }
+.be-entry { padding: 16px 0 18px; border-top: 1px solid var(--line-1); }
+.be-entry:first-child { padding-top: 0; border-top: 0; }
+.be-entry[data-be-open] { cursor: pointer; }
+.be-entry-name {
+  margin: 0 0 6px; color: var(--text-1); overflow-wrap: anywhere;
+  font: 400 19px/1.25 var(--font-serif); letter-spacing: -0.01em;
+}
+.be-entry-name a {
+  color: inherit; text-decoration: none; border-radius: var(--radius-sm);
+  transition: color var(--m-ui) var(--ease);
+}
+.be-entry-name a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
+.be-tag {
+  margin-left: 10px; font: 400 12px/1.4 var(--font-sans); letter-spacing: 0;
+  color: var(--text-3); vertical-align: middle; white-space: nowrap;
+}
+.be-bq { font: 15px/1.45 var(--font-serif); color: var(--text-1); text-wrap: pretty; }
+.be-card .be-entry .chips { margin: 8px 0 0; }
+.be-entry .be-ask + .be-ask { margin-top: 14px; }
+.be-chip-link { display: inline-flex; align-items: center; text-decoration: none; }
+.be-doing { display: flex; gap: 10px; align-items: flex-start; }
+.be-bline { min-width: 0; font: 15px/1.45 var(--font-serif); color: var(--text-1); overflow-wrap: anywhere; }
+.be-card .be-entry .shape { margin: 4px 0 0; animation: none; }
+.be-rest { padding-top: 10px; border-top: 1px solid var(--line-1); }
+.be-rest:first-child { padding-top: 0; border-top: 0; }
+.be-idle { gap: 12px; color: inherit; text-decoration: none; }
+.be-idle .row-text { flex: 0 1 auto; color: var(--text-1); }
+.be-idle .row-text .be-tag { margin-left: 8px; }
+.be-idle-hl {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: 12.5px; color: var(--text-3);
+}
+.be-idle .today-sub { margin-left: 0; }
+.be-idle[aria-current] { cursor: default; }
+a.be-idle:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+@media (hover: hover) {
+  .be-entry[data-be-open]:hover .be-entry-name a,
+  a.be-idle:hover .be-idle-name { color: var(--accent-ink); }
+}
+.be-idle-name { transition: color var(--m-ui) var(--ease); }
+
+/* ------------------------------------------------------------ narrower */
+
+@media (max-width: 900px) {
+  .be-cols[data-cols="3"], .be-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .be-cols[data-cols="1"] { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  /* December's own phone inset for its sheets, held here because the base
+     .focus-wrap rule loads after the one that sets it */
+  .focus-wrap.be-wrap { padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
+  .focus-card.be-card { max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 12px 18px 22px; border-radius: var(--radius-lg); scrollbar-gutter: auto; }
+  .be-toolbar { margin-right: -8px; }
+  .be-hl { margin-top: 18px; font-size: 28px; }
+  .be-hl[data-len="long"] { font-size: 24px; }
+  .be-hl[data-len="longer"] { font-size: 20px; }
+  .be-foot { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .be-drift span { display: block; margin-left: 0; }
+  .be-stamp { margin-left: 0; }
+  .be-entry-name .be-tag { margin-left: 8px; }
+}
+/* phone: the columns stack, one workstream under the next */
+@media (max-width: 600px) {
+  .be-cols, .be-cols[data-cols] { grid-template-columns: minmax(0, 1fr); margin: 0; clip-path: none; }
+  .be-col { padding: 14px 0 10px; box-shadow: 0 -1px 0 var(--line-1); }
+  .be-card .figs.be-figs { gap: 10px 24px; }
+  /* an idle board keeps its name and day on one line, its headline under */
+  .be-idle { flex-wrap: wrap; row-gap: 0; }
+  .be-idle .row-text { flex: 1 1 auto; }
+  .be-idle-hl { order: 3; flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-card.be-card, .be-sheet .be-backdrop { animation: none; }
+  .be-ask, .be-entry-name a, .be-idle-name, .be-retry { transition: none; }
+}

@@ -11,6 +11,7 @@ import { renderGoals } from './goals.js'
 import { paintLetter } from './about.js'
 import { renderToday } from './attention.js'
 import { cardHeld, completionPending } from './completion-motion.js'
+import { paintBoard, paintBoardMoment } from './board.js'
 
 export function renderStage() {
   const stage = $('#stage')
@@ -21,17 +22,20 @@ export function renderStage() {
   try { early = Number(localStorage.getItem('dec-files') || 0) < 5 } catch {}
   stage.querySelector('.stage-foot')?.toggleAttribute('hidden', !early)
   const composing = !!page.field.value.trim()
+  // on a board a note is not filed by December: it waits for the agent at
+  // the line's end, and the stage keeps showing the work
+  const board = !!page.state.board
   const mode = composing
     ? 'composing'
     : page.state.ask
       ? 'asking'
-      : page.retainingCaptures?.length || page.state.captures.length || page.queuedTexts.length || page.state.settle.running || page.flying > 0
+      : !board && (page.retainingCaptures?.length || page.state.captures.length || page.queuedTexts.length || page.state.settle.running || page.flying > 0)
         ? 'settling'
         : 'idle'
   if (stage.dataset.mode !== mode) stage.dataset.mode = mode
   // Keep work in the same reserved slot while composing; moving it below
   // the moment used to push the entire grid down and back on every submission.
-  const busy = !!(page.retainingCaptures?.length || page.state.captures.length || page.queuedTexts.length || page.state.settle.running || page.flying)
+  const busy = !board && !!(page.retainingCaptures?.length || page.state.captures.length || page.queuedTexts.length || page.state.settle.running || page.flying)
   // A clarification owns this slot; its pending capture is not another
   // visible working pane. Keep compact progress only while composing.
   const compact = busy && mode === 'composing'
@@ -55,23 +59,25 @@ import { measureCapturePaint } from './capture-timing.js'
 
 export function render() {
   paintLetter()
-  renderYearline()
-  $('#shell').classList.toggle('settling', page.state.captures.length > 0)
+  const board = paintBoard()
+  if (!board) renderYearline()
+  $('#shell').classList.toggle('settling', !board && page.state.captures.length > 0)
   // the run gathers this poll's destinations; their new content waits for
   // the one landing at the end of the pass
   const held = collectRun()
   withFlip(() => {
-    renderGoals()
+    if (!board) renderGoals()
     renderSpaces(held)
     renderInbox()
     renderActivity()
     // a completion changes the day's line in the same breath as its card;
     // a poll landing inside the moment must not say it first
-    if (!completionPending()) renderToday()
+    if (!board && !completionPending()) renderToday()
     renderCarryover()
     renderCarryoverNudge()
     renderSuggestions()
     renderAsk()
+    if (board) paintBoardMoment()
     renderRail()
   })
   releaseHeld()

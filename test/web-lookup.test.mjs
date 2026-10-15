@@ -293,7 +293,7 @@ async function adapter(t) {
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const child = spawn(process.execPath, [join(ROOT, 'mcp-server.mjs')], {
-    env: { ...process.env, DECEMBER_URL: `http://127.0.0.1:${server.address().port}` },
+    env: { ...process.env, DECEMBER_MODE: 'page', DECEMBER_URL: `http://127.0.0.1:${server.address().port}` },
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   const pending = new Map()
