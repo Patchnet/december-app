@@ -55,32 +55,11 @@ function paintDateline() {
   el.innerHTML = `<span class="board-part">${esc(board.repo)}<span class="board-sep"> ·</span></span> <span class="board-part">${esc(board.branch)}</span>${clock ? `<span class="til board-clock">${esc(clock)}</span>` : ''}`
 }
 
-/** Something waits on the person: the tab says so, with a dot and a red mark. */
-let favicon = null
+/** Something waits on the person: the tab says so, in words. */
 function paintTab() {
   const waiting = !!page.state.ask || rows().some((r) => stateOf(r.item) === 'waiting')
-  const title = `${waiting ? '● ' : ''}${board.repo} · ${board.branch}`
+  const title = `${waiting ? 'Needs you · ' : ''}${board.repo} · ${board.branch}`
   if (document.title !== title) document.title = title
-  const link = document.querySelector('link[rel="icon"][sizes="32x32"]')
-  if (!link) return
-  favicon ||= { plain: link.href, dotted: null }
-  if (waiting && !favicon.dotted) {
-    const img = new Image()
-    img.onload = () => {
-      const c = document.createElement('canvas')
-      c.width = c.height = 32
-      const g = c.getContext('2d')
-      g.drawImage(img, 0, 0, 32, 32)
-      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bad-ink').trim() || '#c4412b'
-      g.beginPath(); g.arc(25, 7, 6, 0, Math.PI * 2); g.fill()
-      favicon.dotted = c.toDataURL('image/png')
-      paintTab()
-    }
-    img.src = favicon.plain
-    return
-  }
-  const want = waiting && favicon.dotted ? favicon.dotted : favicon.plain
-  if (link.href !== want) link.href = want
 }
 
 /** Once, on entering board mode: the timeline's host, the boards door, the dateline's door. */
@@ -126,7 +105,7 @@ export function paintBoardMoment() {
   const lead = doing
     ? `<div class="today-item board-now"><span class="board-yarn" aria-hidden="true"></span><span class="board-task">${esc(doing.item.text)}</span>${agents() > 1 && doing.item.session ? `<span class="space-tag">${esc(doing.item.session)}</span>` : ''}<span class="sr-only">, in progress</span></div>`
     : next ? `<div class="today-item board-now"><span class="next-when">next</span><span class="board-task quiet">${esc(next.item.text)}</span></div>` : ''
-  const doors = counted.length ? `<div class="shape">${waiting ? `<button type="button" class="shape-part overdue" data-board-door="waiting">${waiting} waiting on you</button>` : ''}<span class="shape-part quiet">${open} open</span><span class="shape-part quiet">${done.length} done</span>${s ? `<span class="shape-part stamp quiet">changed ${time(s.lastActivityAt)}</span>` : ''}</div>` : ''
+  const doors = counted.length ? `<div class="shape">${waiting ? `<button type="button" class="shape-part board-needs" data-board-door="waiting">${waiting} waiting on you</button>` : ''}<span class="shape-part quiet">${open} open</span><span class="shape-part quiet">${done.length} done</span>${s ? `<span class="shape-part stamp quiet">changed ${time(s.lastActivityAt)}</span>` : ''}</div>` : ''
   const key = `${lead}|${doors}`
   if (today.dataset.board !== key) {
     for (const w of today.querySelectorAll('.wind')) stopWind(w)

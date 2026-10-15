@@ -73,11 +73,15 @@ html[data-mode="board"] .board-fig .goal-count {
 }
 html[data-mode="board"] .board-fig .goal-count b { font-weight: 450; }
 html[data-mode="board"] .board-fig .goal-meter { width: 132px; }
-html[data-mode="board"] .board-fig .board-outside { color: var(--text-2); letter-spacing: 0.01em; font-size: 11px; }
+html[data-mode="board"] .board-fig .board-outside { color: var(--text-2); letter-spacing: 0.01em; font-size: 12px; }
+
+/* what waits on the person is said in red words, never a dot */
+html[data-mode="board"] .shape-part.board-needs { color: var(--bad-ink); }
+html[data-mode="board"] .shape-part.board-needs:hover { color: var(--text-1); }
 
 /* an approval reads with what it would move */
 html[data-mode="board"] .board-ask-facts {
-  margin: 2px 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--text-3);
+  margin: 2px 0 10px; font-size: 12px; line-height: 1.5; color: var(--text-3);
   font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
 }
 /* an approval is answered, never skipped: the line under it takes a reply */
@@ -132,7 +136,7 @@ html[data-mode="board"] .row > .row-meta .when-sub { opacity: 1; }
 /* the receipt under a closed task */
 html[data-mode="board"] .row > .row-sub {
   flex: 1 0 100%; padding-left: calc(18px + var(--space-3)); margin-top: -3px;
-  font: 11.5px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums;
+  font: 12px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums;
 }
 html[data-mode="board"] .proofline .hash { color: var(--text-2); }
 html[data-mode="board"] .proofline .path { overflow-wrap: anywhere; }
@@ -165,7 +169,7 @@ html[data-mode="board"] .focus-card > .space-name.board-head { padding-right: 96
    the right, under the count, so a card's two facts share one edge */
 .board-foot {
   display: flex; align-items: baseline; justify-content: space-between; gap: 4px 14px;
-  margin-top: 12px; font-size: 11.5px; line-height: 1.55; color: var(--text-3);
+  margin-top: 12px; font-size: 12px; line-height: 1.55; color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 .board-scope { min-width: 0; }
@@ -177,7 +181,7 @@ html[data-mode="board"] .focus-card > .space-name.board-head { padding-right: 96
 /* drift: the board's own note, in the hand, inside the nearest card */
 .board-drift { margin-top: 12px; }
 .board-drift-say { margin: 0 0 2px; font: italic 14px/1.35 var(--font-serif); color: var(--text-1); }
-.board-drift-path { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.board-drift-path { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 720px) {
   html[data-mode="board"] .board-task { white-space: normal; text-wrap: pretty; }

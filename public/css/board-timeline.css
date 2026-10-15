@@ -39,7 +39,7 @@ html[data-mode="board"] .board-timeline .board-timeline-read {
   position: absolute; left: 0; top: 0; z-index: 6;
   max-width: 100%; padding: 0 6px; margin-left: -6px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 11.5px/1.5 var(--font-sans); font-variant-numeric: tabular-nums;
+  font: 12px/1.5 var(--font-sans); font-variant-numeric: tabular-nums;
   color: transparent; background-color: transparent;
   pointer-events: none; visibility: hidden;
   transition: color var(--m-press) var(--ease), background-color var(--m-press) var(--ease), visibility 0s linear var(--m-press);
