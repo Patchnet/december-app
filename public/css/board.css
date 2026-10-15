@@ -1,0 +1,199 @@
+/* Board mode: a coding agent's own December (public/js/board.js, board-rows.js).
+   Every rule is scoped to html[data-mode="board"], so a person's page never
+   changes. December's tokens, ladder and curves only; red only for what
+   needs the person. Numbers on a board are set in the UI face with lining,
+   tabular figures: the serif's old-style figures read 0 as o and never
+   line up from card to card. */
+
+/* ------------------------------------------------------------ page chrome */
+html[data-mode="board"] .stage-foot,
+html[data-mode="board"] #open-about,
+html[data-mode="board"] .card-tool[data-pin],
+html[data-mode="board"] #suggest,
+html[data-mode="board"] #co-nudge { display: none; }
+
+/* the dateline: repo · branch, and the session's clock kept beside it */
+html[data-mode="board"] .board-sep { color: var(--text-3); }
+html[data-mode="board"] .board-part { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+html[data-mode="board"] .dateline .til.board-clock { opacity: 1; font-variant-numeric: tabular-nums; }
+html[data-mode="board"] .dateline:hover .til.board-clock { opacity: 1; color: var(--text-2); }
+
+/* the line across the top spans the stage, over the dateline (its drawing
+   is board-timeline.css) */
+@media (min-width: 721px) {
+  html[data-mode="board"] .shell > .board-timeline { max-width: var(--stage-w); margin-left: auto; margin-right: auto; }
+}
+
+/* the boards door, beside find: it sits in the find field's empty left side
+   and steps away while the field is in use */
+.board-boards {
+  position: absolute; top: 0; right: 42px;
+  border: 0; background: none; padding: 2px 0;
+  font: 13px/1.4 var(--font-sans); color: var(--text-3); cursor: pointer;
+  transition: color var(--m-ui) var(--ease);
+}
+.board-boards:hover { color: var(--text-1); }
+.board-boards:focus-visible { outline: none; box-shadow: var(--focus-ring-field); border-radius: var(--radius-sm); }
+.board-boards[hidden],
+.search:focus ~ .board-boards,
+.search:not(:placeholder-shown) ~ .board-boards { display: none; }
+
+/* --------------------------------------------------------- the stage */
+html[data-mode="board"] .board-now { align-items: center; gap: 10px; min-width: 0; }
+html[data-mode="board"] .board-yarn { flex: 0 0 20px; width: 20px; height: 20px; display: grid; place-items: center; }
+html[data-mode="board"] .board-yarn .wind,
+html[data-mode="board"] .row .tick-wind .wind { width: 20px; height: 20px; overflow: visible; }
+html[data-mode="board"] .board-yarn .wind path,
+html[data-mode="board"] .row .tick-wind .wind path { fill: none; stroke: var(--text-3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+html[data-mode="board"] .board-yarn .wind .wind-underlay,
+html[data-mode="board"] .row .tick-wind .wind .wind-underlay { opacity: .2; }
+html[data-mode="board"] .board-task {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 15px/1.5 var(--font-serif); color: var(--text-1);
+}
+html[data-mode="board"] .board-task.quiet { color: var(--text-2); }
+html[data-mode="board"] .board-now .space-tag { flex: none; }
+/* the task in hand: a slow sheen through the agent's own words */
+html[data-mode="board"] .board-now:has(.board-yarn) .board-task,
+html[data-mode="board"] .row.is-doing > .row-text {
+  color: transparent;
+  background: linear-gradient(90deg, var(--text-2) 40%, var(--text-1) 50%, var(--text-2) 60%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: read-sweep 3200ms var(--ease) infinite;
+}
+
+/* the figures: the goals band's grammar, in lining figures */
+html[data-mode="board"] .board-fig { cursor: default; width: auto; min-width: 96px; }
+html[data-mode="board"] .board-fig:hover .goal-name { color: var(--text-3); }
+html[data-mode="board"] .board-fig .goal-count {
+  font-family: var(--font-sans); font-size: 21px; font-weight: 400; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+html[data-mode="board"] .board-fig .goal-count b { font-weight: 450; }
+html[data-mode="board"] .board-fig .goal-meter { width: 132px; }
+html[data-mode="board"] .board-fig .board-outside { color: var(--text-2); letter-spacing: 0.01em; font-size: 11px; }
+
+/* an approval reads with what it would move */
+html[data-mode="board"] .board-ask-facts {
+  margin: 2px 0 10px; font-size: 11.5px; line-height: 1.5; color: var(--text-3);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+/* an approval is answered, never skipped: the line under it takes a reply */
+html[data-mode="board"] .ask .skip { display: none; }
+
+/* ------------------------------------------------- a note on the line */
+html[data-mode="board"] .cwrap.has-echo .capture { right: calc(var(--echo-w, 40%) + 12px); width: auto; }
+.board-echo {
+  position: absolute; right: 0; top: 0; z-index: 4; max-width: 42%;
+  display: inline-flex; flex-direction: column; align-items: stretch;
+  font: 15px/calc(17px * 1.5) var(--font-serif); color: var(--text-1);
+  pointer-events: none;
+  animation: rise var(--m-enter) var(--ease-out) both;
+}
+.board-echo-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-echo.read .board-echo-words { color: var(--text-2); transition: color var(--m-depth) var(--ease); }
+/* read: a graphite rule drawn under the person's own words, in eight drawings */
+.board-ack {
+  display: block; height: 9px; margin-top: -4px; visibility: hidden;
+  background: var(--text-2);
+  -webkit-mask: url('../brush/rule-draw.png') 0 0 / 800% 100% no-repeat;
+  mask: url('../brush/rule-draw.png') 0 0 / 800% 100% no-repeat;
+}
+.board-echo.read .board-ack { visibility: visible; animation: board-rule 667ms steps(7, end) forwards; }
+@keyframes board-rule { from { -webkit-mask-position: 0 0; mask-position: 0 0; } to { -webkit-mask-position: 100% 0; mask-position: 100% 0; } }
+.board-echo.out { opacity: 0; transition: opacity var(--m-exit, 220ms) var(--ease); }
+
+/* ------------------------------------------------------------ the rows */
+/* done reads as done without striking the agent's words: the proof sits under them */
+html[data-mode="board"] .space .row.done > .row-text,
+html[data-mode="board"] .focus-card .row.done > .row-text { text-decoration: none; color: var(--text-2); opacity: 1; }
+/* held: closed without proof the board could check; a dashed graphite tick */
+html[data-mode="board"] .row.held .tick { border: 1px dashed var(--text-3); background: transparent; }
+html[data-mode="board"] .row.held .tick > svg { opacity: 1; }
+html[data-mode="board"] .row.held .tick path { stroke: var(--text-3); stroke-dashoffset: 0; animation: none; }
+html[data-mode="board"] .row.held .tick::after,
+html[data-mode="board"] .row.held .commit-tick-live { display: none; }
+/* doing: the yarn where the tick goes */
+html[data-mode="board"] .row .tick.tick-wind,
+html[data-mode="board"] .row:hover .tick.tick-wind,
+html[data-mode="board"] .row .tick.tick-none,
+html[data-mode="board"] .row:hover .tick.tick-none { border-color: transparent; background: transparent; }
+/* blocked: still the plan, quieter ink, its reason on the right */
+html[data-mode="board"] .row.is-blocked > .row-text { color: var(--text-2); }
+/* dropped: no box left to tick, the words struck by hand */
+html[data-mode="board"] .row.is-cancelled { cursor: default; pointer-events: none; }
+html[data-mode="board"] .row.is-cancelled > .row-text {
+  color: var(--text-3);
+  text-decoration: line-through; text-decoration-thickness: 1px; text-decoration-color: color-mix(in srgb, var(--text-3) 80%, transparent);
+}
+html[data-mode="board"] .row > .row-meta .when-sub { opacity: 1; }
+/* the receipt under a closed task */
+html[data-mode="board"] .row > .row-sub {
+  flex: 1 0 100%; padding-left: calc(18px + var(--space-3)); margin-top: -3px;
+  font: 11.5px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+html[data-mode="board"] .proofline .hash { color: var(--text-2); }
+html[data-mode="board"] .proofline .path { overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------ the card */
+/* one line of head: the name, and how far along it is, in figures that
+   line up down a column of cards */
+html[data-mode="board"] .space > .space-name.board-head,
+html[data-mode="board"] .focus-card > .space-name.board-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+}
+html[data-mode="board"] .space > .space-name.board-head { padding-right: 0; margin-bottom: 12px; }
+.board-name { min-width: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.board-count {
+  flex: none; font: 400 13px/1 var(--font-sans); letter-spacing: 0; color: var(--text-3);
+  font-variant-numeric: tabular-nums lining-nums; white-space: nowrap;
+}
+.board-count b { font-weight: 500; color: var(--text-1); }
+.board-count.all b { font-weight: 400; color: var(--text-3); }
+/* the card's tools take the corner on hover; the count steps aside for them */
+@media (hover: hover) {
+  html[data-mode="board"] .space .board-count { transition: opacity 160ms var(--ease); }
+  html[data-mode="board"] .space:hover .board-count,
+  html[data-mode="board"] .space:focus-within .board-count { opacity: 0; }
+}
+@media (hover: none) { html[data-mode="board"] .space > .space-name.board-head { padding-right: 52px; } }
+html[data-mode="board"] .focus-card > .space-name.board-head { padding-right: 96px; }
+
+/* the foot: the paths it may touch on the left; who and how much moved on
+   the right, under the count, so a card's two facts share one edge */
+.board-foot {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 4px 14px;
+  margin-top: 12px; font-size: 11.5px; line-height: 1.55; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.board-scope { min-width: 0; }
+/* a path breaks only between paths, unless one alone is wider than the card */
+.board-path { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.board-k { margin-right: 2px; opacity: .8; }
+.board-facts { flex: none; white-space: nowrap; color: var(--text-2); }
+
+/* drift: the board's own note, in the hand, inside the nearest card */
+.board-drift { margin-top: 12px; }
+.board-drift-say { margin: 0 0 2px; font: italic 14px/1.35 var(--font-serif); color: var(--text-1); }
+.board-drift-path { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+  html[data-mode="board"] .board-task { white-space: normal; text-wrap: pretty; }
+  html[data-mode="board"] .board-fig { min-width: 0; }
+  html[data-mode="board"] .board-fig .goal-meter { width: 100%; }
+  .board-echo { max-width: 56%; }
+  /* the clock takes its own line under a wrapped repo and branch, flush left */
+  html[data-mode="board"] .dateline .til.board-clock { display: block; margin: 4px 0 0; }
+  /* find is set at 16px here; the door beside it matches */
+  .board-boards { font-size: 16px; right: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-mode="board"] .board-now:has(.board-yarn) .board-task,
+  html[data-mode="board"] .row.is-doing > .row-text { color: var(--text-1); background: none; animation: none; }
+  .board-echo { animation: none; }
+  .board-echo.read .board-ack { animation: none; -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  .board-echo.out { transition: none; }
+}

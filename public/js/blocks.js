@@ -1,6 +1,7 @@
 import { esc, localDay, fmtAmount, page } from './session.js'
 import { previewHTML, previewNoteText, weatherScene } from './preview-model.js'
 import { mediaListMarkup } from './list-preview.js'
+import { onBoard, boardRowMarkup, boardListMarkup, boardCardMarkup } from './board-rows.js'
 
 // ---------------------------------------------------------------- blocks
 
@@ -73,7 +74,7 @@ const srcTitle = (src) => {
   return t ? ` data-src="${esc(t)}"` : ''
 }
 
-const rowMarkup = (b, i) => `
+const rowMarkup = (b, i) => onBoard() ? boardRowMarkup(b, i, linkify(i.shown ?? i.text)) : `
       <button class="row ${i.done ? 'done no-anim' : ''}" data-block="${b.id}" data-item="${i.id}"
         role="checkbox" aria-checked="${i.done}" aria-label="${esc(i.text)}"${srcTitle(i.src)}>
         <span class="tick"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.2 L4.8 9 L10 3.4" /></svg></span>
@@ -256,6 +257,7 @@ const openRowsOf = (blocks) => blocks.reduce((n, b) => n + (b.type === 'list' ? 
 const RENDER = {
   // Open work leads; completed rows can be inspected in place or in focus.
   list: (b, full, _hero, besideImage = false) => {
+    if (onBoard()) return boardListMarkup(b, full, (i) => rowMarkup(b, i))
     const open = b.items.filter((i) => !i.done)
     const done = b.items.filter((i) => i.done).sort((a, z) => (z.doneAt || '').localeCompare(a.doneAt || ''))
     if (!full && open.length === 0) return ''
@@ -607,7 +609,7 @@ function spaceInner(space, full = false) {
         </button>
         ${full ? '<button type="button" class="surface-close" data-close aria-label="Close card">Close</button>' : ''}
       </div>`
-  const solo = full ? null : soloOf(space)
+  const solo = full || onBoard() ? null : soloOf(space)
   if (solo) {
     const b = solo.block
     const w = b.type === 'reminder' ? whenPhrase(b) : null
@@ -683,6 +685,7 @@ function spaceInner(space, full = false) {
   const completed = shown.flatMap(b => b.type === 'list' ? b.items.filter(i=>i.done) : b.type === 'reminder' && b.done ? [b] : [])
   const emptyText = completed.length === 1 ? `Done · ${completed[0].text}` : completed.length ? `${completed.length} done` : 'Nothing here yet'
   const body = rendered.trim() || (full ? '' : `<div class="done-more">${esc(emptyText)}</div>`)
+  if (onBoard()) return boardCardMarkup(space, { corner, body, full })
   return `
     ${corner}
     ${sky}
