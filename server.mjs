@@ -8,11 +8,11 @@ import { createServer } from 'node:http'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, extname, normalize, basename } from 'node:path'
+import { join, extname, normalize, basename, dirname } from 'node:path'
 import { copyFileSync, mkdirSync, readdirSync, unlinkSync, existsSync as fsExists } from 'node:fs'
 import { ROOT, DATA_DIR, project, addCapture, addCaptureBatch, applyPocketAction, check, undo, undoManual, answerAsk, hasInbox, editText, retireSpace, restoreSpace, setPinned, setFinished, writeAbout, rolloverIfNeeded, watchForNewYear, applyCarryover, dismissCarryover, readYear, readMonth, readJournal, listYears, exportMarkdown, observePersists, stateFingerprint, stateRevision, undoIsFresh, canUndoManual, createLatestWorkQueue } from './lib/core.mjs'
 import { parseCaptureInput } from './public/js/capture-input.js'
-import { TOOLS, READ_TOOLS, callTool } from './lib/tools.mjs'
+import { callTool, toolsFor } from './lib/tools.mjs'
 import { manners } from './lib/manners.mjs'
 import * as settle from './lib/settle.mjs'
 import { startWatch, nudgeWatch } from './lib/watch.mjs'
@@ -22,20 +22,15 @@ import { CLIENTS as CONNECT_CLIENTS, publishSkills, register as registerClient, 
 import { createPocketSync } from './lib/pocket-sync.mjs'
 import { createPreviewStore } from './lib/previews.mjs'
 import { foreignFetchSite } from './lib/fetch-site.mjs'
-import { boardFromEnv, currentBranch, BOARD_MANNERS } from './lib/board-mode.mjs'
+import { boardFromEnv, BOARD_MANNERS } from './lib/board-mode.mjs'
+import { boardRuntime, listBoards } from './lib/board-tools.mjs'
+import { spawn } from 'node:child_process'
 
 // A board (DECEMBER_MODE=board) is a coding agent's own December: the agent
 // writes, the person watches. No organizer, no Pocket, no watch, no journal.
 // What the person types stays in the inbox as a note to the agent.
 const BOARD = boardFromEnv()
-let branchReadAt = 0
-const boardState = () => {
-  if (Date.now() - branchReadAt > 5000) {
-    branchReadAt = Date.now()
-    BOARD.branch = currentBranch(BOARD.root) || BOARD.branch
-  }
-  return BOARD
-}
+const board = BOARD && boardRuntime()
 
 const PUBLIC = join(ROOT, 'public')
 const previews = createPreviewStore(DATA_DIR)
@@ -48,6 +43,43 @@ const broadcastChange = () => {
 }
 settle.observeSettled(broadcastChange)
 const PORT = Number(process.env.PORT || 3008)
+
+// ---- a board runs on its own: it refreshes when git moves, opens itself
+// once if no one is watching, and exits when nothing has happened for hours.
+let boardLastTouch = Date.now()
+const boardTouched = () => { boardLastTouch = Date.now() }
+let gitPrint = ''
+const gitTimer = board ? setInterval(async () => {
+  if (!changeStreams.size) return // nobody is watching: git is read on the next look
+  const print = await board.facts.fingerprint().catch(() => gitPrint)
+  if (gitPrint && print !== gitPrint) broadcastChange()
+  gitPrint = print
+}, 4000) : null
+gitTimer?.unref()
+// The agent is asked to open the board in its own browser. If no page is
+// watching a little after the session says hello, the system browser opens
+// it, once per server. DECEMBER_BOARD_OPEN=never (and any test or CI run)
+// keeps it shut.
+let openedOnce = false
+const mayOpen = () => !['never', '0', 'false'].includes(String(process.env.DECEMBER_BOARD_OPEN || '').toLowerCase())
+  && !process.env.NODE_TEST_CONTEXT && !process.env.CI
+function openWhenUnwatched(delay = Number(process.env.DECEMBER_BOARD_OPEN_DELAY_MS || 20_000)) {
+  if (openedOnce || !mayOpen()) return
+  setTimeout(() => {
+    if (openedOnce || changeStreams.size) return
+    openedOnce = true
+    const target = `http://localhost:${PORT}/`
+    const [cmd, args] = process.platform === 'darwin' ? ['open', [target]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', target]] : ['xdg-open', [target]]
+    try { spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref() } catch {}
+  }, delay).unref()
+}
+const BOARD_IDLE_MS = Number(process.env.DECEMBER_BOARD_IDLE_MS || 3 * 3600_000)
+const reapTimer = board ? setInterval(() => {
+  if (changeStreams.size || Date.now() - boardLastTouch < BOARD_IDLE_MS) return
+  console.log('board idle; closing')
+  void shutdown()
+}, 60_000) : null
+reapTimer?.unref()
 // The shipped version, from the package manifest beside this file.
 const APP_VERSION = (() => {
   try {
@@ -309,6 +341,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`)
   const path = url.pathname
   if (req.method === 'POST') console.log(new Date().toISOString(), req.method, path)
+  if (board && req.method === 'POST') boardTouched()
   if (foreignHost(req.headers.host)) {
     return json(res, 403, { error: 'refused: December only answers to localhost' })
   }
@@ -334,8 +367,10 @@ const server = createServer(async (req, res) => {
       return
     }
     if (path === '/api/state' && req.method === 'GET') {
-      const board = BOARD && boardState()
-      const fingerprint = `${stateFingerprint()}:${previews.revision()}${board ? `:${board.branch}` : ''}`
+      // a board's facts come from git, so they join the fingerprint: a commit
+      // or a stray file refreshes the page even when the store did not move
+      const facts = board && await board.state()
+      const fingerprint = `${stateFingerprint()}:${previews.revision()}${facts ? `:${createHash('sha1').update(JSON.stringify(facts)).digest('hex').slice(0, 12)}` : ''}`
       if (url.searchParams.get('since') === fingerprint) {
         return json(res, 200, {
           unchanged: true,
@@ -346,7 +381,7 @@ const server = createServer(async (req, res) => {
           canUndoManual: canUndoManual(),
         })
       }
-      return json(res, 200, { ...project(settleStatus()), fingerprint, ...(board ? { board } : {}) })
+      return json(res, 200, { ...project(settleStatus()), fingerprint, ...(facts ? { board: facts } : {}) })
     }
     if (BOARD && path.startsWith('/api/pocket')) {
       return json(res, 404, { error: 'a board has no Pocket' })
@@ -736,7 +771,7 @@ const server = createServer(async (req, res) => {
 
     // The assistant seam: MCP adapters (and anything else) call tools here.
     if (path === '/api/tools' && req.method === 'GET') {
-      return json(res, 200, { tools: req.headers['x-december-access']==='read'?TOOLS.filter(t=>READ_TOOLS.has(t.name)):TOOLS })
+      return json(res, 200, { tools: toolsFor({ board: !!board, readOnly: req.headers['x-december-access']==='read' }) })
     }
     // The manners that govern those tools, read live so a connected assistant
     // is never held to a copy older than the server it is writing to.
@@ -747,7 +782,8 @@ const server = createServer(async (req, res) => {
       if(req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']!==settle.organizerToken)return json(res,403,{error:'Organizer session expired'})
       const { name, arguments: args } = await readBody(req)
       try {
-        const result = await callTool(name, args || {}, {...settleStatus(),readOnly:req.headers['x-december-access']==='read',organizer:req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']===settle.organizerToken})
+        const result = await callTool(name, args || {}, {...settleStatus(),readOnly:req.headers['x-december-access']==='read',organizer:req.headers['x-december-access']==='organizer' && req.headers['x-december-organizer-token']===settle.organizerToken,client:String(req.headers['x-december-client'] || '')})
+        if (board) boardTouched()
         if (process.env.DECEMBER_DEBUG) console.log('  tool', name)
         return json(res, 200, { result })
       } catch (e) {
@@ -762,7 +798,31 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': asset.type, 'content-length': asset.bytes.length, 'cache-control': 'private, max-age=31536000, immutable' })
       return res.end(asset.bytes)
     }
-    if (path === '/api/health') return json(res, 200, { ok: true, port: PORT, ...(BOARD ? { board: { dir: DATA_DIR, ...BOARD } } : {}) })
+    if (path === '/api/health') return json(res, 200, { ok: true, port: PORT, ...(BOARD ? { board: { dir: DATA_DIR, ...BOARD }, viewers: changeStreams.size } : {}) })
+
+    // ---- a board's own routes: the session hello, editions, the boards sheet
+    if (board && path === '/api/board/hello' && req.method === 'POST') {
+      const { client } = await readBody(req)
+      const hello = await board.hello(String(client || ''))
+      boardTouched()
+      openWhenUnwatched()
+      broadcastChange()
+      return json(res, 200, hello)
+    }
+    if (board && path === '/api/board/edition' && req.method === 'GET') {
+      const no = url.searchParams.get('no')
+      if (no) {
+        const edition = board.editionByNo(no)
+        return edition ? json(res, 200, { edition }) : json(res, 404, { error: 'no such edition' })
+      }
+      return json(res, 200, await board.editionLive())
+    }
+    if (board && path === '/api/board/summary' && req.method === 'GET') {
+      return json(res, 200, board.summary())
+    }
+    if (board && path === '/api/boards' && req.method === 'GET') {
+      return json(res, 200, { boards: await listBoards({ root: dirname(DATA_DIR), here: DATA_DIR, hereSummary: board.summary() }) })
+    }
 
     return serveStatic(res, path)
   } catch (err) {
@@ -782,6 +842,8 @@ export async function shutdown({ exit = true } = {}) {
   clearInterval(backupTimer)
   clearInterval(pocketTimer)
   clearInterval(newYearTimer)
+  clearInterval(gitTimer)
+  clearInterval(reapTimer)
   stopWatch()
   settle.stop()
   for (const stream of changeStreams) stream.end()

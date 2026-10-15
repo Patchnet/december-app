@@ -17,9 +17,12 @@ import { ensureBoard } from './lib/board-host.mjs'
 // instead (see lib/board-mode.mjs), and BASE moves to the board's server.
 let BASE = process.env.DECEMBER_URL || 'http://localhost:3008'
 let boardError = null
+let boardInfo = null
 let connected = null
 const access=process.env.DECEMBER_ACCESS || 'external'
-const accessHeaders={'x-december-access':access,'x-december-organizer-token':process.env.DECEMBER_ORGANIZER_TOKEN || ''}
+// x-december-client names the agent (claude-code, codex-mcp-client), so a
+// board can say whose task is whose when two agents share it.
+const accessHeaders={'x-december-access':access,'x-december-organizer-token':process.env.DECEMBER_ORGANIZER_TOKEN || '','x-december-client':''}
 const SERVER_INFO = { name: 'december', version: '0.1.0' }
 
 let toolsCache = null
@@ -47,7 +50,7 @@ async function fetchInstructions() {
   }
 }
 
-async function forwardTool(name, args) {
+async function forwardTool(name, args, retry = true) {
   if (boardError) throw new Error(boardError)
   let res
   try {
@@ -57,6 +60,11 @@ async function forwardTool(name, args) {
       body: JSON.stringify({ name, arguments: args }),
     })
   } catch {
+    // a board closes itself after hours idle: start it again and carry on
+    if (boardInfo && retry) {
+      BASE = (await ensureBoard(boardInfo)).url.replace(/\/$/, '')
+      return forwardTool(name, args, false)
+    }
     throw new Error(`December isn't running at ${BASE} — start it with: node server.mjs`)
   }
   const data = await res.json()
@@ -72,22 +80,46 @@ async function connect(params) {
   // Claude Code names the project in env; some launchers start the adapter in
   // the home folder, which would quietly give the page.
   const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd()
-  const info = detectMode({ cwd, clientName: params?.clientInfo?.name })
+  const client = String(params?.clientInfo?.name || '')
+  accessHeaders['x-december-client'] = client
+  const info = detectMode({ cwd, clientName: client })
   if (info.mode !== 'board') return fetchInstructions()
   const name = [info.repo, info.branch].filter(Boolean).join(' · ')
   try {
     BASE = (await ensureBoard(info)).url.replace(/\/$/, '')
+    boardInfo = info
   } catch (err) {
     boardError = `December's board for ${name} did not start: ${err.message}`
     return boardError
   }
   const url = `${BASE}/`
-  const manners = await fetchInstructions()
+  const [manners, hello] = await Promise.all([fetchInstructions(), sayHello(client)])
   return [
     `December board for ${name}: ${url}`,
     `Open ${url} in your browser now, before anything else: the harness's built-in browser if it has one, otherwise run \`${OPENER} ${url}\`. The person watches this session's work there.`,
+    whereItStands(hello),
     manners,
   ].filter(Boolean).join('\n\n')
+}
+
+// The session opens on the board, which hands back where the last one left off.
+async function sayHello(client) {
+  try {
+    const res = await fetch(`${BASE}/api/board/hello`, { method: 'POST', headers: { 'content-type': 'application/json', ...accessHeaders }, body: JSON.stringify({ client }) })
+    return res.ok ? await res.json() : null
+  } catch {
+    return null
+  }
+}
+function whereItStands(hello) {
+  if (!hello) return ''
+  const lines = []
+  if (hello.latest) {
+    lines.push(`Last session (No. ${hello.latest.no}) handed off: ${hello.latest.headline}`)
+    if (hello.latest.next?.length) lines.push(`Read first: ${hello.latest.next.map((n, i) => `${i + 1}. ${n}`).join(' ')}`)
+  }
+  if (hello.open?.length) lines.push(`Still open: ${hello.open.map((o) => `${o.task} (${o.card}, ${o.state})`).join('; ')}`)
+  return lines.join('\n')
 }
 
 // ------------------------------------------------- JSON-RPC over stdio

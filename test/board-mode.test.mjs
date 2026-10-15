@@ -167,7 +167,9 @@ test('a board server names its board, serves board manners, and leaves notes for
   const health = await get(`${base}/api/health`)
   assert.equal(health.board.dir, data)
   const state = await get(`${base}/api/state`)
-  assert.deepEqual(state.board, { repo: 'december-app', branch: 'feat/agent-board', root: repo })
+  const { repo: name, branch, root } = state.board
+  assert.deepEqual({ name, branch, root }, { name: 'december-app', branch: 'feat/agent-board', root: repo })
+  assert.deepEqual(state.board.drift, [], 'no card has bounds yet, so nothing has strayed')
   assert.equal((await get(`${base}/api/manners`)).manners, BOARD_MANNERS)
   assert.equal((await fetch(`${base}/api/pocket`)).status, 404, 'a board has no phone')
   assert.ok(!existsSync(join(ROOT, `mcp.${new URL(base).port}.json`)), 'no organizer config is written for a board')
@@ -180,14 +182,14 @@ test('a board server names its board, serves board manners, and leaves notes for
   assert.equal(after.settle.captureOnly, true)
   assert.equal(after.settle.running, false)
   const view = await call(base, 'december_view')
-  assert.deepEqual(view.captures.map((c) => c.text), ['Keep the README line short'])
+  assert.deepEqual(view.notes.map((c) => c.text), ['Keep the README line short'])
 
   // an answer travels with its question
   await call(base, 'december_ask', { question: 'Push feat/agent-board to origin?', options: ['Push', 'Not yet'] })
   const asked = await get(`${base}/api/state`)
   await post(`${base}/api/answer`, { askId: asked.ask.id, choice: 'Push' })
   const answered = await call(base, 'december_view')
-  assert.ok(answered.captures.some((c) => c.text === 'Push feat/agent-board to origin? Push'))
+  assert.ok(answered.notes.some((c) => c.text === 'Push feat/agent-board to origin? Push'))
 })
 
 test('the hook mirrors a todo list onto one card and keeps it in step', async (t) => {
@@ -198,17 +200,21 @@ test('the hook mirrors a todo list onto one card and keeps it in step', async (t
     { content: 'Start one board server per repo', status: statuses[1] },
   ] } })
   let plan = planFrom(todos(['completed', 'in_progress']))
-  const blockId = await mirror(base, plan, null)
+  const blockId = await mirror(base, plan)
+  let state = await get(`${base}/api/state`)
+  let rows = state.spaces.find((s) => s.name === CARD).blocks[0].items
+  assert.deepEqual(rows.map((i) => [i.text, i.state]), [['Read the git root', 'done'], ['Start one board server per repo', 'doing']])
+  assert.equal(rows[0].proof, null, 'a todo list carries no proof: the tick stays held')
   plan = planFrom(todos(['completed', 'completed']), plan)
-  assert.equal(await mirror(base, plan, blockId), blockId, 'the same card, not a second one')
+  assert.equal(await mirror(base, plan), blockId, 'the same card, not a second one')
   const { block, space } = await call(base, 'december_read_block', { blockId })
   assert.equal(space, CARD)
   assert.deepEqual(block.items.map((i) => [i.text, i.done]), [['Read the git root', true], ['Start one board server per repo', true]])
 
   assert.equal(planFrom({ tool_name: 'Bash' }), null)
   const created = planFrom({ tool_name: 'TaskCreate', tool_input: { subject: 'Write docs' }, tool_response: { task: { id: '7' } } })
-  assert.deepEqual(created, { 'task:7': { text: 'Write docs', done: false } })
-  assert.deepEqual(planFrom({ tool_name: 'TaskUpdate', tool_input: { taskId: '7', status: 'completed' } }, created), { 'task:7': { text: 'Write docs', done: true } })
+  assert.deepEqual(created, { 'task:7': { text: 'Write docs', state: 'queued' } })
+  assert.deepEqual(planFrom({ tool_name: 'TaskUpdate', tool_input: { taskId: '7', status: 'completed' } }, created), { 'task:7': { text: 'Write docs', state: 'done' } })
 })
 
 test('the page server stays exactly the page: no board in health or state', async (t) => {
