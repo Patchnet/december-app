@@ -38,8 +38,8 @@ unchanged.
 The page's own reading tools stay (`december_view`, `december_ask`,
 `december_file_capture` and the rest); the person's tools (goals, About Me,
 suggestions) are not offered. Every board tool's result carries `unread` (the
-person's notes) and `drift` (stray paths), so the agent sees both without
-asking.
+person's notes), `drift` (stray paths) and `plan` (`done`, `total`, `inHand`,
+`next`), so the agent works from all three without asking.
 
 ### Proof
 
@@ -48,6 +48,19 @@ git before writing: the commit must exist in the repo, the file or screenshot
 must be in the work tree. Checked proof paints the tick. Anything else leaves a
 dashed tick, and the result says why. When the person ticks a task, that counts
 as proof too.
+
+### The plan line
+
+Under the dateline, one line stands for the plan: every task on the open cards,
+one stretch each, ending at the count. It is drawn firm through closed tasks in
+the order they closed, with a tick under each, light while its proof is
+unchecked. The rest is a faint track with a notch per task. The marker stands
+where progress has landed: red while the board waits on the person, with the pen
+just past it moving while an agent works. Point or arrow along the line to name
+the task in each stretch. Graphite grain only draws at 2x and up; below that the
+stroke stays clean.
+
+![The plan line building over a session](board/plan-building.gif)
 
 ### Sessions and editions
 
