@@ -1,0 +1,59 @@
+/* Board mode: the line across the top of a repo's board (board-timeline.js).
+   The session's clock in pencil. Everything here is scoped to board mode
+   and to elements only that module creates, so page mode never changes. */
+
+html[data-mode="board"] .board-timeline {
+  position: relative;
+  height: 46px;
+  margin: 0 0 var(--space-2);
+  color: var(--text-1);
+}
+/* no session yet: nothing drawn, no room held */
+html[data-mode="board"] .board-timeline:empty { display: none; }
+
+html[data-mode="board"] .board-timeline .board-timeline-in { position: absolute; inset: 0; }
+
+/* the pencil is the page's own ink; in dark it eases off a little, the way
+   graphite reads lighter than ink on dark paper */
+html[data-mode="board"] .board-timeline .board-timeline-ink {
+  position: absolute; left: 0; top: 0; display: block;
+  overflow: visible; pointer-events: none; user-select: none;
+  color: var(--text-1);
+}
+html[data-mode="board"][data-theme="dark"] .board-timeline .board-timeline-ink {
+  color: color-mix(in srgb, var(--text-1) 86%, var(--bg));
+}
+
+/* one stop in the tab order; arrows walk the marks. Each key sits over its
+   mark, so the focus ring lands on what the readout names */
+html[data-mode="board"] .board-timeline .board-timeline-keys { position: absolute; inset: 0; pointer-events: none; }
+html[data-mode="board"] .board-timeline .board-timeline-key {
+  position: absolute; width: 18px; height: 22px; border-radius: var(--radius-sm);
+}
+html[data-mode="board"] .board-timeline .board-timeline-key:focus { outline: none; }
+html[data-mode="board"] .board-timeline .board-timeline-key:focus-visible { box-shadow: var(--focus-ring-link); }
+
+/* the readout: December's own small hand on the paper, never a tooltip box.
+   Tone only: it fades in on its rung and leaves on the one below. */
+html[data-mode="board"] .board-timeline .board-timeline-read {
+  position: absolute; left: 0; top: 0; z-index: 6;
+  max-width: 100%; padding: 0 6px; margin-left: -6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 11.5px/1.5 var(--font-sans); font-variant-numeric: tabular-nums;
+  color: transparent; background-color: transparent;
+  pointer-events: none; visibility: hidden;
+  transition: color var(--m-press) var(--ease), background-color var(--m-press) var(--ease), visibility 0s linear var(--m-press);
+}
+html[data-mode="board"] .board-timeline .board-timeline-read.on {
+  color: var(--text-3); background-color: var(--bg); visibility: visible;
+  transition: color var(--m-ui) var(--ease), background-color var(--m-ui) var(--ease), visibility 0s;
+}
+
+@media (max-width: 720px) {
+  html[data-mode="board"] .board-timeline { margin-bottom: var(--space-3); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-mode="board"] .board-timeline .board-timeline-read,
+  html[data-mode="board"] .board-timeline .board-timeline-read.on { transition: none; }
+}
