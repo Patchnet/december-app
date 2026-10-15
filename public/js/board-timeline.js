@@ -31,16 +31,17 @@ const QUIET = 10 * MIN // a task in progress with no word for this long is not b
 // The marks, in css px about the line's point. Under the line: work closed.
 // Across it: work kept. Above it: work off the plan. `a` is the pass's ink.
 const MARKS = {
-  task: [{ c: [[-0.6, 1.8], [0.1, 4.3], [0.9, 7]], w: 1.15 }],
+  task: [{ c: [[-0.6, 1.8], [0.1, 4.8], [0.9, 8.4]], w: 1.35 }],
   commit: [
     { c: [[-2.2, -8.6], [-0.2, 0], [2.1, 8.6]], w: 1.75 },
     { c: [[-1.2, -8], [0.6, 0.4], [2.8, 8]], w: 0.95, a: 0.55 },
   ],
-  stray: [{ c: [[-5.5, -10.4], [-0.5, -12.8], [5, -15]], w: 1.1 }],
-  lift: [{ c: [[-6, 0.3], [-1.6, -0.2], [1.8, -3.4], [3.5, -7.2]], w: 1.2 }],
+  stray: [{ c: [[-5.5, -10.4], [-0.5, -12.8], [5, -15]], w: 1.3 }],
+  lift: [{ c: [[-6, 0.3], [-1.6, -0.2], [1.8, -3.4], [3.5, -7.2]], w: 1.35 }],
 }
-const LINE = { w: 1.05, a: 0.9 } // the main pass
-const GHOST = { w: 0.8, dx: 0.5, dy: 0.9, a: 0.4 } // the second, lighter pass
+const LINE = { w: 1.3, a: 0.9 } // the main pass
+const GHOST = { w: 0.9, dx: 0.5, dy: 0.9, a: 0.4 } // the second, lighter pass
+const SET_DOWN = 10 // css px: a pen set down draws at least this much, never a speck
 
 const reducedQ = matchMedia('(prefers-reduced-motion: reduce)')
 const states = new WeakMap()
@@ -261,7 +262,7 @@ function markPasses(kind, x, y, k, key) {
 // speck is smaller than a pixel and would only grey the line, so the grain
 // there takes out less ink.
 function grain(id, seed, w, h, fine) {
-  const [sa, sb, qa, qb] = fine ? [2.2, -0.25, 1.6, 0.05] : [1.5, 0.15, 1.2, 0.3]
+  const [sa, sb, qa, qb] = fine ? [2.2, -0.25, 1.6, 0.05] : [1.5, 0.35, 1.2, 0.45]
   return `<filter id="${id}" filterUnits="userSpaceOnUse" x="-8" y="-8" width="${w + 16}" height="${h + 16}" color-interpolation-filters="sRGB">` +
     `<feTurbulence type="fractalNoise" baseFrequency="2 1.6" numOctaves="2" seed="${seed}" result="n"/>` +
     `<feTurbulence type="fractalNoise" baseFrequency="0.035 0.25" numOctaves="1" seed="${seed + 3}" result="p"/>` +
@@ -487,9 +488,14 @@ function drawTip(st, m, reduced) {
     return
   }
   const g = st.g
-  const xa = half(g.x(s.a)), xb = Math.max(xa + 1, half(g.x(s.b)))
-  // the pen set down after a wait with nothing drawn since: no speck
-  if (!m.working && xb - xa < 2) {
+  const xa = half(g.x(s.a))
+  let xb = Math.max(xa + 1, half(g.x(s.b)))
+  // a pen set down draws a short stroke, never a speck: in a session's first
+  // moments, and as work picks up again after a wait
+  const first = s.a === m.start
+  if (m.working || first) xb = Math.max(xb, xa + SET_DOWN)
+  // the pen set down after a wait with nothing drawn since: nothing yet
+  if (!m.working && !first && xb - xa < 2) {
     if (st.tipGs.length) { st.tip.replaceChildren(); st.tipGs = []; st.tipKey = '' }
     return
   }
