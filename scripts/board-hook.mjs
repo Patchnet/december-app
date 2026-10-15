@@ -14,7 +14,9 @@ export const CARD = 'Session plan'
 
 const readJson = (file) => readFile(file, 'utf8').then(JSON.parse, () => null)
 
-/** The plan the hook input describes, as [{ key, text, done }], merged into
+const STATE = { completed: 'done', in_progress: 'doing' }
+
+/** The plan the hook input describes, as [{ key, text, state }], merged into
     what earlier calls recorded (TaskCreate/TaskUpdate arrive one at a time). */
 export function planFrom(input, tasks = {}) {
   const next = { ...tasks }
@@ -26,18 +28,18 @@ export function planFrom(input, tasks = {}) {
     for (const key of Object.keys(next)) if (key.startsWith(mine)) delete next[key]
     for (const todo of args.todos || []) {
       const text = String(todo.content || '').trim()
-      if (text) next[mine + text] = { text, done: todo.status === 'completed' }
+      if (text) next[mine + text] = { text, state: STATE[todo.status] || 'queued' }
     }
   } else if (tool === 'TaskCreate') {
     const out = input.tool_response || {}
     const id = out.task?.id ?? out.id ?? out.taskId
     const text = String(args.subject || '').trim()
-    if (id != null && text) next[`task:${id}`] = { text, done: false }
+    if (id != null && text) next[`task:${id}`] = { text, state: 'queued' }
   } else if (tool === 'TaskUpdate') {
     const key = `task:${args.taskId}`
     const text = String(args.subject || next[key]?.text || '').trim()
     if (args.status === 'deleted') delete next[key]
-    else if (text) next[key] = { text, done: args.status ? args.status === 'completed' : !!next[key]?.done }
+    else if (text) next[key] = { text, state: args.status ? STATE[args.status] || 'queued' : next[key]?.state || 'queued' }
   } else return null
   return next
 }
@@ -45,7 +47,7 @@ export function planFrom(input, tasks = {}) {
 async function tool(base, name, args) {
   const res = await fetch(`${base}/api/tool`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-december-client': 'claude-code' },
     body: JSON.stringify({ name, arguments: args }),
     signal: AbortSignal.timeout(3000),
   })
@@ -54,27 +56,20 @@ async function tool(base, name, args) {
   return body.result
 }
 
-/** Make the card's list match the plan: add what is new, check and uncheck
-    to match. Rows the plan dropped stay, because December never deletes. */
-export async function mirror(base, plan, blockId) {
+/** Make the card match the plan through the board's own tool: add what is
+    new, then move each task to its state. A todo list carries no proof, so a
+    task it closes keeps a held tick. Rows the plan dropped stay. */
+export async function mirror(base, plan) {
   const wanted = Object.values(plan)
-  let block = blockId ? await tool(base, 'december_read_block', { blockId }).then((r) => r.block, () => null) : null
-  if (!block) {
-    if (!wanted.length) return null
-    const made = await tool(base, 'december_create_block', { space: CARD, type: 'list', title: '', items: wanted.map((t) => t.text) })
-    block = (await tool(base, 'december_read_block', { blockId: made.blockId })).block
+  if (!wanted.length) return null
+  await tool(base, 'december_task', { card: CARD, action: 'add', tasks: [...new Set(wanted.map((t) => t.text))].slice(0, 20) })
+  const card = (await tool(base, 'december_view', {})).cards.find((c) => c.name === CARD)
+  for (const t of wanted) {
+    const row = card?.tasks.find((r) => r.text === t.text)
+    if (!row || row.state === t.state) continue
+    await tool(base, 'december_task', { card: CARD, action: { done: 'done', doing: 'start', queued: 'queue' }[t.state], task: row.id })
   }
-  const add = [...new Set(wanted.filter((t) => !block.items.some((i) => i.text === t.text)).map((t) => t.text))]
-  if (add.length) {
-    const out = await tool(base, 'december_add_or_check', { blockId: block.id, add })
-    if (out.finished && wanted.some((t) => !t.done)) await tool(base, 'december_finish', { space: CARD, finished: false })
-    block = (await tool(base, 'december_read_block', { blockId: block.id })).block
-  }
-  const row = (text) => block.items.find((i) => i.text === text)
-  const check = wanted.filter((t) => t.done && row(t.text) && !row(t.text).done).map((t) => row(t.text).id)
-  const uncheck = wanted.filter((t) => !t.done && row(t.text)?.done).map((t) => row(t.text).id)
-  if (check.length || uncheck.length) await tool(base, 'december_add_or_check', { blockId: block.id, check, uncheck })
-  return block.id
+  return card?.listId || null
 }
 
 async function main() {
@@ -95,7 +90,7 @@ async function main() {
   const ledger = (await readJson(ledgerFile)) || {}
   const plan = planFrom(input, ledger.tasks)
   if (!plan) return
-  const blockId = await mirror(`http://localhost:${server.port}`, plan, ledger.blockId)
+  const blockId = await mirror(`http://localhost:${server.port}`, plan)
   await writeFile(ledgerFile, JSON.stringify({ blockId, tasks: plan }, null, 2) + '\n')
 }
 
