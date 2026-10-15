@@ -12,14 +12,14 @@ html[data-mode="board"] .card-tool[data-pin],
 html[data-mode="board"] #suggest,
 html[data-mode="board"] #co-nudge { display: none; }
 
-/* the dateline: repo · branch, and the session's clock kept beside it */
+/* the dateline: repo · branch, and how long the session has run */
 html[data-mode="board"] .board-sep { color: var(--text-3); }
 html[data-mode="board"] .board-part { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 html[data-mode="board"] .dateline .til.board-clock { opacity: 1; font-variant-numeric: tabular-nums; }
 html[data-mode="board"] .dateline:hover .til.board-clock { opacity: 1; color: var(--text-2); }
 
-/* the line across the top spans the stage, over the dateline (its drawing
-   is board-timeline.css) */
+/* the session's line spans the stage, under the dateline (its drawing is
+   board-timeline.css) */
 @media (min-width: 721px) {
   html[data-mode="board"] .shell > .board-timeline { max-width: var(--stage-w); margin-left: auto; margin-right: auto; }
 }
@@ -72,7 +72,6 @@ html[data-mode="board"] .board-fig .goal-count {
   font-variant-numeric: tabular-nums lining-nums;
 }
 html[data-mode="board"] .board-fig .goal-count b { font-weight: 450; }
-html[data-mode="board"] .board-fig .goal-meter { width: 132px; }
 html[data-mode="board"] .board-fig .board-outside { color: var(--text-2); letter-spacing: 0.01em; font-size: 12px; }
 
 /* what waits on the person is said in red words, never a dot */
@@ -186,7 +185,6 @@ html[data-mode="board"] .focus-card > .space-name.board-head { padding-right: 96
 @media (max-width: 720px) {
   html[data-mode="board"] .board-task { white-space: normal; text-wrap: pretty; }
   html[data-mode="board"] .board-fig { min-width: 0; }
-  html[data-mode="board"] .board-fig .goal-meter { width: 100%; }
   .board-echo { max-width: 56%; }
   /* the clock takes its own line under a wrapped repo and branch, flush left */
   html[data-mode="board"] .dateline .til.board-clock { display: block; margin: 4px 0 0; }

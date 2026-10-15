@@ -1,14 +1,15 @@
-/* Board mode: the line across the top of a repo's board (board-timeline.js).
-   The session's clock in pencil. Everything here is scoped to board mode
-   and to elements only that module creates, so page mode never changes. */
+/* Board mode: the plan line under a repo's board name (board-timeline.js).
+   The plan in pencil, drawn firm as far as the work has landed, ending at
+   its count. Everything here is scoped to board mode and to elements only
+   that module creates, so page mode never changes. */
 
 html[data-mode="board"] .board-timeline {
   position: relative;
-  height: 46px;
-  margin: 0 0 var(--space-2);
+  height: 30px;
+  margin: -8px 0 var(--space-3);
   color: var(--text-1);
 }
-/* no session yet: nothing drawn, no room held */
+/* no tasks yet: nothing drawn, no room held */
 html[data-mode="board"] .board-timeline:empty { display: none; }
 
 html[data-mode="board"] .board-timeline .board-timeline-in { position: absolute; inset: 0; }
@@ -23,6 +24,17 @@ html[data-mode="board"] .board-timeline .board-timeline-ink {
 html[data-mode="board"][data-theme="dark"] .board-timeline .board-timeline-ink {
   color: color-mix(in srgb, var(--text-1) 86%, var(--bg));
 }
+
+/* waiting on the person: the marker says so in the one red the board uses */
+html[data-mode="board"] .board-timeline .board-timeline-marker.needs { color: var(--bad-ink); }
+
+/* the plan's count, where the line ends: the cards' "2 of 4", larger */
+html[data-mode="board"] .board-timeline .board-timeline-count {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%); white-space: nowrap; pointer-events: none;
+  font: 13px/1 var(--font-sans); font-variant-numeric: tabular-nums lining-nums; color: var(--text-3);
+}
+html[data-mode="board"] .board-timeline .board-timeline-count b { font-weight: 500; color: var(--text-1); }
+html[data-mode="board"] .board-timeline .board-timeline-count.all b { color: var(--text-3); font-weight: 400; }
 
 /* one stop in the tab order; arrows walk the marks. Each key sits over its
    mark, so the focus ring lands on what the readout names */
@@ -49,9 +61,6 @@ html[data-mode="board"] .board-timeline .board-timeline-read.on {
   transition: color var(--m-ui) var(--ease), background-color var(--m-ui) var(--ease), visibility 0s;
 }
 
-@media (max-width: 720px) {
-  html[data-mode="board"] .board-timeline { margin-bottom: var(--space-3); }
-}
 
 @media (prefers-reduced-motion: reduce) {
   html[data-mode="board"] .board-timeline .board-timeline-read,

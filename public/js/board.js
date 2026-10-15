@@ -2,8 +2,8 @@ import { $, page, esc } from './session.js'
 import { windMark, stopWind } from './working-mark.js'
 // Board mode: a coding agent's own December. The page reads the same. The
 // dateline names the repo and branch and keeps the session's clock; the line
-// across the top is the session itself (board-timeline.js); the stage says
-// what the agent is on, where the person is needed, and how far along it is.
+// under it is the plan, drawn as far as the work has landed (board-timeline.js);
+// the stage says what the agent is on and where the person is needed.
 // The line takes notes to the agent; a note waits at its end until the
 // agent files it, and a pen rule is drawn under it as it lets go.
 // The server sends `board` on /api/state only, so the last one seen is kept.
@@ -66,7 +66,8 @@ function paintTab() {
 function mountBoardChrome() {
   const host = document.createElement('div')
   host.className = 'board-timeline'
-  $('#dateline').before(host)
+  host.dataset.seed = board.repo
+  $('#dateline').after(host)
   import('./board-timeline.js').then((m) => { timeline = m.drawTimeline; paintBoardMoment() }).catch(() => {})
   const boards = document.createElement('button')
   boards.type = 'button'
@@ -119,9 +120,8 @@ export function paintBoardMoment() {
   const tests = latestTests(done)
   const files = board.files?.length || 0
   const outside = board.drift?.length || 0
-  const pct = counted.length ? Math.round((done.length / counted.length) * 100) : 0
+  // how far along is the plan line's to say; the figures are what backs it
   const figs = counted.length ? `
-    <a class="goal board-fig"><span class="goal-name">tasks</span><span class="goal-count"><b>${done.length}</b><small>of ${counted.length}</small></span><span class="goal-meter"><b style="width:${pct}%"></b></span></a>
     ${tests ? `<a class="goal board-fig"><span class="goal-name">tests passing</span><span class="goal-count"><b>${tests}</b></span></a>` : ''}
     <a class="goal board-fig"><span class="goal-name">files changed</span><span class="goal-count"><b>${files}</b></span>${outside ? `<span class="goal-pace board-outside">${outside} outside scope</span>` : ''}</a>` : ''
   if (goals.dataset.board !== figs) {
@@ -133,7 +133,7 @@ export function paintBoardMoment() {
   paintAskFacts()
   paintNote()
   mountRowYarn()
-  if (timeline) timeline($('.board-timeline'), { board, spaces: page.state.spaces, now: Date.now() })
+  if (timeline) timeline($('.board-timeline'), { board, spaces: page.state.spaces, ask: !!page.state.ask, now: Date.now() })
   // an open sheet keeps up with answers given anywhere else
   sheet?.refreshSheet()
   const door = document.querySelector('.board-boards')
