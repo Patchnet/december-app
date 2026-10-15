@@ -161,7 +161,7 @@ test('a hand-off composes the edition, and the next session opens with it', asyn
   assert.equal(live.live.no, 1)
   assert.equal(live.live.endedAt, null)
   assert.deepEqual(live.live.figures, { done: 1, total: 2, proven: 1, commits: 0, files: 0, outside: 0 })
-  assert.equal(live.live.headline, 'Mode detection: 1 task done')
+  assert.equal(live.live.headline, 'One task done on Mode detection')
   assert.deepEqual(live.live.waiting.map((w) => w.question), ['Push feat/agent-board to origin?'])
   assert.deepEqual(live.live.next, ['Start one server'])
   assert.equal((await b.get('/api/state')).board.waits.length, 1, 'the ask is a wait in this session')
