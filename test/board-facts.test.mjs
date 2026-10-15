@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { scopeMatcher, placeFiles, createBoardFacts } from '../lib/board-facts.mjs'
 
-const temp = (name) => realpathSync(mkdtempSync(join(tmpdir(), `december-facts-${name}-`)))
+const temp = (name) => realpathSync.native(mkdtempSync(join(tmpdir(), `december-facts-${name}-`)))
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@localhost', ...args], { cwd, encoding: 'utf8' }).trim()
 const write = (root, path, text = 'x\n') => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text) }
 

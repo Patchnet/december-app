@@ -16,7 +16,7 @@ import { ensureBoard } from '../lib/board-host.mjs'
 import { planFrom, mirror, CARD } from '../scripts/board-hook.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const temp = (name) => realpathSync(mkdtempSync(join(tmpdir(), `december-board-${name}-`)))
+const temp = (name) => realpathSync.native(mkdtempSync(join(tmpdir(), `december-board-${name}-`)))
 
 function gitRepo(name = 'december-app', branch = 'feat/agent-board') {
   const dir = join(temp('repo'), name)
@@ -86,7 +86,7 @@ test('a board slug is stable for one checkout and distinct across checkouts', ()
 test('boards live beside the December data folder unless DECEMBER_BOARDS_DIR says otherwise', () => {
   assert.equal(boardsDir({ DECEMBER_BOARDS_DIR: '/tmp/b' }), resolve('/tmp/b'))
   assert.equal(boardsDir({ DECEMBER_DATA_DIR: '/x/December/data' }), resolve('/x/December/boards'))
-  assert.equal(boardsDir({}, 'darwin', '/Users/a'), '/Users/a/Library/Application Support/December/boards')
+  assert.equal(boardsDir({}, 'darwin', '/Users/a'), join('/Users/a', 'Library', 'Application Support', 'December', 'boards'))
   assert.equal(boardFromEnv({}), null)
   assert.deepEqual(boardFromEnv({ DECEMBER_MODE: 'board', DECEMBER_BOARD_REPO: 'r', DECEMBER_BOARD_BRANCH: 'b', DECEMBER_BOARD_ROOT: '/r' }), { repo: 'r', branch: 'b', root: '/r' })
 })

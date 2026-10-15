@@ -12,7 +12,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const temp = (name) => realpathSync(mkdtempSync(join(tmpdir(), `december-tools-${name}-`)))
+const temp = (name) => realpathSync.native(mkdtempSync(join(tmpdir(), `december-tools-${name}-`)))
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@localhost', ...args], { cwd, encoding: 'utf8' }).trim()
 const write = (root, path, text = 'x\n') => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text) }
 
