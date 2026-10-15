@@ -52,33 +52,16 @@
 
 /* ------------------------------------------------------ the front page */
 
+.be-head {
+  display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 18px;
+}
 .be-mast {
-  margin: 0; text-align: center; color: var(--text-1); overflow-wrap: anywhere;
-  font: 400 48px/1.05 var(--font-serif); letter-spacing: -0.035em;
+  margin: 0; min-width: 0; color: var(--text-1); overflow-wrap: anywhere;
+  font: 400 22px/1.25 var(--font-serif); letter-spacing: -0.015em;
 }
-/* The brush rule under the masthead, in the page's ink only: the plate is a
-   mask, so its coloured end ticks print in the same ink as the line. Eight
-   drawings, 400 x 58 each, shown at their own proportions and never stretched. */
-.be-rule {
-  display: block; width: min(100%, 440px); aspect-ratio: 400 / 58;
-  margin: -21px auto -15px; pointer-events: none;
-  background: var(--text-1);
-  -webkit-mask: url('../brush/rule-draw.png') 100% 0 / 800% 100% no-repeat;
-  mask: url('../brush/rule-draw.png') 100% 0 / 800% 100% no-repeat;
-}
-/* drawn once as the edition opens, at 12fps on twos */
-.be-rule.be-drawing { animation: be-rule-draw 667ms steps(8, jump-none) 140ms both; }
-@keyframes be-rule-draw {
-  from { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
-  to { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
-}
-.be-line {
-  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 18px;
-  padding: 0 0 10px; border-bottom: 1px solid var(--line-1);
-  font: 11.5px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums;
-}
+.be-folio { font: 12px/1.5 var(--font-sans); color: var(--text-3); font-variant-numeric: tabular-nums lining-nums; }
 .be-hl {
-  margin: 22px 0 18px; max-width: 24ch; color: var(--text-1);
+  margin: 14px 0 18px; max-width: 24ch; color: var(--text-1);
   font: 400 42px/1.08 var(--font-serif); letter-spacing: -0.024em; text-wrap: balance;
 }
 .be-hl[data-len="long"] { max-width: 34ch; font-size: 32px; line-height: 1.12; }
@@ -108,8 +91,15 @@
   box-shadow: -1px 0 0 var(--line-1), 0 -1px 0 var(--line-1);
 }
 .be-cols[data-cols="1"] .be-rows { max-width: 620px; }
-.be-card .be-col > .space-name { margin: 0 0 2px; font-size: 19px; line-height: 1.25; }
-.be-colk { margin: 0 0 10px; font: 11.5px/1.5 var(--font-sans); color: var(--text-3); }
+.be-card .be-col > .space-name { margin: 0 0 10px; font-size: 19px; line-height: 1.25; }
+.be-card .be-col > .space-name.be-colhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-right: 0; }
+.be-colname { min-width: 0; overflow-wrap: anywhere; }
+.be-count {
+  flex: none; font: 400 13px/1 var(--font-sans); letter-spacing: 0; color: var(--text-3);
+  font-variant-numeric: tabular-nums lining-nums; white-space: nowrap;
+}
+.be-count b { font-weight: 500; color: var(--text-1); }
+.be-count.all b { font-weight: 400; color: var(--text-3); }
 
 /* rows are the record here, not controls: no hand, no give */
 .be-card .be-row { cursor: default; }
@@ -123,7 +113,7 @@
 /* a fact under a row: its proof, why it stopped */
 .be-sub {
   margin-top: -3px; padding: 0 0 5px 28px;
-  font: 11.5px/1.5 var(--font-sans); color: var(--text-2); overflow-wrap: anywhere;
+  font: 12px/1.5 var(--font-sans); color: var(--text-2); overflow-wrap: anywhere;
 }
 .be-sub span { color: var(--text-3); }
 
@@ -139,24 +129,18 @@
 
 .be-foot {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 40px;
-  padding-top: 18px; border-top: 1px solid var(--line-1);
+  padding-top: 26px;
 }
 .be-card .be-foot .space-name { margin: 0 0 12px; font-size: 19px; line-height: 1.25; }
-/* the one red mark: something waits on you */
-.be-needs::before, .be-dot::before {
-  content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 8px 3px 0;
-  border-radius: 50%; background: var(--bad-ink); vertical-align: middle;
-}
-.be-dot::before { width: 5px; height: 5px; margin: 0 7px 2px 0; }
-/* a question that wraps hangs from its dot */
-.be-dot { padding-left: 12px; text-indent: -12px; }
+/* the one red thing: what waits on you, said in words */
+.be-card .be-foot .space-name.be-needs, .be-card .be-tag.be-needs { color: var(--bad-ink); }
 .be-ask + .be-ask { margin-top: 16px; }
 .be-card .be-ask .ask-q { margin-bottom: 8px; font-size: 16px; animation: none; }
 .be-card .be-ask .chips { margin: 0; }
 .be-card .chip-btn { animation: none; }
 .be-ask { transition: opacity var(--m-depth) var(--ease-out); }
 .be-ask.be-going { opacity: 0; }
-.be-err { margin: 6px 0 0; font-size: 11.5px; color: var(--text-3); }
+.be-err { margin: 6px 0 0; font-size: 12px; color: var(--text-3); }
 .be-readlist { list-style: none; margin: 0; padding: 0; counter-reset: be-read; }
 .be-readlist li {
   counter-increment: be-read; display: grid; grid-template-columns: 22px minmax(0, 1fr);
@@ -164,20 +148,20 @@
 }
 .be-readlist li::before {
   content: counter(be-read); grid-row: 1 / span 2;
-  font-size: 11.5px; line-height: 20px; color: var(--text-3); font-variant-numeric: tabular-nums;
+  font-size: 12px; line-height: 20px; color: var(--text-3); font-variant-numeric: tabular-nums lining-nums;
 }
 .be-readlist b { font-weight: 400; color: var(--text-1); overflow-wrap: anywhere; }
 .be-readlist span { font-size: 12px; color: var(--text-3); }
 
 .be-end {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 24px;
-  margin-top: 22px; font: 11.5px/1.5 var(--font-sans); color: var(--text-3);
+  margin-top: 22px; font: 12px/1.5 var(--font-sans); color: var(--text-3);
 }
 .be-drift { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
 .be-drift span { margin-left: 6px; color: var(--text-3); }
 .be-stamp { margin: 0 0 0 auto; color: var(--text-3); }
 
-.be-past { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--line-1); }
+.be-past { margin-top: 30px; }
 .be-past .block-title { margin-bottom: 4px; }
 .be-past-row .next-when { flex: 0 0 3.4em; font-variant-numeric: tabular-nums; }
 .be-past-row .row-text { color: var(--text-2); }
@@ -191,11 +175,7 @@
 
 /* ------------------------------------------------------------ the boards */
 
-.be-bd-title {
-  margin: 4px 0 0; color: var(--text-1);
-  font: 400 clamp(27px, 3vw, 34px)/1.15 var(--font-serif); letter-spacing: -0.025em;
-}
-.be-card .shape.be-bshape { margin: 6px 0 22px; animation: none; }
+.be-card[data-kind="boards"] .be-head { margin-bottom: 18px; }
 .be-entry { padding: 16px 0 18px; border-top: 1px solid var(--line-1); }
 .be-entry:first-child { padding-top: 0; border-top: 0; }
 .be-entry[data-be-open] { cursor: pointer; }
@@ -209,7 +189,7 @@
 }
 .be-entry-name a:focus-visible { outline: none; box-shadow: var(--focus-ring-field); }
 .be-tag {
-  margin-left: 10px; font: 400 11.5px/1.4 var(--font-sans); letter-spacing: 0;
+  margin-left: 10px; font: 400 12px/1.4 var(--font-sans); letter-spacing: 0;
   color: var(--text-3); vertical-align: middle; white-space: nowrap;
 }
 .be-bq { font: 15px/1.45 var(--font-serif); color: var(--text-1); text-wrap: pretty; }
@@ -249,9 +229,6 @@ a.be-idle:focus-visible { outline: none; box-shadow: var(--focus-ring-field); bo
   .focus-wrap.be-wrap { padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
   .focus-card.be-card { max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); padding: 12px 18px 22px; border-radius: var(--radius-lg); scrollbar-gutter: auto; }
   .be-toolbar { margin-right: -8px; }
-  .be-mast { font-size: 34px; }
-  .be-rule { width: min(100%, 300px); margin: -15px auto -11px; }
-  .be-line { justify-content: flex-start; gap: 0 14px; }
   .be-hl { margin-top: 18px; font-size: 28px; }
   .be-hl[data-len="long"] { font-size: 24px; }
   .be-hl[data-len="longer"] { font-size: 20px; }
@@ -272,6 +249,6 @@ a.be-idle:focus-visible { outline: none; box-shadow: var(--focus-ring-field); bo
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .focus-card.be-card, .be-sheet .be-backdrop, .be-rule.be-drawing { animation: none; }
+  .focus-card.be-card, .be-sheet .be-backdrop { animation: none; }
   .be-ask, .be-entry-name a, .be-idle-name, .be-retry { transition: none; }
 }

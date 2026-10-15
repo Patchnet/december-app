@@ -100,17 +100,15 @@ function editionView(ed, no) {
   const sessions = [...new Set([...(ed.sessions || []).map((s) => s?.tag || s), ...cards.map((c) => c.session)].filter(Boolean))]
   const headline = String(ed.headline || '')
   const len = headline.length > 140 ? ' data-len="longer"' : headline.length > 70 ? ' data-len="long"' : ''
+  // one line of head, as a card has: the repo, and which edition this is
+  const folio = [`No. ${ed.no ?? ''}`, sessionSpan(ed.startedAt, ed.endedAt)].filter(Boolean).join(' · ')
   const body = [
-    `<header class="be-head">
-      <h2 class="be-mast">${esc(ed.repo || '')}</h2>
-      <span class="be-rule" aria-hidden="true"></span>
-      <div class="be-line"><span>No. ${esc(ed.no ?? '')}</span><span>${esc(sessionSpan(ed.startedAt, ed.endedAt))}</span><span>${esc([ed.branch, sessions.join(', ')].filter(Boolean).join(' · '))}</span></div>
-    </header>`,
+    `<header class="be-head"><h2 class="be-mast">${esc(ed.repo || '')}</h2><span class="be-folio">${esc(folio)}</span></header>`,
     headline ? `<h3 class="be-hl" tabindex="-1"${len}>${esc(headline)}</h3>` : '',
     figuresHTML(ed.figures || {}),
     cards.length ? columnsHTML(cards, live) : '',
     footHTML(ed),
-    endHTML(ed, live),
+    endHTML(ed, live, [ed.branch, sessions.join(', ')].filter(Boolean).join(' · ')),
     pastHTML(viewingPast ? no : latestNo),
   ].join('')
   return { label: `Edition No. ${ed.no ?? ''}, ${ed.repo || 'this board'}`, html: `${toolbar}<div class="be-body">${body}</div>` }
@@ -136,19 +134,10 @@ function columnHTML(card, live) {
   const rows = Array.isArray(card.rows) ? card.rows : []
   const done = card.done ?? rows.filter((r) => r.state === 'done').length
   const total = card.total ?? rows.length
-  const proven = card.proven ?? rows.filter((r) => r.proof?.ok).length
-  const blocked = rows.filter((r) => r.state === 'blocked').length
-  const waiting = rows.filter((r) => r.state === 'waiting').length
-  const facts = [total ? `${done} of ${total} done` : 'no tasks']
-  if (done && proven >= done) facts.push(done > 1 ? 'all proven' : 'proven')
-  else if (proven) facts.push(`${proven} proven`)
-  if (blocked) facts.push(`${blocked} blocked`)
-  if (waiting) facts.push(`${waiting} waiting on you`)
-  // who kept this workstream: a quiet word with its counts, never a mark
-  if (card.session) facts.push(card.session)
+  // the head is one line, as on the board: the name, and how far along it is
+  const count = total ? `<span class="be-count${done === total ? ' all' : ''}" aria-label="${done} of ${total} done"><b>${esc(done)}</b> of ${esc(total)}</span>` : ''
   return `<section class="be-col">
-    <h4 class="space-name">${esc(card.name || '')}</h4>
-    <p class="be-colk">${esc(facts.join(' · '))}</p>
+    <h4 class="space-name be-colhead"><span class="be-colname">${esc(card.name || '')}</span>${count}</h4>
     <div class="be-rows">${rows.map((r) => rowHTML(r, live)).join('')}</div>
   </section>`
 }
@@ -222,11 +211,12 @@ function footHTML(ed) {
   return parts.length ? `<div class="be-foot">${parts.join('')}</div>` : ''
 }
 
-function endHTML(ed, live) {
+function endHTML(ed, live, who = '') {
   const drift = Array.isArray(ed.drift) ? ed.drift : []
   const outside = ed.figures?.outside ?? drift.length
   const at = when(ed.composedAt)
-  const stamp = !at ? '' : live ? `as of ${clock(at)}` : ed.auto ? `composed ${clock(at)}, when the session ended` : `handed off ${clock(at)}`
+  const when_ = !at ? '' : live ? `as of ${clock(at)}` : ed.auto ? `composed ${clock(at)}, when the session ended` : `handed off ${clock(at)}`
+  const stamp = [when_, who].filter(Boolean).join(' · ')
   const driftLine = outside
     ? `<p class="be-drift">${esc(plural(outside, 'file', 'files'))} changed outside any card${drift.length ? ` <span>${esc(drift.join(' · '))}</span>` : ''}</p>`
     : ''
@@ -273,24 +263,22 @@ function boardsView(list, hereAsks) {
   const waiting = boards.filter((b) => b.state === 'waiting')
   const working = boards.filter((b) => b.state === 'working')
   const idle = boards.filter((b) => b.state !== 'waiting' && b.state !== 'working')
-  const today = new Date()
   const counts = [plural(boards.length, 'board', 'boards'), waiting.length ? `${waiting.length} waiting on you` : '', working.length ? `${working.length} working` : '']
-    .filter(Boolean).map((s) => `<span class="shape-part quiet">${esc(s)}</span>`).join('')
+    .filter(Boolean).join(' · ')
   const entries = [...waiting, ...working].map((b) => entryHTML(b, hereAsks)).join('')
   const rest = idle.length ? `<div class="be-rest">${idle.map(idleHTML).join('')}</div>` : ''
   return {
     label: 'Boards',
     html: `<div class="be-toolbar"><span></span>${close('Close boards')}</div>
       <div class="be-body">
-        <h2 class="be-bd-title">${MONTHS[today.getMonth()]} ${today.getDate()}</h2>
-        <div class="shape be-bshape">${counts}</div>
+        <header class="be-head"><h2 class="be-mast">Boards</h2><span class="be-folio">${esc(counts)}</span></header>
         <div class="be-index">${entries}${rest}</div>
       </div>`,
   }
 }
 
-function nameHTML(b, url) {
-  const tags = `${b.branch ? `<span class="be-tag">${esc(b.branch)}</span>` : ''}${b.here ? '<span class="be-tag">this board</span>' : ''}`
+function nameHTML(b, url, needs = false) {
+  const tags = `${b.branch ? `<span class="be-tag">${esc(b.branch)}</span>` : ''}${b.here ? '<span class="be-tag">this board</span>' : ''}${needs ? '<span class="be-tag be-needs">waiting on you</span>' : ''}`
   const name = url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(b.repo || b.slug || '')}</a>` : esc(b.repo || b.slug || '')
   return `<h3 class="be-entry-name">${name}${tags}</h3>`
 }
@@ -304,9 +292,9 @@ function entryHTML(b, hereAsks) {
   if (b.state === 'waiting') {
     const asks = Array.isArray(b.asks) && b.asks.length ? b.asks : b.here ? hereAsks : []
     const body = b.here && asks.length
-      ? asks.map((a) => askHTML(a, 'be-bq be-dot')).join('')
-      : `<div class="be-bq be-dot">${esc(b.waiting || '')}</div>${url ? `<div class="chips"><a class="chip-btn be-chip-link" href="${esc(url)}" target="_blank" rel="noopener">Answer on its board ↗</a></div>` : ''}`
-    return `<section class="be-entry" data-state="waiting"${open}>${nameHTML(b, url)}${body}</section>`
+      ? asks.map((a) => askHTML(a, 'be-bq')).join('')
+      : `<div class="be-bq">${esc(b.waiting || '')}</div>${url ? `<div class="chips"><a class="chip-btn be-chip-link" href="${esc(url)}" target="_blank" rel="noopener">Answer on its board ↗</a></div>` : ''}`
+    return `<section class="be-entry" data-state="waiting"${open}>${nameHTML(b, url, true)}${body}</section>`
   }
   const stamp = shortDate(b.updatedAt)
   return `<section class="be-entry" data-state="working"${open}>${nameHTML(b, url)}
@@ -395,8 +383,6 @@ function present({ kind, load, no, view, opener, quiet = false }) {
 
   if (cold) {
     s.root.classList.toggle('be-still', !animate)
-    // the rule draws itself once, as the edition opens: 8 drawings at 12fps
-    if (animate) card.querySelector('.be-rule')?.classList.add('be-drawing')
     card.querySelector('[data-be-close]')?.focus({ preventScroll: true })
     return
   }
