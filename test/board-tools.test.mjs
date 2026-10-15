@@ -79,7 +79,9 @@ test('a plan is cards of tasks in order; one task in hand per agent; the tick in
   assert.equal((await b.claude('december_task', { card: 'Mode detection', action: 'add', tasks: ['read the git root'] })).card.total, 3)
 
   await b.claude('december_task', { card: 'Mode detection', action: 'start', task: 'Read the git root' })
-  await b.claude('december_task', { card: 'Mode detection', action: 'start', task: 'Start one' })
+  const started = await b.claude('december_task', { card: 'Mode detection', action: 'start', task: 'Start one' })
+  // every result says where the plan stands, so the agent works from the board
+  assert.deepEqual(started.plan, { done: 0, total: 3, inHand: ['Mode detection: Start one server per repo'], next: 'Mode detection: Read the git root' })
   await b.codex('december_task', { card: 'Board stage', action: 'start', task: 'Show the dateline' })
   let state = await b.get('/api/state')
   assert.deepEqual(rowsOf(state, 'Mode detection').map((r) => r.state), ['queued', 'doing', 'queued'], 'starting a task puts the last one back in the plan')
