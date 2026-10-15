@@ -69,7 +69,10 @@ async function forwardTool(name, args) {
 // A board that cannot start never falls back to the person's page.
 const OPENER = { darwin: 'open', win32: 'start ""' }[process.platform] || 'xdg-open'
 async function connect(params) {
-  const info = detectMode({ cwd: process.cwd(), clientName: params?.clientInfo?.name })
+  // Claude Code names the project in env; some launchers start the adapter in
+  // the home folder, which would quietly give the page.
+  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd()
+  const info = detectMode({ cwd, clientName: params?.clientInfo?.name })
   if (info.mode !== 'board') return fetchInstructions()
   const name = [info.repo, info.branch].filter(Boolean).join(' · ')
   try {

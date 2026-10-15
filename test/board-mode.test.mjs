@@ -225,7 +225,7 @@ test('initialize inside a repo starts the board and leads with its address', asy
   const boards = temp('adapter-boards')
   const child = spawn(process.execPath, [join(ROOT, 'mcp-server.mjs')], {
     cwd: repo,
-    env: { ...process.env, DECEMBER_MODE: '', DECEMBER_BOARDS_DIR: boards, DECEMBER_URL: 'http://localhost:9' },
+    env: { ...process.env, DECEMBER_MODE: '', CLAUDE_PROJECT_DIR: '', DECEMBER_BOARDS_DIR: boards, DECEMBER_URL: 'http://localhost:9' },
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   const lines = createInterface({ input: child.stdout })
