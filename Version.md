@@ -1,11 +1,16 @@
 ---
 enabled: true
-current: 0.19.0
+current: 0.19.1
 dev_flow: formal
 test_gate: local
 ---
 
 # Version History
+
+## 0.19.1 - 2026-10-29
+
+Update Electron to 43.8.1 for security fixes (12 advisories, including five
+high-severity Chromium and certificate fixes). No feature changes.
 
 ## 0.19.0 - 2026-10-14
 
