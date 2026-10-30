@@ -123,6 +123,9 @@ function placeWords(space, label, ...rest) {
 }
 
 function renderToday() {
+  // a board's stage is board.js's to paint: a completion settling there must
+  // not put the person's day back in its place
+  if (document.documentElement.dataset.mode === 'board') return
   const box = $('#today')
   const today = localDay()
   const horizon = localDayAfter(7)

@@ -93,7 +93,8 @@ async function boot() {
       window.addEventListener('pagehide', () => { clearTimeout(refreshTimer); changes.close() }, { once: true })
     }
     await hooks.startCaptureOutbox()
-    if (!page.state.spaces.length && !page.state.captures.length && !page.queuedTexts.length && !page.state.carryover) {
+    // a board starts empty because its agent has not written yet: no demo
+    if (!page.state.board && !page.state.spaces.length && !page.state.captures.length && !page.queuedTexts.length && !page.state.carryover) {
       if (!reduced) firstRunDemo()
       else if (!localStorage.getItem('dec-intro')) {
         localStorage.setItem('dec-intro', '1')
